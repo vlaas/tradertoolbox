@@ -118,34 +118,79 @@ These replace the part of TradingView in daily use.
 OptionStrat's builder and payoff views are the reference. Its optimiser and flow pages are
 not in use and are not targets.
 
-### 6.3 Screen layout (decided 2026-11-21 from the first mock-ups)
+### 6.3 Screen layout (decided 2026-11-21 and 2026-11-22 from the mock-ups)
+
+All screens:
+
+- Panels sit close together: small gaps between them and small margins at the window edges.
+- Instructions and explanations sit behind a small information icon in the header of their
+  panel, the same way everywhere: option chain, probabilities, payoff, chart layers, range
+  template. A legend that is needed to read a picture stays visible: the payoff panel keeps
+  one legend line above the graph, and shows a different one in table mode (profit, loss,
+  the price nearest the current one, the IV shift).
+- The window itself does not scroll at laptop size. The top bars and the status bar stay in
+  place, and each area that can overflow scrolls on its own. On a narrow window the areas
+  stack and the page scrolls as a whole.
 
 Workbench:
 
 - Option chain on the left; ticket and probabilities on the top right; payoff below them.
+- The chain fills the height of the window and scrolls inside its panel. Its header, the row
+  of the open expiration and the column titles stay visible while the strikes scroll, and it
+  opens with the at-the-money line in view. The right side (ticket, probabilities, payoff)
+  scrolls separately when it does not fit; the payoff graph takes the height that is left.
 - A divider between the chain and the right side is dragged to widen the chain. The default
   columns are delta, bid and ask per side, with strike and IV in the middle. Widening reveals
   open interest, volume, theta and gamma, in that order.
 - All listed strikes are shown; there is no "every n-th strike" filter, because strike
   spacing is not uniform across roots.
 - The at-the-money position is a thin yellow or orange line between two strike rows and
-  takes no row of its own. The expected range is a light background tint on the strikes.
+  takes no row of its own. The expected range is a light background tint on the strike and
+  IV cells only; the quantity marks stay outside it.
+- In the chain, the instructions and the legend share one information icon in the header, so
+  the chain has the full height.
+- The symbol box is wide enough for long symbols.
 - Several expirations can be open at once, and a ticket can mix expirations.
 - The quantity mark of a bought or sold contract (+1, −2) opens a small pop-up that raises
   or lowers the number of contracts, in the chain and in the ticket.
 - A ticket row shows the signed quantity (the colour gives the side, with no separate
   buy/sell word), expiration, strike, type, delta, theta, bid, mid and ask. The ticket also
   shows its total extrinsic value.
+- A ticket can have more than two breakevens. The breakevens box then takes width from the
+  boxes beside it, shows two values to a row without breaking a line, and may use a smaller
+  type size.
+- The ticket has one editable name. It is filled automatically from the strategy, the symbol
+  and the expiration until the user types a name; a control returns it to the automatic
+  name. Save stores the ticket under that name and Load recalls a saved ticket.
+- The limit price is an editable field with minus and plus buttons. Untouched, it follows the
+  market mid. An entered value stays, is marked by an outline, and becomes the entry price of
+  the payoff; a "MKT" control lets it follow the market again.
+- Stock can be a leg of a ticket. Held positions, stock or options, can be brought into the
+  ticket through a control and are marked as held. A held leg shows its purchase price by
+  default, with a small switch to the current price; the switch also sets whether its profit
+  and loss counts from the purchase price or from now. The ticket's net and limit prices
+  cover the new legs only.
 - Probabilities are one column with a switch between the models, not two columns.
 - The payoff panel can be maximised. It then hides the chain and carries the ticket and
   probability figures itself.
+- The line at expiry is drawn thinner than the line of the selected date.
+- Moving the pointer over the payoff graph shows a dotted vertical line with the price, the
+  probability of the underlying being below or above it at expiry and on the selected date,
+  and the profit and loss there.
+- A range control limits how far the price axis reaches, which also limits the P/L axis.
+  Where the expiry line leaves the graph still rising or falling, a mark says so ("loss
+  unlimited", or the value it reaches at a price of zero).
 
 Chart:
 
 - The chart is its own screen and window, not a panel of the workbench.
 - Volume is drawn in the price pane, not in a pane of its own.
 - The payoff profile at the right edge is a layer that can be switched on and off like an
-  indicator.
+  indicator. It is scaled to the prices in view, so the price scale is its range control and
+  unlimited profit or loss needs no extra control or mark.
+- The ticket layers are switched from the legend line above the chart: each legend entry is
+  the switch of its layer. There is no separate layers panel.
+- The chart takes the height of the window; the side panel scrolls on its own.
 
 ### 6.4 Probability and risk numbers (decided 2026-11-22 after research D)
 
@@ -421,4 +466,4 @@ regular hours.
 | C Charting | Lightweight Charts with custom drawing tools against libraries with drawing built in (for example KLineChart); licences | Desk research **done 2026-11-20**, prototype **done 2026-11-22**: `docs/research/C_charting.md` (results in its sections 10 and 11), code in `prototypes/chart/`. Six checks pass in Chromium, Firefox and WebKit, so Lightweight Charts with the `lightweight-charts-drawing` plugin is confirmed. Left over: touch on a real device; whether 4-hour bars are taken from the broker or built in the backend |
 | D Probability and risk methods | Models beyond lognormal POP; roll-for-credit feasibility; assignment risk; CVaR for portfolios; what can be validated on the T3 store | **Done 2026-11-22** in research mode: `docs/research/reports/Probability and Risk Methods for a Self-Hosted Short-Premium Options Analyzer.md` (prompt in `docs/research/D_probability_methods_prompt.md`). Proposal in section 6.4. Still to do: checks against the `tt` captures and validation on the T3 store |
 | E Architecture | Pricing core placement and language, code sharing with the existing repos, streaming fan-out, local database, MCP layer | Code audit **done 2026-11-20**: `docs/research/E_code_audit.md`. Architecture **decided 2026-11-20 and 2026-11-21**: `docs/research/E_architecture.md` |
-| F UI | Layout of the trade workbench and the linked-tool navigation | Mock-ups as Claude Artifacts. First draft 2026-11-20, reviewed 2026-11-21 (decisions in 6.3), second draft awaiting review: workbench and chart window at https://claude.ai/artifact/4WMzVB4aDHEP94qirwLdMg |
+| F UI | Layout of the trade workbench and the linked-tool navigation | Mock-ups as Claude Artifacts: first draft 2026-11-20, reviews on 2026-11-21 and 2026-11-22 (decisions in 6.3), fifth draft published 2026-11-22: workbench and chart window at https://claude.ai/artifact/4WMzVB4aDHEP94qirwLdMg |

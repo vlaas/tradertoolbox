@@ -147,7 +147,7 @@ The conventions are those of the product definition, section 11.1.
 | PRC-05 | The forward per expiry comes from put-call parity over quoted strikes. | R1 | T |
 | PRC-06 | A volatility surface is fitted per snapshot: SVI per expiry, free-gamma SSVI as fallback for thin expiries, with a check for butterfly arbitrage and a fit status per slice. | R1 | T |
 | PRC-07 | The surface gives a risk-neutral density and cumulative probability per expiry in closed form. | R1 | T |
-| PRC-08 | Payoff, breakevens, maximum profit and maximum loss are computed for any ticket, including legs of several expirations, with the first expiry as horizon. | R1 | T |
+| PRC-08 | Payoff, breakevens, maximum profit and maximum loss are computed for any ticket, including stock legs and legs of several expirations, with the first expiry as horizon. Unlimited profit or loss is reported as such, not as a number. | R1 | T |
 | PRC-09 | A P/L grid over price and date is computed for a ticket in one call. | R1 | T, M |
 | PRC-10 | In-the-money values of American options use the European formula plus the assignment flag until an American pricer exists; the app says so where it matters. | R1 | R |
 | PRC-11 | Buying power is a Reg-T estimate from the margin model taken from `backtester`, labelled as an estimate. | R1 | T |
@@ -173,6 +173,7 @@ The numbers and their stages are those of the product definition, section 6.4.
 | PRB-11 | The stress grid revalues the ticket fully over fixed price points with volatility shifts tied to the price move, and reports the worst loss. | R1b | T |
 | PRB-12 | What-if keeps each contract's IV and applies one volatility shift; with several expirations the shift can be set per expiration. | R1 | T, S |
 | PRB-13 | A number listed as "not shown" in section 6.4 is not computed for display under any setting. | R1 | R |
+| PRB-15 | The probability of the underlying being below or above a given price is available at each expiration, from the selected model, and at any earlier date, from the surface interpolated in time. | R1 | T |
 | PRB-14 | A stage b number is released only with a recorded validation against the T3 store: reliability curve, Brier score and PIT test, split by volatility regime. | R7b | M, R |
 
 ### 4.8 Candles and the time model
@@ -248,6 +249,10 @@ Open detail: whether built bars are also cut at the regular close, so that no ba
 | UI-05 | Loss of the connection is visible on every screen, and live values are marked stale until it returns. | R0 | T |
 | UI-06 | Colours come from the design tokens of the backtester viewer; a side is shown by colour and sign, not by words alone, and never by colour alone. | R1 | R |
 | UI-07 | Numbers use tabular figures and fixed decimals per column. | R1 | R |
+| UI-08 | At laptop size the window does not scroll: the top bars and the status bar stay in place and each area that can overflow scrolls on its own. Below a stated width the areas stack and the page scrolls as a whole. | R1 | T |
+| UI-09 | Pop-ups and menus are drawn above the scrolling areas and are never cut off by them. | R1 | T |
+| UI-10 | Gaps between panels and margins at the window edges are small and come from one spacing scale. | R1 | R |
+| UI-11 | Instructions and explanations open from an information icon in the header of their panel, one component used everywhere. A legend needed to read a view stays visible and follows the view (graph or table). | R1 | T, R |
 
 ### 4.13 Trade workbench
 
@@ -255,17 +260,23 @@ The layout is that of the product definition, section 6.3.
 
 | ID | Requirement | Release | Verify |
 |---|---|---|---|
-| WB-01 | The option chain lists all strikes of an expiration in a virtual grid; several expirations can be open; the chain opens at the expiration nearest 45 DTE. | R1 | T |
+| WB-01 | The option chain lists all strikes of an expiration in a virtual grid; several expirations can be open; the chain opens at the expiration nearest 45 DTE. It fills the height of the window and scrolls inside its panel, with its header, the row of the open expiration and the column titles staying in view, and it opens with the at-the-money line in view. | R1 | T |
 | WB-02 | Default columns are delta, bid and ask per side with strike and IV in the middle. Dragging the divider reveals open interest, volume, theta and gamma, in that order. | R1 | T |
-| WB-03 | The at-the-money position is a line between two rows; the expected range is a tint on the strikes. | R1 | T |
+| WB-03 | The at-the-money position is a line between two rows; the expected range is a tint on the strike and IV cells. Instructions and the legend open from one information icon and take no permanent space. | R1 | T |
 | WB-04 | A click on a bid sells one contract and on an ask buys one. The quantity mark opens a control to raise, lower or remove, in the chain and in the ticket. | R1 | T |
-| WB-05 | A ticket row shows signed quantity, expiration, strike, type, delta, theta, bid, mid and ask. The ticket shows its totals: price at natural and mid, maximum profit and loss, breakevens, buying power, extrinsic value and position Greeks. | R1 | T |
+| WB-05 | A ticket row shows signed quantity, expiration, strike, type, delta, theta, bid, mid and ask. The ticket shows its totals: price at natural and mid, maximum profit and loss, breakevens, buying power, extrinsic value and position Greeks. All breakevens are shown, however many: two to a row, never broken across lines, with the box widening and the type size shrinking as needed. | R1 | T |
 | WB-06 | A ticket can mix expirations. | R1 | T |
 | WB-07 | The payoff panel shows a graph and a table over price and date, with date and volatility controls, and can be maximised to carry the ticket and probability figures. | R1 | T, S |
 | WB-08 | Earnings and ex-dividend dates that fall before an expiration are shown on that expiration and on the ticket. | R1 | T |
-| WB-09 | Tickets can be saved, named, listed and reopened; watchlists can be created and edited. | R1 | T |
+| WB-09 | A ticket has one name, generated from strategy, symbol and expiration until the user edits it, with a way back to the generated name. Save stores the ticket under its name; Load lists the saved tickets of the symbol and reopens one. Watchlists can be created and edited. | R1 | T |
 | WB-10 | Changing a leg, the date, the volatility shift or the model updates the panel without a full reload; the browser interpolates the grid between requests. | R1 | T, M |
 | WB-11 | Payoff values agree with OptionStrat for the same legs and inputs within a stated tolerance, on a checklist of structures. | R1 | S |
+| WB-12 | The limit price is editable by typing and by one-cent steps. Untouched, it follows the market mid of the new legs. An entered value stays fixed, is visibly marked as entered, and is the entry price for the payoff and the ticket totals. One control returns it to following the market. | R1 | T |
+| WB-13 | Stock can be a leg, in shares, and takes part in payoff, Greeks, breakevens and probabilities. | R1 | T |
+| WB-14 | A held position (stock or option) can be added to a ticket and is marked as held. In R1 it is entered by hand with its purchase price; from R5 it can be picked from the account's positions. | R1, R5 | T |
+| WB-15 | A held leg shows its purchase price by default, with a switch to the current price. The switch also sets the basis of its profit and loss: from the purchase price, or from now. Net, natural and limit prices cover the new legs only. | R1 | T |
+| WB-16 | Pointing at a price in the payoff graph shows the price, the probability of the underlying being below and above it at expiry and on the selected date, and the P/L there. | R1 | T |
+| WB-17 | A range control sets how far the price axis of the payoff graph and table reaches. Where the expiry line leaves the graph still rising or falling, a mark states it: unlimited, or the value reached at a price of zero. | R1 | T |
 
 ### 4.14 Chart
 
@@ -283,7 +294,7 @@ charting note, section 11.
 | CH-07 | Chart times rise strictly in every zone. Where a zone sets its clocks back while bars keep coming, the earlier offset is carried until the data has a gap. | R2 | T |
 | CH-08 | Sessions outside regular hours are tinted: early and late hours lightly, overnight a little more. | R2 | T |
 | CH-09 | Future time exists on the axis as whitespace in a series of its own, far enough for the longest expiration of the shown ticket. | R2 | T |
-| CH-10 | The ticket is drawn on the chart as switchable layers: strikes, breakevens, expected-range cone with the expiry line, payoff profile at the right edge. Layers take no pointer input. | R2 | T |
+| CH-10 | The ticket is drawn on the chart as switchable layers: strikes, breakevens, expected-range cone with the expiry line, payoff profile at the right edge. Layers take no pointer input. The profile is scaled to the prices in view. The layers are switched from the chart's legend line. | R2 | T |
 | CH-11 | Strike lines take part in the autoscale only while the latest bar is on screen, and this can be switched off. | R2 | T |
 | CH-12 | Range templates draw a defined intraday range and its critical moments automatically for the current day. | R2 | T |
 | CH-13 | Horizontal lines at the short strikes of open positions. | R5 | T |
@@ -390,7 +401,7 @@ margin dry-run test; the studies of the product definition, section 11.2.
 | Release | Requirement groups that start there |
 |---|---|
 | R0 Foundation | GEN, BRK, SUB-01 to 03 and 07, MKT-01 to 03 and 07, REF-01, 04 and 05, PRC-01 to 04, STO-01, 02 and 07, API-01 to 05 and 08, SEC (except 04), UI-03 and 05, PRF-09, QA (except 03 and 06) |
-| R1 Trade workbench | SUB-04 and 05, MKT-04 to 06, REF-02 and 03, PRC-05 to 13, PRB-01 to 06, 12 and 13, STO-05, API-06 and 07, UI, WB, PRF-01 to 03, 05 and 08, QA-03 and 06 |
+| R1 Trade workbench | SUB-04 and 05, MKT-04 to 06, REF-02 and 03, PRC-05 to 13, PRB-01 to 06, 12, 13 and 15, STO-05, API-06 and 07, UI, WB, PRF-01 to 03, 05 and 08, QA-03 and 06 |
 | R1b Path numbers and stress | PRB-07 to 11, PRF-04 |
 | R2 Chart | REF-06, CND-01 to 10, STO-06, CH (except 13), PRF-06 and 07 |
 | R3 Volatility | SUB-06, CND-11, STO-03, 04 and 08, VOL |
