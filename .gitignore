@@ -3,3 +3,19 @@
 .env.*
 .DS_Store
 node_modules/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+
+# frontend build and test output
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+
+# local configuration and data (GEN-07, GEN-08)
+config/s3t.toml
+/data/

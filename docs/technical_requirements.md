@@ -41,7 +41,8 @@ Backend modules: `pricing`, `broker`, `subs`, `market`, `refdata`, `candles`, `a
 ## 3. Technology selection
 
 Versions are pinned at set-up from the then-current stable releases unless a version is given.
-Every dependency must carry a permissive licence (MIT, Apache-2.0, BSD, ISC); QA-07 checks it.
+Every dependency must carry a permissive licence or be a named exception; QA-07 checks it (the
+policy is under QA-07).
 
 | Area | Choice | Decided by |
 |---|---|---|
@@ -52,7 +53,8 @@ Every dependency must carry a permissive licence (MIT, Apache-2.0, BSD, ISC); QA
 | Data models | pydantic for service inputs and outputs | Architecture note, section 5 |
 | State store | SQLite in WAL mode, numbered migration files | Architecture note, section 4 |
 | Series store | Parquet files read with DuckDB and polars; pyarrow | Same |
-| Live transport | One WebSocket; messages defined in Protocol Buffers with generated Python and TypeScript code. The generator tools are chosen at set-up | Architecture note, section 3 |
+| Live transport | One WebSocket; messages defined in Protocol Buffers with generated Python and TypeScript code | Architecture note, section 3 |
+| Protocol Buffers tools | `protoc` from the `grpcio-tools` wheel (a pinned development dependency, no system install) generates both sides. Python: the official `protobuf` runtime with `.pyi` stubs. TypeScript: `protoc-gen-es` with the `@bufbuild/protobuf` runtime. Both implement the canonical proto3 JSON mapping, which API-04's JSON switch relies on. **Decided 2026-11-22** | WP-0.1 |
 | Bulk transport | Arrow over REST | Same |
 | LLM interface | MCP Python SDK, served over HTTP inside the backend | Architecture note, section 5 |
 | Calendars | exchange-calendars for sessions and holidays; the system time-zone database | This document |
@@ -61,11 +63,25 @@ Every dependency must carry a permissive licence (MIT, Apache-2.0, BSD, ISC); QA
 | Price chart | Lightweight Charts 5.3.0 with `lightweight-charts-drawing` 0.11.1, both pinned and wrapped behind an own interface | Charting note, sections 10 and 11 (prototype) |
 | Other charts | ECharts: payoff, skew, term structure, histograms | Architecture note, section 7 |
 | Chain grid | Written new, on a virtual-row library | Same |
-| Backend tools | ruff, pyright, pytest, hypothesis | Architecture note, section 8 |
-| Frontend tools | vitest, Playwright (Chromium, Firefox, WebKit), openapi-typescript | Same; the prototype |
+| Backend tools | ruff (lint and format), pyright, pytest, hypothesis, pip-licenses | Architecture note, section 8 |
+| Frontend tools | vitest, Playwright (Chromium, Firefox, WebKit), openapi-typescript, svelte-check, license-checker-rseidelsohn | Same; the prototype |
 
 Not chosen yet: the library for GARCH fitting (stage b of the probabilities), and the reverse
 proxy for TLS at the phone step.
+
+Proposed at set-up (WP-0.1, 2026-11-22), not yet confirmed by the owner:
+
+- **Version rule.** Exact pins of the newest stable release that is at least two weeks old.
+  Two exceptions: TypeScript stays on 5.9, because svelte-check and openapi-typescript do not
+  support TypeScript 7 (the current stable release). Playwright stays on 1.64, the version of
+  the chart prototype and the backtester viewer, so one set of browsers serves all three.
+- **Linting.** Python: `ruff check` and `ruff format --check`; pyright in its standard mode,
+  as `volcalc` uses, so that ported code passes unchanged. Frontend: `svelte-check
+  --fail-on-warnings` and strict TypeScript settings. ESLint and Prettier are not used.
+- **Generated code is committed.** `make check` regenerates it into a temporary directory and
+  fails on any stale, missing or orphaned file (QA-05).
+- **Configuration** is one TOML file (`config/s3t.example.toml` documents it). Strict types;
+  unknown keys are refused. The backend package is named `s3t` until the final name is chosen.
 
 ## 4. Requirements
 
@@ -372,8 +388,29 @@ Targets unless marked measured. Each is measured in the release named and record
 | QA-04 | Type checks (pyright, TypeScript) and linting pass before a change is merged. | R0 | T |
 | QA-05 | Generated code (OpenAPI types, Protocol Buffers) is checked to be current. | R0 | T |
 | QA-06 | R1 and R2 are accepted against side-by-side checklists with OptionStrat and TradingView. | R1, R2 | S |
-| QA-07 | A licence check runs over all dependencies with an allow-list of permissive licences. | R0 | T |
+| QA-07 | A licence check runs over all dependencies, runtime and development, of both projects. It uses an allow-list of permissive licences, and anything else must be a named exception with its reason. Decided 2026-11-22. The policy is under this table. | R0 | T |
 | QA-08 | Timing checks are run on an idle machine and record the machine load with the result. | R0 | R |
+
+Licence policy of QA-07, implemented in `backend/tools/licences.py`:
+
+- The check evaluates the SPDX expression of each package. With AND, every part must be
+  allowed; with OR, one part is enough. The collecting tools are not trusted with this: the
+  npm checker passes `MIT AND CC-BY-3.0` because one part is allowed.
+- Allowed, decided 2026-11-22: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Zlib and
+  PSF-2.0, with the metadata spellings Python packages use for them.
+- Allowed, proposed 2026-11-22 (found at set-up, not yet confirmed): Python-2.0 (the PSF
+  licence under another identifier), BlueOak-1.0.0 (a permissive licence; 12 npm development
+  packages) and CC0-1.0 (a public-domain dedication).
+- Named exceptions, each for the licence exactly as reported, so a change of licence ends the
+  exception:
+
+| Package | Licence | Reason | Status |
+|---|---|---|---|
+| hypothesis | MPL-2.0 | Development only, used unmodified | Decided 2026-11-22 |
+| lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Proposed 2026-11-22 |
+| spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only | Proposed 2026-11-22 |
+
+certifi (MPL-2.0, brought in by httpx at WP-0.3) will need the same kind of exception.
 
 ## 5. Open points
 
@@ -390,7 +427,6 @@ To measure:
 To decide:
 
 - Whether built bars are cut at the regular close (CND).
-- The Protocol Buffers tools for Python and TypeScript (R0 set-up).
 - The open-source licence and the final name.
 
 To do, outside the releases: read the broker's API terms of use before publication; the

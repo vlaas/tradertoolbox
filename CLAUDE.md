@@ -1,9 +1,9 @@
 # Self-3-Trader (repo `tradertoolbox`)
 
 A self-hosted, single-user options-analysis application: a Python backend that holds the
-broker connection and all numerics, and a Svelte web application. Planning is complete; no
-product code exists yet. The only code is a throw-away chart prototype and the screen
-mock-ups.
+broker connection and all numerics, and a Svelte web application. The repository skeleton
+(`backend/`, `frontend/`, `proto/`, `config/`) is in place since WP-0.1; product code starts
+with WP-0.2. Besides it there are a throw-away chart prototype and the screen mock-ups.
 
 ## Documents
 
@@ -54,6 +54,14 @@ holds.
 ## Commands
 
 ```
+make setup      # uv sync --locked in backend/, npm ci --ignore-scripts in frontend/
+make gen        # regenerate Protocol Buffers code, OpenAPI schema and types, the wire fixture
+make check      # ruff, pyright, pytest, svelte-check, tsc, vitest, stale check, licence check
+make e2e        # build the frontend; Playwright in Chromium, Firefox and WebKit
+make licences   # the licence check alone (policy in backend/tools/licences.py)
+
+# configuration: copy config/s3t.example.toml to config/s3t.toml (git-ignored)
+
 # chart prototype (throw-away): see prototypes/chart/README.md
 cd prototypes/chart && npm install --ignore-scripts && npx playwright test
 
@@ -61,7 +69,9 @@ cd prototypes/chart && npm install --ignore-scripts && npx playwright test
 cd docs/mockups && node check_logic.js project/Main.dc.html
 ```
 
-`make check` and `make e2e` come with the first work package.
+Generated code is committed and owned by `backend/tools/generate.py`. Never edit
+`backend/src/s3t/wire/`, `frontend/src/gen/` or `proto/fixtures/` by hand; change the
+`.proto` file or the API and run `make gen`.
 
 ## Mock-ups
 

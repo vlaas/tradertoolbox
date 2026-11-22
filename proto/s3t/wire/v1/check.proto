@@ -1,0 +1,27 @@
+// Tool-chain self-test (WP-0.1). Not a product message.
+//
+// It exists so that both generators, both runtimes and the canonical JSON form are checked
+// against each other on every `make check`: Python writes proto/fixtures/wirecheck.json, the
+// frontend's unit test decodes it with the TypeScript code and re-encodes it.
+
+syntax = "proto3";
+
+package s3t.wire.v1;
+
+enum CheckKind {
+  CHECK_KIND_UNSPECIFIED = 0;
+  CHECK_KIND_FIRST = 1;
+  CHECK_KIND_SECOND = 2;
+}
+
+message WireCheck {
+  // A UTC instant in microseconds since the epoch, the form of GEN-10.
+  int64 time_us = 1;
+  double value = 2;
+  // Explicit presence: unset differs from zero, as a missing bid or ask must.
+  optional double maybe = 3;
+  // Packed on the wire (the proto3 default), as row updates will be.
+  repeated double column = 4;
+  string text = 5;
+  CheckKind kind = 6;
+}

@@ -1,0 +1,35 @@
+# Self-3-Trader configuration: example.
+#
+# Every value that depends on the machine lives in this file, never in code (GEN-08).
+# Copy it to config/s3t.toml (git-ignored), or anywhere else and name that file in the
+# S3T_CONFIG environment variable, then edit the values.
+#
+# Relative paths are resolved against the directory of the file they are written in;
+# "~" is expanded. Unknown keys are refused.
+
+[server]
+# One IP address to listen on. A wildcard such as 0.0.0.0 or :: is refused: the backend
+# never listens on all interfaces (SEC-03). Use the machine's LAN address to reach it from
+# other devices on the VPN; the loopback address keeps it on this machine.
+listen_address = "127.0.0.1"
+port = 8740
+
+# Optional. The host name the browser uses to reach the backend. It becomes the expected
+# origin of the WebSocket (SEC-02, WP-0.7). Without it, only the listen address is accepted.
+# host_name = "trader.example.internal"
+
+[paths]
+# The environment file with the broker secrets. It must be readable by the backend user
+# only and is never committed (GEN-02, GEN-07).
+env_file = "../.env"
+
+# Downloads, caches and local recordings. Market data never enters the repository: inside
+# the repository only the git-ignored data/ directory may be used (GEN-07).
+data_dir = "../data"
+
+# The SQLite state store: login, settings, tickets, watchlists, drawings (STO-01).
+state_file = "../data/state.sqlite"
+
+# Optional. The read-only T3 store (STO-04). Features that need it are hidden or marked
+# unavailable when it is absent (GEN-04).
+# t3_root = "~/stores/t3"
