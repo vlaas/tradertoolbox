@@ -5,6 +5,7 @@ description = "Self-3-Trader backend: broker connection, market state, numerics 
 requires-python = "==3.13.*"
 dependencies = [
     "fastapi==0.162.2",
+    "httpx==0.28.1",
     "numpy==2.5.4",
     "protobuf==7.36.2",
     "pydantic==2.14.3",

@@ -80,9 +80,23 @@ class PathsConfig(_Section):
     """The optional read-only T3 store (STO-04)."""
 
 
+class BrokerConfig(_Section):
+    """The REST client's request limit (BRK-04). Proposed 2026-11-22 (WP-0.3).
+
+    The broker's real limits are not published or measured yet (WP-0.9). The defaults are
+    conservative: the probe of note B ran at one call per second without a refusal.
+    """
+
+    rest_rate: float = Field(default=2.0, gt=0, le=50)
+    """Requests per second, on average."""
+    rest_burst: int = Field(default=4, ge=1, le=100)
+    """Requests that may go at once after a quiet spell."""
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
+    broker: BrokerConfig = Field(default_factory=BrokerConfig)
     source: Path
     """The file this configuration was read from."""
 

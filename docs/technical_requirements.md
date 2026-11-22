@@ -83,6 +83,29 @@ Proposed at set-up (WP-0.1, 2026-11-22), not yet confirmed by the owner:
 - **Configuration** is one TOML file (`config/s3t.example.toml` documents it). Strict types;
   unknown keys are refused. The backend package is named `s3t` until the final name is chosen.
 
+Proposed in the broker package (WP-0.3, 2026-11-22), not yet confirmed by the owner:
+
+- **Environment file.** The variables are `TASTY_CLIENT_SECRET`, `TASTY_REFRESH_TOKEN` and
+  the optional `TASTY_IS_TEST` (the sandbox host). These are the names the chart prototype
+  already uses. The backend warns, and does not refuse to start, when group or others can
+  read the file (GEN-02).
+- **Request limit** (BRK-04). A token bucket at 2 requests per second with a burst of 4,
+  set in the optional `[broker]` section of the configuration. A 429 holds every request
+  until `Retry-After`. A stated wait over 60 s fails the call at once. Without the header,
+  and for 502, 503, 504 and network errors, the waits are exponential: from 1 s, doubling,
+  with full jitter, at most 30 s, 5 attempts in all. The broker's real limits are measured at
+  WP-0.9.
+- **Token renewal** (BRK-01). The token is renewed on use when less than 60 s of its life is
+  left. A 401 leads to one renewal and one retry. A refused renewal is not retried.
+- **Redaction** (SEC-05, GEN-03). A filter on the log handlers masks every registered secret,
+  `Bearer` values, JWT-shaped strings, and the secret fields of JSON bodies and query strings.
+  It masks account numbers in `/accounts/<number>` and `accounts:<number>:` as `<acct>`.
+- **Return types.** The streaming token is typed. Instruments, chains and market metrics are
+  returned as the broker's JSON until the package that first uses each one types it: WP-0.5
+  for instruments and chains, WP-1.1 and WP-1.2 for the metrics.
+- **The fake broker** lives in the backend package (`s3t.broker.fake`), so that the app can
+  run on it for the end-to-end tests. Its contents are listed in its module docstring.
+
 ## 4. Requirements
 
 ### 4.1 General
@@ -431,8 +454,7 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 | hypothesis | MPL-2.0 | Development only, used unmodified | Decided 2026-11-22 |
 | lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Proposed 2026-11-22 |
 | spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only | Proposed 2026-11-22 |
-
-certifi (MPL-2.0, brought in by httpx at WP-0.3) will need the same kind of exception.
+| certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Proposed 2026-11-22 (WP-0.3) |
 
 ## 5. Open points
 

@@ -33,3 +33,9 @@ state_file = "../data/state.sqlite"
 # Optional. The read-only T3 store (STO-04). Features that need it are hidden or marked
 # unavailable when it is absent (GEN-04).
 # t3_root = "~/stores/t3"
+
+[broker]
+# Optional. The REST client's request limit (BRK-04): an average rate in requests per second
+# and the burst allowed after a quiet spell. The broker's real limits are measured at WP-0.9.
+# rest_rate = 2.0
+# rest_burst = 4

@@ -166,3 +166,43 @@ tools.
 - `a=s` aligns bars to the session open (09:30, 10:30…) and delivers the regular session only.
 - The table and the consequences are in `C_charting.md`, section 11.
 
+
+## Addendum 2026-11-22 (WP-0.3): the REST client with the read-only grant
+
+One run of `backend/tools/broker_check.py` on Sunday 2026-11-22, evening, market closed.
+Production API, one request per second, 10 requests: one token renewal and nine reads. All
+measured.
+
+- Every read on the client's allow-list answered 200 with the existing grant. Its scopes
+  were `read openid accounts:<acct>:owner`, as in section 1. No 429 at one request per
+  second (BRK-07).
+- Paths that were accepted:
+  - futures symbols without the leading slash (`/instruments/futures/ESM7`,
+    `/futures-option-chains/ES/nested`);
+  - a future-option symbol percent-encoded as one segment (`./ESH7 E4BZ6 261222C6550`);
+  - an OCC symbol with its spaces encoded.
+- Quote token: level `api`. The address host is `tasty-openapi-dxlink-md-ws.dxfeed.com`. The
+  keys of the response were not compared, so whether it states an expiry was not seen.
+- Keys compared with the fake broker:
+  - The SPY chain and the equity option are equal key for key.
+  - The live documents carry more keys than the fake. Equities: aggregated trading sessions,
+    cusip, instrument sub-type. Futures: exchange data, roll rules, cut-off times. Metrics:
+    a 15-day IV index, earnings per share, P/E, liquidity running state.
+  - The fake had three keys that the live documents lack. They were removed: tick sizes on
+    SPX, `roll-target-symbol` on a future, and `dividend-updated-at` in the metrics.
+  - Two keys of the futures chain were missing from the fake and were added:
+    `futures[].streamer-symbol` and `expirations[].cash-settled`.
+- Instants are written as `2026-12-24T18:15:00.000+00:00`.
+- The SPY weekly of Christmas week falls on Thursday 24 December, with `expires-at` at
+  18:15 UTC (13:15 ET). That is the early close plus 15 minutes, as 16:15 is on a normal day.
+- ES options have weeklies on other weekdays than Friday too, for example root `E4B` on a
+  Tuesday.
+- The list of futures in the futures chain is not in date order. The first entry was `/ESM7`.
+- Units of the SPY metrics:
+  - Fractions: the IV index (0.395), its 5-day change (0.209) and the percentile.
+  - Percent: the 30-day IV (33.53), HV 30 (24.07) and IV minus HV (9.46).
+  - **The IV index rank was above 1**: 1.443 in the main and the `tos` field, 1.0 in the
+    `tw` field. A typed model must not assume that a rank lies between 0 and 1.
+  - The first entry of the IV list per expiration had no `implied-volatility` value. It was
+    dated 2026-11-20, two days earlier.
+  - SPY's `dividend-rate-per-share` and `dividend-yield` were 0.0.

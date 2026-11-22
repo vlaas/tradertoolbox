@@ -62,6 +62,9 @@ make licences   # the licence check alone (policy in backend/tools/licences.py)
 
 # configuration: copy config/s3t.example.toml to config/s3t.toml (git-ignored)
 
+# live read-only check of the broker client: a stated check, about 10 requests at 1 per second
+cd backend && uv run python tools/broker_check.py
+
 # chart prototype (throw-away): see prototypes/chart/README.md
 cd prototypes/chart && npm install --ignore-scripts && npx playwright test
 

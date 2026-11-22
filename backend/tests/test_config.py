@@ -8,6 +8,7 @@ import pytest
 from s3t.config import (
     DEFAULT_PATH,
     ENV_VAR,
+    BrokerConfig,
     ConfigError,
     PathsConfig,
     ServerConfig,
@@ -43,8 +44,10 @@ def test_example_file_loads() -> None:
     assert config.paths.t3_root is None
 
 
-@pytest.mark.parametrize("section", [ServerConfig, PathsConfig])
-def test_example_documents_every_key(section: type[ServerConfig] | type[PathsConfig]) -> None:
+@pytest.mark.parametrize("section", [ServerConfig, PathsConfig, BrokerConfig])
+def test_example_documents_every_key(
+    section: type[ServerConfig] | type[PathsConfig] | type[BrokerConfig],
+) -> None:
     text = EXAMPLE.read_text()
     for key in section.model_fields:
         assert re.search(rf"^#?\s*{key}\s*=", text, re.MULTILINE), f"{key} not in the example"
@@ -138,3 +141,22 @@ def test_errors_do_not_echo_values(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as info:
         load_config(write(tmp_path, text))
     assert canary not in str(info.value)
+
+
+def test_broker_section_is_optional(tmp_path: Path) -> None:
+    config = load_config(write(tmp_path, VALID.format(address="127.0.0.1")))
+    assert config.broker == BrokerConfig()
+    assert (config.broker.rest_rate, config.broker.rest_burst) == (2.0, 4)
+
+
+def test_broker_section(tmp_path: Path) -> None:
+    text = VALID.format(address="127.0.0.1") + "\n[broker]\nrest_rate = 1\nrest_burst = 2\n"
+    config = load_config(write(tmp_path, text))
+    assert (config.broker.rest_rate, config.broker.rest_burst) == (1.0, 2)
+
+
+@pytest.mark.parametrize("line", ["rest_rate = 0", "rest_burst = 0", 'rest_rate = "2"', "x = 1"])
+def test_broker_section_refused(tmp_path: Path, line: str) -> None:
+    text = VALID.format(address="127.0.0.1") + f"\n[broker]\n{line}\n"
+    with pytest.raises(ConfigError, match="broker"):
+        load_config(write(tmp_path, text))
