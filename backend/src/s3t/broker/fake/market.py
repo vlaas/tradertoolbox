@@ -9,7 +9,8 @@ the live API on 2026-11-22 (`tools/broker_check.py`; note B, addendum of that da
 holds no key that the live documents lack. The live documents hold more keys than the fake,
 and the fake adds them when a package needs them.
 
-Contents, proposed 2026-11-22 (WP-0.3):
+Contents, decided 2026-11-22 (WP-0.3). The tickers are real and the values invented, so the
+app marks every screen as synthetic when it runs on this market (GEN-11):
 
 - SPY: an ETF. PM-settled options with `expires-at` at 16:15 ET, as `tt` saw it live.
 - SPX: an index. SPX AM-settled monthlies, and SPXW PM-settled dailies, weeklies and

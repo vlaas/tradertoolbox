@@ -131,6 +131,12 @@ All screens:
 - The window itself does not scroll at laptop size. The top bars and the status bar stay in
   place, and each area that can overflow scrolls on its own. On a narrow window the areas
   stack and the page scrolls as a whole.
+- The status bar shows the broker connection, and for REST: the state of the access token,
+  including when the next call renews it and a renewal that is under way or refused, and the
+  request rate (the configured limit beside the requests of the last minute, and a hold after
+  a 429). Decided 2026-11-22 (BRK-09).
+- When the backend runs on the fake broker, a permanent "SYNTHETIC DATA" mark sits in the
+  status bar and in the header of every screen. Decided 2026-11-22 (GEN-11).
 
 Workbench:
 

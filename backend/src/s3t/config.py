@@ -81,7 +81,7 @@ class PathsConfig(_Section):
 
 
 class BrokerConfig(_Section):
-    """The REST client's request limit (BRK-04). Proposed 2026-11-22 (WP-0.3).
+    """The REST client's request limit (BRK-04). Decided 2026-11-22 (WP-0.3).
 
     The broker's real limits are not published or measured yet (WP-0.9). The defaults are
     conservative: the probe of note B ran at one call per second without a refusal.

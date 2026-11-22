@@ -128,15 +128,17 @@ def test_registered_values() -> None:
     assert r.redact("short abcdef-secret 5WZ12345") == f"short {MASK} {ACCOUNT_MASK}"
 
 
-def test_transient_values_are_bounded() -> None:
+def test_recent_tokens_are_kept_per_kind() -> None:
     r = Redactor()
-    first = "transient-token-first"
-    r.register(first, transient=True)
-    assert r.redact(first) == MASK
-    for i in range(Redactor.TRANSIENT_KEEP):
-        r.register(f"transient-token-{i:03d}", transient=True)
-    assert r.redact(first) == first  # dropped; long expired by then
-    assert r.redact("transient-token-031") == MASK
+    quote = "quote-token-of-the-day"
+    r.register(quote, kind="quote")
+    first_access = "access-token-first"
+    r.register(first_access, kind="access")
+    for i in range(10 * Redactor.KEEP_PER_KIND):  # a long day of renewals
+        r.register(f"access-token-{i:03d}", kind="access")
+    assert r.redact(quote) == MASK  # another kind never pushes it out
+    assert r.redact(first_access) == first_access  # dropped: long expired by then
+    assert r.redact("access-token-039") == MASK
 
 
 def test_filter_redacts_message_arguments_exceptions_and_stacks() -> None:

@@ -167,7 +167,16 @@ async def run(client: TastytradeRest, market: SyntheticMarket) -> int:
             print(f"    {field}: {metrics[0].get(field)!r}")
         ivs = metrics[0].get("option-expiration-implied-volatilities") or [{}]
         print(f"    option-expiration-implied-volatilities[0]: {ivs[0]!r}")
-    print(f"\nrenewals: {client.renewals}; reads that failed: {failures}")
+    status = client.rest_status()
+    print(
+        f"\nstatus: token {status.auth}, renews from {status.renews_from:%H:%M:%S} UTC"
+        if status.renews_from
+        else f"\nstatus: token {status.auth}"
+    )
+    print(
+        f"  limit {status.rate:g}/s burst {status.burst}; {status.requests_last_minute} requests"
+        f" in the last minute; 429 answers {status.rate_limited}; reads that failed {failures}"
+    )
     return failures
 
 

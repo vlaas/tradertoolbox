@@ -138,4 +138,5 @@ def test_the_client_has_only_reads() -> None:
         "market_metrics",
         "option_chain",
         "quote_token",
+        "rest_status",
     }

@@ -60,7 +60,7 @@ _CC_BY_DATA = "licence-list data inside the licence checker itself; development 
 EXCEPTIONS: dict[str, dict[str, Exception_]] = {
     "python": {
         "hypothesis": Exception_("MPL-2.0", "development only, used unmodified"),
-        # Proposed 2026-11-22 (WP-0.3): brought in by httpx; reported by its classifier.
+        # Decided 2026-11-22 (WP-0.3): brought in by httpx; reported by its classifier.
         "certifi": Exception_(
             "Mozilla Public License 2.0 (MPL 2.0)",
             "CA certificate bundle of httpx, data used unmodified",

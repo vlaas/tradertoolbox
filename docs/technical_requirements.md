@@ -83,28 +83,61 @@ Proposed at set-up (WP-0.1, 2026-11-22), not yet confirmed by the owner:
 - **Configuration** is one TOML file (`config/s3t.example.toml` documents it). Strict types;
   unknown keys are refused. The backend package is named `s3t` until the final name is chosen.
 
-Proposed in the broker package (WP-0.3, 2026-11-22), not yet confirmed by the owner:
+The broker package (WP-0.3). Decided 2026-11-22:
 
-- **Environment file.** The variables are `TASTY_CLIENT_SECRET`, `TASTY_REFRESH_TOKEN` and
-  the optional `TASTY_IS_TEST` (the sandbox host). These are the names the chart prototype
-  already uses. The backend warns, and does not refuse to start, when group or others can
-  read the file (GEN-02).
+- **Environment file** (GEN-02). The variables are `TASTY_CLIENT_SECRET`,
+  `TASTY_REFRESH_TOKEN` and the optional `TASTY_IS_TEST`, the names the chart prototype
+  already uses. The sandbox switch stays in the environment file with the credentials,
+  because sandbox credentials only work on the sandbox host. The backend warns, and does not
+  refuse to start, when group or others can read the file.
 - **Request limit** (BRK-04). A token bucket at 2 requests per second with a burst of 4,
-  set in the optional `[broker]` section of the configuration. A 429 holds every request
-  until `Retry-After`. A stated wait over 60 s fails the call at once. Without the header,
-  and for 502, 503, 504 and network errors, the waits are exponential: from 1 s, doubling,
-  with full jitter, at most 30 s, 5 attempts in all. The broker's real limits are measured at
-  WP-0.9.
-- **Token renewal** (BRK-01). The token is renewed on use when less than 60 s of its life is
-  left. A 401 leads to one renewal and one retry. A refused renewal is not retried.
-- **Redaction** (SEC-05, GEN-03). A filter on the log handlers masks every registered secret,
-  `Bearer` values, JWT-shaped strings, and the secret fields of JSON bodies and query strings.
-  It masks account numbers in `/accounts/<number>` and `accounts:<number>:` as `<acct>`.
-- **Return types.** The streaming token is typed. Instruments, chains and market metrics are
-  returned as the broker's JSON until the package that first uses each one types it: WP-0.5
-  for instruments and chains, WP-1.1 and WP-1.2 for the metrics.
-- **The fake broker** lives in the backend package (`s3t.broker.fake`), so that the app can
-  run on it for the end-to-end tests. Its contents are listed in its module docstring.
+  set in the optional `[broker]` section of the configuration. A 429 holds every request,
+  not only the refused one, until `Retry-After`. A stated wait over 60 s fails the call at
+  once, and the requests stay held until then. Without the header, and for 502, 503, 504 and
+  network errors, the waits are exponential: from 1 s, doubling, with full jitter, at most
+  30 s, 5 attempts in all. The broker's real limits are measured at WP-0.9, and the defaults
+  change then if needed.
+- **Token renewal** (BRK-01, BRK-07). The token is renewed when a call needs it and less than
+  60 s of its life is left, not by a timer, so it lapses during a quiet spell. Only one
+  renewal runs at a time. A 401 on a read leads to one renewal and one retry; a second 401
+  is an error. A refused renewal (400, 401 or 403 from the token endpoint) is not retried:
+  the client makes no further call until a restart with a new grant. A grant with more than
+  read scope is refused the same way, and its token is dropped unused.
+- **Redaction** (SEC-05, GEN-03). A filter on every log handler masks every registered
+  secret, `Bearer` values, JWT-shaped strings, and the secret fields of JSON bodies and query
+  strings. It masks too much rather than too little. The registered secrets are the
+  environment secrets, the access, id and quote tokens, and the account number taken from
+  the token's scope. Tokens issued at run time are kept as the last four of each kind, so a
+  quote token that lives 24 hours stays masked however many access tokens follow it. Account
+  numbers in `/accounts/<number>` and `accounts:<number>:` are masked in full as `<acct>`.
+  Where R5 has to tell several accounts apart, the owner suggests showing the last two
+  digits, as Tastytrade's privacy mode does; that is decided at R5.
+- **Return types** (GEN-09). The streaming token is typed. Instruments, chains and market
+  metrics are returned as the broker's JSON until the package that first uses each one types
+  it: WP-0.5 for instruments and chains, WP-1.1 for the dividend fields, WP-1.2 for earnings
+  and the IV per expiration. A package may type a document earlier when waiting would
+  significantly increase the work to redo or lead to worse code. Checked at decision time:
+  waiting costs about ten test assertions; typing now would mean guessing at the model.
+- **Broker keys stay in the broker module** (GEN-09). Once a document is typed, the
+  interface returns only the typed record, and the broker's JSON stays inside
+  `s3t.broker.tastytrade`. Until then, nothing outside `s3t.broker` reads broker keys, except
+  the package that is typing the document. A review rule.
+- **The fake broker** lives in the backend package (`s3t.broker.fake`), not under `tests/`,
+  so that the app can run on it for the end-to-end tests and for work without the broker.
+  Its contents are listed in its module docstring and grow with the packages that need more:
+  quotes, Greeks and candles at WP-0.4, keys at WP-0.5, holidays at WP-0.6. It uses real
+  tickers (SPY, SPX, AAPL, /ES) with invented values, so GEN-11 marks its data.
+
+Proposed 2026-11-22 (WP-0.3), not yet confirmed by the owner:
+
+- **The REST state of BRK-09** as the client gives it (`RestStatus`). The token state is one
+  of: none yet, valid, due (inside the 60 s margin), lapsed (expired while nothing was
+  called), renewing, refused with its reason. With it come the expiry, the instant from which
+  the next call renews, the last renewal and the number of renewals. The limit is shown as
+  the configured rate and burst, beside the requests sent in the last 60 s. A 429 shows its
+  hold end and the count of 429 answers so far.
+- **GEN-11 for the replay broker** (WP-0.4). The mark reads "REPLAY", with the date of the
+  recording.
 
 ## 4. Requirements
 
@@ -120,8 +153,9 @@ Proposed in the broker package (WP-0.3, 2026-11-22), not yet confirmed by the ow
 | GEN-06 | Every probability and risk number carries the name of its model and its assumptions, on screen and in tool results. | R1 | T, R |
 | GEN-07 | The repository contains no market data and no credentials. Downloaded data directories and environment files are git-ignored. | R0 | R, T |
 | GEN-08 | Machine-specific values (listen address, host name, paths to the stores, the T3 location) are configuration, not code. | R0 | R |
-| GEN-09 | The broker is reached through one interface. Everything the application asks of a broker is listed in that interface, so another broker can be judged against it. | R0 | R |
+| GEN-09 | The broker is reached through one interface. Everything the application asks of a broker is listed in that interface, so another broker can be judged against it. Broker-specific keys and shapes stay inside the broker module (decided 2026-11-22, section 3). | R0 | R |
 | GEN-10 | All timestamps inside the backend, in the stores and on the wire are UTC instants. Conversion to a zone happens only at display. | R0 | T |
+| GEN-11 | When the backend runs on the fake broker, the app says so everywhere: a permanent "SYNTHETIC DATA" mark in the status bar and in the header of every screen, and in every MCP result. The choice between the live and the fake broker is configuration, live by default, and logged at start. Decided 2026-11-22 (owner, WP-0.3 review). | R0 | T |
 
 ### 4.2 Broker connection
 
@@ -135,6 +169,7 @@ Proposed in the broker package (WP-0.3, 2026-11-22), not yet confirmed by the ow
 | BRK-06 | The connection state (connected, resubscribing, stalled, gap) is published to the app and shown. | R0 | T |
 | BRK-07 | The backend works with a grant of scope `read` only. | R0 | M |
 | BRK-08 | The client reads: instruments and option chains, market metrics, quote tokens, candles, and for the account: positions, balances and transactions. | R0 (market), R5 (account) | T |
+| BRK-09 | The REST state is published to the app and shown in the status bar: the access token's state, with the time from which the next call renews it and a renewal under way or refused; the configured request rate beside the requests of the last minute; a hold after a 429. Decided 2026-11-22 (owner, WP-0.3 review). | R0 | T |
 
 ### 4.3 Feed and subscriptions
 
@@ -454,7 +489,7 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 | hypothesis | MPL-2.0 | Development only, used unmodified | Decided 2026-11-22 |
 | lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Proposed 2026-11-22 |
 | spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only | Proposed 2026-11-22 |
-| certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Proposed 2026-11-22 (WP-0.3) |
+| certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Decided 2026-11-22 (WP-0.3) |
 
 ## 5. Open points
 

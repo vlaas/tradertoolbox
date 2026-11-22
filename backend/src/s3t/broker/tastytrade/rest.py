@@ -1,5 +1,5 @@
 """The Tastytrade REST client: read-only market reads (BRK-01, BRK-04, BRK-07, BRK-08 market part,
-GEN-01, GEN-02, SEC-05).
+BRK-09, GEN-01, GEN-02, SEC-05).
 
 Source: `tt` tt_capture.py, class `TTClient`, version 1.6.0 (the `tt` directory is not a git
 repository, so no commit can be named). Kept from it: the OAuth refresh-token grant posted
@@ -11,13 +11,17 @@ Changed in the port (2026-11-22, WP-0.3):
   outgoing request against it again, refuses another host, and refuses an ``Origin`` header,
   which makes Tastytrade answer 403 (note B, section 2).
 - The access token is renewed on use when less than 60 s of its life is left. Only one renewal
-  runs at a time. A 401 on a read leads to one renewal and one retry.
+  runs at a time. A 401 on a read leads to one renewal and one retry. A refused renewal is not
+  retried: the client makes no further call until it is built again (a restart with a new
+  grant). Decided 2026-11-22.
 - A token bucket paces the requests. A 429 holds every request until ``Retry-After``, or for an
   exponential wait when the header is missing. 502, 503, 504 and network errors are retried
   the same way.
 - The scope claim of the access token is read (the signature is not checked) and logged with
-  the account masked. A grant that has more than read scope draws a warning. The client stays
-  read-only either way (BRK-07, GEN-01).
+  the account masked. A grant that has more than read scope is refused like a refused renewal:
+  its token is dropped unused (BRK-07, GEN-01; decided 2026-11-22).
+- ``rest_status()`` gives the token state, the configured limit, the requests of the last
+  minute and a hold after a 429, for the status bar (BRK-09).
 - Bodies are never logged. `tt`'s ``--wire`` mode, the dry-run and the account reads are not
   ported.
 """
@@ -29,6 +33,7 @@ import logging
 import random
 import re
 import time
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -49,6 +54,7 @@ from s3t.broker.interface import (
     NotFound,
     QuoteToken,
     RateLimited,
+    RestStatus,
 )
 from s3t.broker.limits import Backoff, Clock, Sleep, TokenBucket, parse_retry_after
 from s3t.broker.tastytrade.endpoints import BY_NAME, Endpoint, match
@@ -120,6 +126,11 @@ class TastytradeRest:
         self._token: _Token | None = None
         self._auth_lock = asyncio.Lock()
         self._scopes: tuple[str, ...] | None = None
+        self._renewing = False
+        self._refusal: str | None = None
+        self._last_renewal: datetime | None = None
+        self._sent: deque[float] = deque()
+        self._rate_limited = 0
         self.renewals = 0
         """Access-token renewals so far."""
 
@@ -138,7 +149,7 @@ class TastytradeRest:
         token, url, level = data.get("token"), data.get("dxlink-url"), data.get("level", "")
         if not isinstance(token, str) or not isinstance(url, str):
             raise BrokerProtocolError("quote token: the response has no token or no address")
-        REDACTOR.register(token, transient=True)
+        REDACTOR.register(token, kind="quote")
         issued = self._now()
         expires = _parse_instant(data.get("expires-at")) or issued + QUOTE_TOKEN_LIFETIME
         return QuoteToken(url, SecretStr(token), str(level), issued, expires)
@@ -173,10 +184,49 @@ class TastytradeRest:
             items.extend(found)
         return items
 
+    def rest_status(self) -> RestStatus:
+        mono, wall = self._clock(), self._now()
+
+        def at(instant: float) -> datetime:
+            return wall + timedelta(seconds=instant - mono)
+
+        token = self._token
+        if self._refusal is not None:
+            auth = "refused"
+        elif self._renewing:
+            auth = "renewing"
+        elif token is None:
+            auth = "none"
+        elif mono >= token.expires:
+            auth = "lapsed"
+        elif mono >= token.expires - RENEW_MARGIN_S:
+            auth = "due"
+        else:
+            auth = "valid"
+        self._forget_old_requests(mono)
+        held = self._bucket.paused_until
+        return RestStatus(
+            auth=auth,
+            token_expires_at=None if token is None else at(token.expires),
+            renews_from=None if token is None else at(token.expires - RENEW_MARGIN_S),
+            last_renewal_at=self._last_renewal,
+            renewals=self.renewals,
+            refusal=self._refusal,
+            rate=self._bucket.rate,
+            burst=self._bucket.burst,
+            requests_last_minute=len(self._sent),
+            held_until=at(held) if held > mono else None,
+            rate_limited=self._rate_limited,
+        )
+
     async def aclose(self) -> None:
         await self._http.aclose()
 
     # ------------------------------------------------------------------ requests
+
+    def _forget_old_requests(self, now: float) -> None:
+        while self._sent and now - self._sent[0] >= 60.0:
+            self._sent.popleft()
 
     async def _read(
         self, name: str, *, query: Mapping[str, str] | None = None, **path: str
@@ -209,6 +259,8 @@ class TastytradeRest:
                 headers["Authorization"] = f"Bearer {used}"
             await self._bucket.acquire()
             started = self._clock()
+            self._sent.append(started)
+            self._forget_old_requests(started)
             LOG.debug("-> %s", label)
             try:
                 r = await self._http.request(
@@ -243,6 +295,7 @@ class TastytradeRest:
             if status == 404:
                 raise NotFound(reason, status=status)
             if status == 429:
+                self._rate_limited += 1
                 stated = parse_retry_after(r.headers.get("Retry-After"), self._now())
                 if stated is not None and stated > self._backoff.max_retry_after:
                     self._bucket.pause_until(self._clock() + stated)
@@ -295,6 +348,8 @@ class TastytradeRest:
     # ------------------------------------------------------------------ token
 
     async def _access_token(self) -> str:
+        if self._refusal is not None:
+            raise AuthError(self._refusal)
         token = self._token
         if token is not None and self._clock() < token.expires - RENEW_MARGIN_S:
             return token.value
@@ -310,25 +365,41 @@ class TastytradeRest:
                 and self._clock() < current.expires - RENEW_MARGIN_S
             ):
                 return current.value
+            if self._refusal is not None:  # refused while this task waited for the lock
+                raise AuthError(self._refusal)
             body = {
                 "grant_type": "refresh_token",
                 "client_secret": self._secrets.client_secret.get_secret_value(),
                 "refresh_token": self._secrets.refresh_token.get_secret_value(),
             }
-            data = await self._send(BY_NAME["token"], "/oauth/token", body=body, authed=False)
+            self._renewing = True
+            try:
+                data = await self._send(BY_NAME["token"], "/oauth/token", body=body, authed=False)
+            except AuthError as e:
+                self._refuse(str(e))
+                raise
+            finally:
+                self._renewing = False
             value, lifetime = data.get("access_token"), data.get("expires_in")
             if not isinstance(value, str) or not value:
                 raise BrokerProtocolError("token renewal: the response has no access token")
-            REDACTOR.register(value, transient=True)
+            REDACTOR.register(value, kind="access")
             id_token = data.get("id_token")
-            REDACTOR.register(id_token if isinstance(id_token, str) else None, transient=True)
+            REDACTOR.register(id_token if isinstance(id_token, str) else None, kind="id")
             if not isinstance(lifetime, int | float) or lifetime <= 0:
                 lifetime = DEFAULT_TOKEN_LIFETIME_S
+            self._note_scopes(value)  # raises for a grant beyond read scope
             self._token = _Token(value, self._clock() + float(lifetime))
+            self._last_renewal = self._now()
             self.renewals += 1
             LOG.info("access token renewed, valid for %.0f s", lifetime)
-            self._note_scopes(value)
             return value
+
+    def _refuse(self, reason: str) -> None:
+        """No further call until the client is built again (a restart with a new grant)."""
+        self._refusal = redact(reason)
+        self._token = None
+        LOG.error("%s; no broker call is made until a restart with a new grant", self._refusal)
 
     def _note_scopes(self, token: str) -> None:
         scopes = jwt_scopes(token)
@@ -342,10 +413,11 @@ class TastytradeRest:
         LOG.info("broker grant scopes: %s", redact(" ".join(scopes)))
         extra = [s for s in scopes if s not in READ_SCOPES and not _ACCOUNT_SCOPE.fullmatch(s)]
         if extra:
-            LOG.warning(
-                "the grant has more than read scope (%s); this client stays read-only",
-                redact(" ".join(extra)),
+            reason = (
+                f"the grant has more than read scope ({' '.join(extra)}); use a read-only grant"
             )
+            self._refuse(reason)
+            raise AuthError(self._refusal or reason)
 
 
 def from_config(

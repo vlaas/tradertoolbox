@@ -6,7 +6,7 @@ holds every request, not only the refused one, until the retry time. :class:`Bac
 the exponential waits for a retry without a stated retry time.
 
 The clock and the sleep function are injected, so tests run on a fake clock and never sleep.
-Proposed 2026-11-22 (WP-0.3): the defaults of :class:`Backoff`.
+Decided 2026-11-22: the defaults of :class:`Backoff` and of the bucket (configuration).
 """
 
 import asyncio

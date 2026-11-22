@@ -18,8 +18,9 @@ text and the stack text of every record that the handler emits. Account numbers 
 paths (``/accounts/<number>``) and in OAuth scopes (``accounts:<number>:``) are masked as
 ``<acct>`` (GEN-03).
 
-Proposed 2026-11-22 (WP-0.3): the variable names, the warning (not a refusal) for a file that
-group or others can read, and the redaction patterns.
+Decided 2026-11-22: the variable names, the sandbox switch in this file, and a warning (not a
+refusal) for a file that group or others can read; the redaction patterns and the
+full mask of account numbers.
 """
 
 import logging
@@ -133,31 +134,38 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 class Redactor:
     """Replaces registered secret values and token-shaped text.
 
-    Values registered as permanent (the environment secrets, known account numbers) stay for
-    the life of the process. Transient values (access, id and quote tokens, renewed every
-    few minutes) are kept for the last :attr:`TRANSIENT_KEEP` registrations only, so a
-    process that runs for weeks does not grow (PRF-09). Older tokens are expired, and they
-    are JWT-shaped, so the pattern still masks them.
+    Values registered without a kind (the environment secrets) and account numbers stay for
+    the life of the process. Tokens that the broker issues at run time are registered with
+    their kind (``access``, ``id``, ``quote``), and the last :attr:`KEEP_PER_KIND` of each
+    kind are kept. So a process that runs for weeks does not grow (PRF-09), and a quote token
+    that lives 24 hours stays masked however many access tokens follow it. Decided
+    2026-11-22: kept per kind, because one shared list would drop a valid quote token after
+    about eight hours of use. Older access and id tokens have expired, and they are
+    JWT-shaped, so the pattern still masks them.
     """
 
     MIN_LENGTH = 6
-    TRANSIENT_KEEP = 32
+    KEEP_PER_KIND = 4
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._permanent: dict[str, str] = {}
-        self._transient: deque[str] = deque(maxlen=self.TRANSIENT_KEEP)
+        self._recent: dict[str, deque[str]] = {}
 
-    def register(self, value: str | None, *, transient: bool = False) -> None:
-        """Mask this value in everything redacted from now on. Short values are ignored."""
+    def register(self, value: str | None, *, kind: str | None = None) -> None:
+        """Mask this value in everything redacted from now on. Short values are ignored.
+
+        Without ``kind`` the value is kept for good; with it, among the latest of its kind.
+        """
         if not value or len(value) < self.MIN_LENGTH:
             return
         with self._lock:
-            if transient:
-                if value not in self._transient:
-                    self._transient.append(value)
-            else:
+            if kind is None:
                 self._permanent[value] = MASK
+                return
+            recent = self._recent.setdefault(kind, deque(maxlen=self.KEEP_PER_KIND))
+            if value not in recent:
+                recent.append(value)
 
     def register_account(self, number: str | None) -> None:
         """Mask an account number as ``<acct>`` wherever it appears (GEN-03)."""
@@ -167,7 +175,10 @@ class Redactor:
 
     def redact(self, text: str) -> str:
         with self._lock:
-            values = [*self._permanent.items(), *((v, MASK) for v in self._transient)]
+            values = [
+                *self._permanent.items(),
+                *((v, MASK) for recent in self._recent.values() for v in recent),
+            ]
         # Longest first, so a value that contains another is replaced whole.
         for value, mask in sorted(values, key=lambda item: len(item[0]), reverse=True):
             if value in text:

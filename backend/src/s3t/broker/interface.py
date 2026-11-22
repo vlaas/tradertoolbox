@@ -15,13 +15,15 @@ nothing may be added that does (GEN-01).
 Instruments, chains and metrics are returned as the broker's JSON documents (read-only
 mappings) until the package that first uses each one gives it a type. That is WP-0.5 for
 instruments and chains (the instrument model), and WP-1.1 and WP-1.2 for the metrics.
-Proposed 2026-11-22 (WP-0.3).
+Decided 2026-11-22, with a rule: once a document is typed, this interface returns only the
+typed record and the broker's JSON stays inside ``s3t.broker.tastytrade``. Until then,
+nothing outside ``s3t.broker`` reads broker keys, except the package typing the document.
 """
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import SecretStr
 
@@ -41,6 +43,46 @@ class QuoteToken:
     expires_at: datetime
     """UTC. Tastytrade does not state it in the response. 24 hours after issue, as measured
     in the probe (note B, section 1), unless the response carries an expiry."""
+
+
+type AuthState = Literal["none", "valid", "due", "lapsed", "renewing", "refused"]
+
+
+@dataclass(frozen=True)
+class RestStatus:
+    """The state of the REST connection, for the status bar and the health route (BRK-09).
+
+    ``auth`` is one of:
+
+    - ``none``: no access token yet; the first call fetches one.
+    - ``valid``: a token is held with more than the renewal margin (60 s) left.
+    - ``due``: the token is inside the margin; the next call renews it first.
+    - ``lapsed``: the token has expired while nothing was called; the next call renews it.
+      This is normal after a quiet spell, because renewal happens on use.
+    - ``renewing``: a renewal is under way.
+    - ``refused``: the broker refused the grant, or the grant has more than read scope.
+      No call is made until the backend is restarted with a new grant; ``refusal`` says why.
+    """
+
+    auth: AuthState
+    token_expires_at: datetime | None
+    """UTC. None without a token."""
+    renews_from: datetime | None
+    """UTC. From this instant the next call renews the token first."""
+    last_renewal_at: datetime | None
+    """UTC."""
+    renewals: int
+    refusal: str | None
+    rate: float
+    """The configured limit: requests per second on average."""
+    burst: int
+    """The configured limit: requests at once after a quiet spell."""
+    requests_last_minute: int
+    """Requests sent in the last 60 s, the token renewals included."""
+    held_until: datetime | None
+    """UTC. While a 429 holds every request: the end of the hold."""
+    rate_limited: int
+    """429 answers so far."""
 
 
 class BrokerError(Exception):
@@ -118,6 +160,10 @@ class Broker(Protocol):
     async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:
         """IV index, rank and percentile, IV per expiration, historical volatility,
         earnings and dividends, liquidity and beta, one item per known symbol."""
+        ...
+
+    def rest_status(self) -> RestStatus:
+        """The state of the REST connection, at this moment (BRK-09)."""
         ...
 
     async def aclose(self) -> None:

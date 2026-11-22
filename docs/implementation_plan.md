@@ -191,7 +191,8 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   log redaction; the fake broker's REST side on the synthetic market.
 - *Done when:* the client passes against the fake broker including token expiry and 429, and
   the security tests of 3.6 for secrets and the allow-list pass.
-- *Closes:* BRK-01, BRK-04, BRK-07, BRK-08 (market part), GEN-01 to GEN-03, GEN-09, SEC-05.
+- *Closes:* BRK-01, BRK-04, BRK-07, BRK-08 (market part), GEN-01 to GEN-03, GEN-09, SEC-05;
+  BRK-09 (the data, `rest_status()`; added 2026-11-22).
 
 **WP-0.4 Stream, feed interface, subscriptions** (L; split after the stream client)
 - *Read first:* architecture note, sections 1 and 3; code audit, section 2.
@@ -228,22 +229,27 @@ the real broker in regular hours. Each has a checklist and a named point in the 
 - *Build:* the FastAPI application; login with an argon2 hash and a session cookie; the
   listen address from configuration; the health route; serving the built frontend; the
   WebSocket with Protocol Buffers messages, the JSON development mode, topics with snapshot,
-  changes and resubscribe; the `status` and `quotes` topics; the tier declaration that hides
-  or marks features (GEN-04).
+  changes and resubscribe; the `status` and `quotes` topics, with the REST state of BRK-09 in
+  `status` and in the health route; the tier declaration that hides or marks features
+  (GEN-04); the choice of the live or the fake broker in the configuration, with the mark of
+  GEN-11 in `status`.
 - *Done when:* the security tests of 3.6 for routes and the WebSocket pass, and a client that
   reconnects gets fresh snapshots.
 - *Closes:* API-01 to API-05, API-08, SEC-01 to SEC-03, SEC-06 to SEC-08, GEN-04, GEN-05
-  (structure), QA-02.
+  (structure), QA-02; BRK-09 and GEN-11 (published).
 
 **WP-0.8 Frontend shell** (M)
 - *Read first:* code audit, section 3; product definition, 6.3 ("All screens"); the
   backtester viewer's shell, tokens and stores.
 - *Build:* the shell with top bars and status bar; hash routing with one address per screen;
   the WebSocket client module and one store per topic; the login screen; the design tokens;
-  a status screen showing connection, subscription use and a live quote list.
+  a status screen showing connection, subscription use and a live quote list; the REST state
+  of BRK-09 in the status bar; the "SYNTHETIC DATA" mark of GEN-11 in the status bar and
+  every screen header.
 - *Done when:* a quote changed in the fake broker appears in the browser, the connection
   loss is shown and recovered from, in three browsers.
-- *Closes:* UI-03, UI-05; the base for UI-01, UI-04, UI-08 and UI-10.
+- *Closes:* UI-03, UI-05, BRK-09 and GEN-11 (shown); the base for UI-01, UI-04, UI-08 and
+  UI-10.
 
 **WP-0.9 R0 live measurements and acceptance** (S)
 - *Do, read-only and rate-limited, on a trading day:* how the subscription cap counts; REST
@@ -427,8 +433,12 @@ Found but not planned into a package yet.
   - The frozen `volcalc` values match bit for bit with numpy 2.5.4 and scipy 1.18.1. A numpy or
     scipy upgrade can break that; `tests/pricing/test_reference.py` says what to do then.
 - From WP-0.3 (2026-11-22):
-  - The owner has not yet confirmed the proposals of the broker package. They are listed in
-    the requirements, section 3, and include the certifi exception under QA-07.
+  - The proposals of the broker package were reviewed with the owner on 2026-11-22 and
+    decided (requirements, section 3; the certifi exception under QA-07). Two remain
+    proposals: the field list of the REST state (BRK-09) and the replay mark (GEN-11).
+  - BRK-09 was added in the review of the proposals (2026-11-22). The client gives the data
+    (`rest_status()`). WP-0.7 publishes it and WP-0.8 shows it in the status bar. How the
+    status bar lays it out is open: a mock-up change, or a proposal at WP-0.8.
   - Closed for the broker side only:
     - GEN-02 and SEC-05: the canary test (`tests/broker/test_canary.py`) is to be extended to
       the stream token in WP-0.4, the routes in WP-0.7 and the MCP results in R4.
@@ -457,10 +467,14 @@ Found but not planned into a package yet.
       its value (WP-1.1, WP-1.2).
     - SPY's dividend fields in the metrics were 0.0. The dividend schedule of an ETF may need
       another source (WP-1.1).
-  - `.env` has mode 0644: group and others can read it. The backend warns about this. The
-    owner should run `chmod 600 .env`.
   - `../tt` is not a git repository. The ported files name `tt` version 1.6.0 instead of a
     commit.
+  - GEN-11 was added in the review of the proposals (2026-11-22). WP-0.7 adds the broker
+    choice to the configuration and the mark to `status`; WP-0.8 shows it; R4 puts it in the
+    MCP results. The same mark for the replay broker is a proposal (requirements, section 3).
+  - R5, when several accounts are read: account numbers may be shown with their last two
+    digits, as in Tastytrade's privacy mode (the owner's suggestion, 2026-11-22), beside the
+    nicknames of GEN-03.
   - `config/s3t.toml` was created from the example for the live check. It is git-ignored.
 
 ## 9. Starting a package in a fresh session

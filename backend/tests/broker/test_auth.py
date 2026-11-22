@@ -93,6 +93,12 @@ async def test_refused_renewal_is_an_auth_error_without_retries(
     assert info.value.status == 401
     assert "invalid_grant" in str(info.value)
     assert [r.path for r in fake.requests] == ["/oauth/token"]
+    # Not retried later either: no further request until the client is built again.
+    fake.refuse_renewal(False)
+    with pytest.raises(AuthError, match="invalid_grant"):
+        await client.equity("SPY")
+    assert len(fake.requests) == 1
+    assert client.rest_status().auth == "refused"
 
 
 async def test_a_401_after_a_fresh_renewal_is_an_auth_error(
@@ -123,7 +129,7 @@ async def test_read_scope_is_logged_with_the_account_masked(
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
-async def test_more_than_read_scope_draws_a_warning(
+async def test_more_than_read_scope_is_refused(
     market: SyntheticMarket,
     clock: FakeClock,
     make_client: MakeClient,
@@ -139,9 +145,17 @@ async def test_more_than_read_scope_draws_a_warning(
     )
     client = make_client(transport=fake.transport)
     with caplog.at_level(logging.INFO, logger="s3t.broker"):
-        await client.equity("SPY")
-    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert warnings == ["the grant has more than read scope (trade); this client stays read-only"]
+        with pytest.raises(AuthError, match=r"more than read scope \(trade\)"):
+            await client.equity("SPY")
+        with pytest.raises(AuthError, match="more than read scope"):
+            await client.market_metrics(["SPY"])
+    # The token was dropped unused: no read reached the broker, and no second renewal.
+    assert [r.path for r in fake.requests] == ["/oauth/token"]
+    status = client.rest_status()
+    assert (status.auth, status.token_expires_at) == ("refused", None)
+    assert status.refusal is not None and "read-only grant" in status.refusal
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors and ACCOUNT not in caplog.text
 
 
 def test_jwt_scopes() -> None:
