@@ -5,7 +5,7 @@ Status: draft 1, 2026-11-22. Built on `docs/product_definition.md` (what and why
 research notes B, C and D. Where this document and an older note disagree, this document
 holds.
 
-The next document is the implementation and testing plan.
+The implementation and testing plan is `docs/implementation_plan.md`.
 
 ## 1. How to read this
 

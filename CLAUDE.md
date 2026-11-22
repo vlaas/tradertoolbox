@@ -1,0 +1,71 @@
+# Self-3-Trader (repo `tradertoolbox`)
+
+A self-hosted, single-user options-analysis application: a Python backend that holds the
+broker connection and all numerics, and a Svelte web application. Planning is complete; no
+product code exists yet. The only code is a throw-away chart prototype and the screen
+mock-ups.
+
+## Documents
+
+Read only what the task needs. When two documents disagree, the one higher in this list
+holds.
+
+| Document | Holds |
+|---|---|
+| `docs/implementation_plan.md` | Work packages, their order, the testing plan, the status table. Section 9 says how to start a package |
+| `docs/technical_requirements.md` | Technology selection and the numbered requirements (`PRC-08`, `WB-12`, ...) |
+| `docs/product_definition.md` | Purpose, principles, data tiers, releases, screen layout (6.3), probability stages (6.4), decisions with dates |
+| `docs/research/E_architecture.md` | The architecture decisions and their reasons |
+| `docs/research/B_broker_api_capability.md` | Measured facts about the Tastytrade API |
+| `docs/research/C_charting.md` | Charting choice; prototype results (10) and the time model (11) |
+| `docs/research/E_code_audit.md` | What can be reused from the owner's other repositories |
+| `docs/research/reports/` | Two outside research reports (feature landscape, probability methods). Their claims are not all verified |
+| `docs/mockups/` | Source of the screen mock-ups, with its own readme |
+
+## Rules that always hold
+
+- **Read-only towards the broker.** No call that places, changes or cancels an order, and no
+  other call that changes account state. The margin dry-run is not to be tried yet.
+- **Live broker calls** are allowed for stated checks only: read-only, rate-limited, a few
+  subscriptions at a time. Prefer the fake broker and synthetic data for everything else.
+- **Secrets.** Credentials are in a git-ignored `.env` (variable names are listed in
+  `prototypes/chart/README.md`). Never print, log, store or quote their values, and do not
+  read the file to look at it.
+- **The account number never appears** in output, logs, files or replies. Mask it.
+- **No market data in the repository.** Downloads go to git-ignored directories.
+- **No machine-specific values in documents or code:** addresses, host names and local paths
+  are configuration.
+- **The owner's other repositories** (`volcalc`, `tt`, `backtester`, `bt_dataset`,
+  `streamer`, beside this one) are sources to read and port from. Never change them.
+
+## How to work here
+
+- Work by package from the implementation plan, to its definition of done.
+- A decision is written into the product definition or the requirements with its date. What
+  the owner has not confirmed is written as a proposal and listed in the reply.
+- State what was verified and what was not. A result that was only computed, not seen, is
+  reported as such.
+- Timing measurements need an idle machine: the owner runs heavy data jobs on it. Record the
+  load average with every timing.
+- Offer a commit when a package or a document is complete; commit when the owner says so.
+- Documents are written plainly: short sentences, requirement identifiers where they exist,
+  no figure without saying whether it was measured or estimated.
+
+## Commands
+
+```
+# chart prototype (throw-away): see prototypes/chart/README.md
+cd prototypes/chart && npm install --ignore-scripts && npx playwright test
+
+# screen mock-ups: run a screen's logic outside the browser
+cd docs/mockups && node check_logic.js project/Main.dc.html
+```
+
+`make check` and `make e2e` come with the first work package.
+
+## Mock-ups
+
+The mock-ups are published as a Claude Design artifact (link in `docs/mockups/README.md`). To
+change them: edit the files in `docs/mockups/project/`, run the logic check, and publish only
+the changed files in one call with `docs/mockups` as the root. Do not render or open the page
+to verify unless the owner asks; say that the layout was not seen.

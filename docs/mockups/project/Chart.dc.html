@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chart window with the linked ticket</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#60a5fa}a:hover{color:#93c5fd}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 620px; overflow: hidden; display: flex; flex-direction: column; background: #0f1115; color: #d6d9df; font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-variant-numeric: tabular-nums">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 0 10px; min-height: 38px; background: #161920; border-bottom: 1px solid #30353f">
+<strong style="font-size: 14px; letter-spacing: 0.02em">Self-3-Trader</strong>
+<nav aria-label="Screens" style="display: flex; flex-wrap: wrap; gap: 4px; align-self: stretch">
+<a href="Main.dc.html" style="display: flex; align-items: center; padding: 0 12px; min-height: 38px; color: #8b919c; text-decoration: none; border-bottom: 2px solid transparent">Workbench</a>
+<a href="Chart.dc.html" aria-current="page" style="display: flex; align-items: center; padding: 0 12px; min-height: 38px; color: #d6d9df; text-decoration: none; border-bottom: 2px solid #60a5fa; font-weight: 600">Chart</a>
+<span style="display: flex; align-items: center; padding: 0 12px; color: #8b919c">Volatility</span>
+<span style="display: flex; align-items: center; padding: 0 12px; color: #8b919c">Positions</span>
+<span style="display: flex; align-items: center; padding: 0 12px; color: #8b919c">Scanners</span>
+</nav>
+<span style="flex-grow: 1"></span>
+<span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid #f59f00; border-radius: 999px; color: #f59f00; font-size: 12px">Sample data</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #30353f; border-radius: 999px; color: #8b919c; font-size: 12px">
+<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>
+Following the workbench window</span>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 4px 10px; border-bottom: 1px solid #262a33">
+<span style="font-weight: 600; font-size: 15px">SPY</span>
+<span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 15px">{{spot}}</span>
+<div role="group" aria-label="Resolution" style="display: inline-flex">
+<button type="button" aria-pressed="false" style="height: 26px; padding: 0 10px; font: inherit; color: #d6d9df; background: #0f1115; border: 1px solid #30353f; border-radius: 4px 0 0 4px; cursor: pointer">15 min</button>
+<button type="button" aria-pressed="true" style="height: 26px; padding: 0 10px; font: inherit; color: #0f1115; background: #60a5fa; border: 1px solid #30353f; border-left: none; border-radius: 0 4px 4px 0; cursor: pointer">1 day</button>
+</div>
+<div role="group" aria-label="Indicators" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px">
+<button type="button" aria-pressed="true" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #f59f00; background: #0f1115; border: 1px solid #f59f00; border-radius: 999px; cursor: pointer">SMA 15</button>
+<button type="button" aria-pressed="true" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #4dabf7; background: #0f1115; border: 1px solid #4dabf7; border-radius: 999px; cursor: pointer">SMA 50</button>
+<button type="button" aria-pressed="true" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #da77f2; background: #0f1115; border: 1px solid #da77f2; border-radius: 999px; cursor: pointer">SMA 100</button>
+<button type="button" aria-pressed="true" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #69db7c; background: #0f1115; border: 1px solid #69db7c; border-radius: 999px; cursor: pointer">SMA 200</button>
+<button type="button" aria-pressed="true" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #d6d9df; background: #0f1115; border: 1px solid #8b919c; border-radius: 999px; cursor: pointer">Volume</button>
+<button type="button" aria-pressed="true" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #d6d9df; background: #0f1115; border: 1px solid #8b919c; border-radius: 999px; cursor: pointer">RSI 14</button>
+<button type="button" aria-pressed="false" style="height: 24px; padding: 0 8px; font: inherit; font-size: 12px; color: #8b919c; background: #0f1115; border: 1px dashed #30353f; border-radius: 999px; cursor: pointer">ATR 14</button>
+</div>
+<span style="flex-grow: 1"></span>
+<div role="group" aria-label="Drawing tools" style="display: inline-flex; gap: 4px">
+<button type="button" aria-label="Select" aria-pressed="true" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; color: #0f1115; background: #60a5fa; border: 1px solid #30353f; border-radius: 4px; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M5 3l14 8-6 2-2 6z"></path></svg></button>
+<button type="button" aria-label="Trendline" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; color: #d6d9df; background: #0f1115; border: 1px solid #30353f; border-radius: 4px; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round"><path d="M4 19L20 5"></path><circle cx="4" cy="19" r="2"></circle><circle cx="20" cy="5" r="2"></circle></svg></button>
+<button type="button" aria-label="Horizontal line" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; color: #d6d9df; background: #0f1115; border: 1px solid #30353f; border-radius: 4px; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round"><path d="M3 12h18"></path></svg></button>
+<button type="button" aria-label="Vertical line" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; color: #d6d9df; background: #0f1115; border: 1px solid #30353f; border-radius: 4px; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round"><path d="M12 3v18"></path></svg></button>
+<button type="button" aria-label="Ruler" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; color: #d6d9df; background: #0f1115; border: 1px solid #30353f; border-radius: 4px; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M3 17L17 3l4 4L7 21z"></path><path d="M8 12l2 2M11 9l2 2M14 6l2 2"></path></svg></button>
+</div>
+</div>
+
+<main style="display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; padding: 6px; flex: 1 1 0; min-height: 0; overflow: hidden">
+
+<section aria-label="Price chart" style="flex: 999 1 640px; min-width: 0; max-height: 100%; box-sizing: border-box; background: #161920; border: 1px solid #30353f; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+<div role="group" aria-label="Ticket layers on the chart" style="position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: #8b919c">
+<span>Ticket layers</span>
+<sc-for list="{{layers}}" as="y" hint-placeholder-count="4">
+<button type="button" onClick="{{ y.toggle }}" aria-pressed="{{ y.on }}" style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font: inherit; font-size: 11px; color: {{y.fg}}; background: transparent; border: 1px {{y.line}} #30353f; border-radius: 999px; cursor: pointer"><span aria-hidden="true" style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: {{y.sw}}; border: 1px solid {{y.swLine}}"></span>{{y.label}}</button>
+</sc-for>
+<span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px dashed #30353f; border-radius: 999px">Open interest by strike, later</span>
+<span style="flex-grow: 1"></span>
+<button type="button" onClick="{{ toggleLayInfo }}" aria-expanded="{{ layInfoOpen }}" aria-label="What the ticket layers show" style="flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: {{layInfoFg}}; background: {{layInfoBg}}; border: 1px solid #30353f; border-radius: 50%; cursor: pointer">i</button>
+<sc-if value="{{ layInfoOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; top: 100%; right: 0; z-index: 20; display: flex; flex-direction: column; gap: 6px; width: 300px; max-width: 92%; box-sizing: border-box; margin-top: 4px; padding: 10px 12px; font-size: 12px; font-weight: 400; color: #d6d9df; background: #1c2029; border: 1px solid #60a5fa; border-radius: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.55)">
+<div style="font-weight: 600">Ticket layers</div>
+<div style="color: #8b919c">Each chip switches one layer of the linked ticket on or off.</div>
+<div style="color: #8b919c">Strikes: short legs as solid lines, long legs dashed. Breakevens: dotted.</div>
+<div style="color: #8b919c">Expected range: one standard deviation to the expiry, from the expiration's IV.</div>
+<div style="color: #8b919c">Payoff at expiry: drawn at the right edge against the price scale and scaled to the prices in view.</div>
+</div>
+</sc-if>
+</div>
+
+<div style="position: relative; flex: 1 1 0; min-height: 260px; margin-right: 56px; border: 1px solid #262a33; background: #0f1115">
+<svg viewBox="0 0 1000 470" preserveAspectRatio="none" role="img" aria-label="SPY daily candles with volume and moving averages, the strikes of the linked ticket, its breakevens, the expected range and the payoff profile" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block">
+<path d="{{gridPath}}" style="fill: none; stroke: #262a33; stroke-width: 1; vector-effect: non-scaling-stroke"></path>
+<rect x="{{futX}}" y="0" width="{{futW}}" height="470" style="fill: rgba(139,145,156,0.06)"></rect>
+<path d="{{volUp}}" style="fill: rgba(38,166,154,0.30); stroke: none"></path>
+<path d="{{volDn}}" style="fill: rgba(239,83,80,0.30); stroke: none"></path>
+<path d="{{conePath}}" style="fill: rgba(96,165,250,0.14); stroke: #60a5fa; stroke-width: 1; vector-effect: non-scaling-stroke"></path>
+<path d="{{sma200}}" style="fill: none; stroke: #69db7c; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{sma100}}" style="fill: none; stroke: #da77f2; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{sma50}}" style="fill: none; stroke: #4dabf7; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{sma15}}" style="fill: none; stroke: #f59f00; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{wickUp}}" style="fill: none; stroke: #26a69a; stroke-width: 1; vector-effect: non-scaling-stroke"></path>
+<path d="{{wickDn}}" style="fill: none; stroke: #ef5350; stroke-width: 1; vector-effect: non-scaling-stroke"></path>
+<path d="{{bodyUp}}" style="fill: #26a69a; stroke: none"></path>
+<path d="{{bodyDn}}" style="fill: #ef5350; stroke: none"></path>
+<path d="{{levelPath}}" style="fill: none; stroke: #ffd54f; stroke-width: 1; vector-effect: non-scaling-stroke"></path>
+<path d="{{trendPath}}" style="fill: none; stroke: #ffd54f; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{markerPath}}" style="fill: none; stroke: #ffd54f; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke"></path>
+<path d="{{rulerBox}}" style="fill: rgba(255,213,79,0.10); stroke: none"></path>
+<path d="{{rulerLine}}" style="fill: none; stroke: #ffd54f; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke"></path>
+<path d="{{expiryPath}}" style="fill: none; stroke: #8b919c; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke"></path>
+<path d="{{shortPath}}" style="fill: none; stroke: #ef5350; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{longPath}}" style="fill: none; stroke: #26a69a; stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke"></path>
+<path d="{{bePath}}" style="fill: none; stroke: #ffd54f; stroke-width: 1.5; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke"></path>
+<path d="{{profArea}}" style="fill: rgba(38,166,154,0.45); stroke: none"></path>
+<path d="{{lossArea}}" style="fill: rgba(239,83,80,0.40); stroke: none"></path>
+<path d="{{profLine}}" style="fill: none; stroke: #d6d9df; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+<path d="{{profBase}}" style="fill: none; stroke: #8b919c; stroke-width: 1; vector-effect: non-scaling-stroke"></path>
+</svg>
+<sc-for list="{{yTicks}}" as="t" hint-placeholder-count="8">
+<span style="position: absolute; right: -56px; width: 50px; top: {{t.top}}; transform: translateY(-50%); font-size: 11px; color: #8b919c">{{t.label}}</span>
+</sc-for>
+<span style="position: absolute; right: -56px; width: 50px; top: {{spotTop}}; transform: translateY(-50%); box-sizing: border-box; padding: 0 4px; font-size: 11px; color: #0f1115; background: #60a5fa">{{spot}}</span>
+<sc-for list="{{strikeLabels}}" as="k" hint-placeholder-count="4">
+<span style="position: absolute; left: {{k.left}}; top: {{k.top}}; transform: translateY(-105%); padding: 0 3px; font-size: 11px; font-weight: 600; color: {{k.color}}; background: rgba(15,17,21,0.85)">{{k.label}}</span>
+</sc-for>
+<span style="position: absolute; left: {{expiryLeft}}; top: 4px; transform: translateX(-100%); padding: 0 4px; font-size: 11px; color: #8b919c; background: rgba(15,17,21,0.85)">Expiry 31 Dec</span>
+<sc-if value="{{ onProfile }}" hint-placeholder-val="{{ true }}">
+<span style="position: absolute; left: {{profLeft}}; bottom: 4px; transform: translateX(-50%); padding: 0 4px; font-size: 11px; color: #8b919c; background: rgba(15,17,21,0.85)">Payoff</span>
+</sc-if>
+<span style="position: absolute; left: 6px; bottom: 4px; padding: 0 3px; font-size: 11px; color: #8b919c; background: rgba(15,17,21,0.85)">Volume</span>
+<span style="position: absolute; left: 6px; top: {{levelTop}}; transform: translateY(-105%); padding: 0 3px; font-size: 11px; color: #ffd54f; background: rgba(15,17,21,0.85)">Level 700.00</span>
+<span style="position: absolute; left: {{markerLeft}}; top: 4px; margin-left: 4px; padding: 0 3px; font-size: 11px; color: #ffd54f; background: rgba(15,17,21,0.85)">{{markerLabel}}</span>
+<span style="position: absolute; left: {{rulerLeft}}; top: {{rulerTop}}; transform: translate(-50%, -110%); padding: 1px 6px; font-size: 11px; color: #0f1115; background: #ffd54f; border-radius: 3px; white-space: nowrap">{{rulerLabel}}</span>
+</div>
+
+<div style="position: relative; flex: 0 0 80px; margin-right: 56px; border: 1px solid #262a33; background: #0f1115">
+<svg viewBox="0 0 1000 80" preserveAspectRatio="none" role="img" aria-label="RSI 14 with the 30 and 70 levels" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block">
+<path d="M0 24 H1000 M0 56 H1000" style="fill: none; stroke: #30353f; stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke"></path>
+<path d="{{rsiPath}}" style="fill: none; stroke: #d6d9df; stroke-width: 1.5; vector-effect: non-scaling-stroke"></path>
+</svg>
+<span style="position: absolute; left: 6px; top: 2px; font-size: 11px; color: #8b919c">RSI 14</span>
+<span style="position: absolute; right: -56px; width: 50px; top: 30%; transform: translateY(-50%); font-size: 11px; color: #8b919c">70</span>
+<span style="position: absolute; right: -56px; width: 50px; top: 70%; transform: translateY(-50%); font-size: 11px; color: #8b919c">30</span>
+</div>
+
+<div style="position: relative; flex: 0 0 18px; margin-right: 56px">
+<sc-for list="{{xTicks}}" as="t" hint-placeholder-count="7">
+<span style="position: absolute; top: 0; left: {{t.left}}; font-size: 11px; color: #8b919c">{{t.label}}</span>
+</sc-for>
+</div>
+</section>
+
+<aside aria-label="Linked ticket, drawings and range template" style="flex: 1 1 280px; min-width: 0; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 6px">
+
+<section style="background: #161920; border: 1px solid #30353f; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">Linked ticket</h2>
+<span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid #30353f; border-radius: 999px; font-size: 12px; color: #d6d9df">{{ticketName}}</span>
+</div>
+<div style="font-size: 12px; color: #8b919c">SPY &#183; 31 Dec 2026 &#183; 41 DTE</div>
+<div>
+<sc-for list="{{legs}}" as="l" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 36px 64px 48px minmax(0, 1fr) 56px; align-items: center; height: 24px; border-bottom: 1px solid #262a33">
+<span style="font-weight: 600; color: {{l.sideColor}}">{{l.qty}}</span><span style="color: #8b919c">31 Dec</span><span style="font-weight: 600">{{l.strike}}</span><span style="color: {{l.typeColor}}">{{l.type}}</span><span style="text-align: right">{{l.mid}}</span>
+</div>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<div style="padding: 6px 8px; background: #0f1115; border: 1px solid #262a33; border-radius: 4px"><div style="font-size: 11px; color: #8b919c">Credit</div><div style="font-weight: 600; color: #26a69a">{{credit}}</div></div>
+<div style="padding: 6px 8px; background: #0f1115; border: 1px solid #262a33; border-radius: 4px"><div style="font-size: 11px; color: #8b919c">POP, replica</div><div style="font-weight: 600">{{pop}}</div></div>
+<div style="padding: 6px 8px; background: #0f1115; border: 1px solid #262a33; border-radius: 4px"><div style="font-size: 11px; color: #8b919c">Max profit</div><div style="font-weight: 600; color: #26a69a">{{maxProfit}}</div></div>
+<div style="padding: 6px 8px; background: #0f1115; border: 1px solid #262a33; border-radius: 4px"><div style="font-size: 11px; color: #8b919c">Max loss</div><div style="font-weight: 600; color: #ef5350">{{maxLoss}}</div></div>
+</div>
+<a href="Main.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; box-sizing: border-box; color: #d6d9df; background: #0f1115; border: 1px solid #30353f; border-radius: 4px; text-decoration: none">Open in workbench</a>
+</section>
+
+<section style="background: #161920; border: 1px solid #30353f; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: baseline; gap: 8px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">Drawings</h2>
+<span style="font-size: 12px; color: #8b919c">saved for SPY</span>
+</div>
+<div style="display: flex; justify-content: space-between; gap: 8px; height: 24px; align-items: center; border-bottom: 1px solid #262a33"><span>Level</span><span style="color: #8b919c">700.00</span></div>
+<div style="display: flex; justify-content: space-between; gap: 8px; height: 24px; align-items: center; border-bottom: 1px solid #262a33"><span>Trendline</span><span style="color: #8b919c">{{trendLabel}}</span></div>
+<div style="display: flex; justify-content: space-between; gap: 8px; height: 24px; align-items: center; border-bottom: 1px solid #262a33"><span>Ruler</span><span style="color: #8b919c">{{rulerLabel}}</span></div>
+<div style="display: flex; justify-content: space-between; gap: 8px; height: 24px; align-items: center; border-bottom: 1px solid #262a33"><span>Marker</span><span style="color: #8b919c">{{markerLabel}}</span></div>
+</section>
+
+<section style="background: #161920; border: 1px solid #30353f; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+<div style="position: relative; display: flex; align-items: center; gap: 8px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">Range template</h2>
+<span style="flex-grow: 1"></span>
+<button type="button" onClick="{{ toggleRngInfo }}" aria-expanded="{{ rngInfoOpen }}" aria-label="What a range template does" style="flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: {{rngInfoFg}}; background: {{rngInfoBg}}; border: 1px solid #30353f; border-radius: 50%; cursor: pointer">i</button>
+<sc-if value="{{ rngInfoOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; top: 100%; right: 0; z-index: 20; display: flex; flex-direction: column; gap: 6px; width: 250px; max-width: 92%; box-sizing: border-box; margin-top: 4px; padding: 10px 12px; font-size: 12px; font-weight: 400; color: #d6d9df; background: #1c2029; border: 1px solid #60a5fa; border-radius: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.55)">
+<div style="color: #8b919c">A template marks a part of the day, for example the opening range, with horizontal lines, and its critical moments with vertical lines.</div>
+<div style="color: #8b919c">They are drawn on intraday resolutions only.</div>
+</div>
+</sc-if>
+</div>
+<div style="display: flex; justify-content: space-between; gap: 8px; align-items: center"><span>Opening range, first 30 min</span><span style="color: #8b919c">15 min only</span></div>
+</section>
+
+</aside>
+</main>
+
+<footer style="display: flex; flex-wrap: wrap; align-items: center; gap: 20px; min-height: 24px; padding: 2px 10px; font-size: 12px; color: #8b919c; background: #161920; border-top: 1px solid #30353f">
+<span><span style="display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #26a69a"></span>Stream connected</span>
+<span>Daily candles from the broker, times in ET</span>
+<span style="flex-grow: 1"></span>
+<span>Read-only: no orders are sent</span>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  ncdf(x) {
+    var t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+    var y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x / 2);
+    return x >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y);
+  }
+  px(S, K, T, sig, isCall) {
+    var st = sig * Math.sqrt(T);
+    var d1 = (Math.log(S / K) + (0.0293 + sig * sig / 2) * T) / st;
+    var d2 = d1 - st;
+    var df = Math.exp(-0.0293 * T);
+    if (isCall) {
+      return S * this.ncdf(d1) - K * df * this.ncdf(d2);
+    }
+    return K * df * this.ncdf(-d2) - S * this.ncdf(-d1);
+  }
+  smile(K) {
+    var k = Math.log(K / 715.4);
+    return Math.max(0.11, 0.193 - 0.8 * k + 2.0 * k * k);
+  }
+  usd(x) {
+    var a = Math.round(Math.abs(x)).toLocaleString('en-US');
+    return (x < 0 ? '−$' : '$') + a;
+  }
+  dayMon(d) {
+    var mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return d.getUTCDate() + ' ' + mo[d.getUTCMonth()];
+  }
+  build(kind) {
+    var self = this;
+    var S = 715.4;
+    var T = 41 / 365;
+    var NH = 320;
+    var NV = 110;
+    var FUT = 29;
+    var PAD = 9;
+    var N = NV + FUT + PAD;
+    var H = 470;
+    var DAY = 86400000;
+
+    var defs = kind === 'strangle' ? [
+      { q: -1, K: 670, call: false },
+      { q: -1, K: 750, call: true }
+    ] : [
+      { q: 1, K: 660, call: false },
+      { q: -1, K: 670, call: false },
+      { q: -1, K: 750, call: true },
+      { q: 1, K: 760, call: true }
+    ];
+    var credit = 0;
+    var legs = defs.map(function (l) {
+      var mid = Math.round(self.px(S, l.K, T, self.smile(l.K), l.call) * 100) / 100;
+      credit -= l.q * mid;
+      return { q: l.q, K: l.K, call: l.call, mid: mid };
+    });
+    credit = Math.round(credit * 100) / 100;
+    var maxProfit = credit * 100;
+    var maxLoss = kind === 'strangle' ? null : (10 - credit) * 100;
+    var beLo = 670 - credit;
+    var beHi = 750 + credit;
+    var sigE = 0.193;
+    var above = function (K) {
+      return self.ncdf((Math.log(S / K) + (0.0293 - sigE * sigE / 2) * T) / (sigE * Math.sqrt(T)));
+    };
+    var pop = above(beLo) - above(beHi);
+
+    var seed = 7;
+    var rnd = function () {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return (seed + 0.5) / 4294967296;
+    };
+    var gauss = function () {
+      return Math.sqrt(-2 * Math.log(rnd())) * Math.cos(2 * Math.PI * rnd());
+    };
+    var noise = [];
+    for (var a = 0; a < NH; a++) {
+      noise.push(gauss());
+    }
+    var g = function (i) {
+      return 0.0008 * i + 0.035 * Math.sin(i / 11) + 0.018 * Math.sin(i / 4.3 + 1) + 0.006 * noise[i];
+    };
+    var gl = g(NH - 1);
+    var cl = [];
+    var op = [];
+    var hi = [];
+    var lo = [];
+    var vol = [];
+    for (var i = 0; i < NH; i++) {
+      var c = S * Math.exp(g(i) - gl);
+      var o = i > 0 ? cl[i - 1] * (1 + 0.002 * gauss()) : c * 0.998;
+      cl.push(c);
+      op.push(o);
+      hi.push(Math.max(o, c) * (1 + 0.004 * Math.abs(gauss())));
+      lo.push(Math.min(o, c) * (1 - 0.004 * Math.abs(gauss())));
+      vol.push(55 + 35 * Math.abs(gauss()));
+    }
+    var sma = function (n) {
+      var out = [];
+      var sum = 0;
+      for (var i = 0; i < NH; i++) {
+        sum += cl[i];
+        if (i >= n) {
+          sum -= cl[i - n];
+        }
+        out.push(i >= n - 1 ? sum / n : null);
+      }
+      return out;
+    };
+    var rsi = [];
+    var ag = 0;
+    var al = 0;
+    for (var r = 0; r < NH; r++) {
+      if (r === 0) {
+        rsi.push(null);
+        continue;
+      }
+      var ch = cl[r] - cl[r - 1];
+      var up = Math.max(ch, 0);
+      var dn = Math.max(-ch, 0);
+      if (r <= 14) {
+        ag += up / 14;
+        al += dn / 14;
+      } else {
+        ag = (ag * 13 + up) / 14;
+        al = (al * 13 + dn) / 14;
+      }
+      rsi.push(r >= 14 ? 100 - 100 / (1 + ag / Math.max(al, 1e-9)) : null);
+    }
+
+    var base = NH - NV;
+    var dates = [];
+    var d = new Date(Date.UTC(2026, 10, 20));
+    while (dates.length < NV) {
+      var wd = d.getUTCDay();
+      if (wd !== 0 && wd !== 6) {
+        dates.unshift(new Date(d.getTime()));
+      }
+      d = new Date(d.getTime() - DAY);
+    }
+    var today = Date.UTC(2026, 10, 20);
+    var f = new Date(today + DAY);
+    while (dates.length < N) {
+      var wf = f.getUTCDay();
+      if (wf !== 0 && wf !== 6) {
+        dates.push(new Date(f.getTime()));
+      }
+      f = new Date(f.getTime() + DAY);
+    }
+
+    var pLo = 650;
+    var pHi = 770;
+    for (var v = 0; v < NV; v++) {
+      pLo = Math.min(pLo, lo[base + v]);
+      pHi = Math.max(pHi, hi[base + v]);
+    }
+    var yMin = Math.floor(pLo / 10) * 10 - 20;
+    var yMax = Math.ceil(pHi / 10) * 10 + 10;
+    var slot = 1000 / N;
+    var X = function (s) { return (s + 0.5) * slot; };
+    var Y = function (p) { return (yMax - p) / (yMax - yMin) * H; };
+    var topPct = function (p) { return (Y(p) / H * 100).toFixed(2) + '%'; };
+    var leftPct = function (x) { return (x / 10).toFixed(2) + '%'; };
+    var n1 = function (x) { return x.toFixed(1); };
+
+    var wickUp = '';
+    var wickDn = '';
+    var bodyUp = '';
+    var bodyDn = '';
+    var volUp = '';
+    var volDn = '';
+    var w = slot * 0.32;
+    for (var s = 0; s < NV; s++) {
+      var k = base + s;
+      var x = X(s);
+      var isUp = cl[k] >= op[k];
+      var yt = Y(Math.max(op[k], cl[k]));
+      var yb = Math.max(Y(Math.min(op[k], cl[k])), yt + 1);
+      var wick = 'M' + n1(x) + ' ' + n1(Y(hi[k])) + ' V' + n1(Y(lo[k])) + ' ';
+      var body = 'M' + n1(x - w) + ' ' + n1(yt) + ' H' + n1(x + w) + ' V' + n1(yb) + ' H' + n1(x - w) + ' Z ';
+      var vh = vol[k] / 170 * 80;
+      var vb = 'M' + n1(x - w) + ' ' + H + ' V' + n1(H - vh) + ' H' + n1(x + w) + ' V' + H + ' Z ';
+      if (isUp) {
+        wickUp += wick;
+        bodyUp += body;
+        volUp += vb;
+      } else {
+        wickDn += wick;
+        bodyDn += body;
+        volDn += vb;
+      }
+    }
+    var linePath = function (arr, yf) {
+      var p = '';
+      for (var s = 0; s < NV; s++) {
+        var val = arr[base + s];
+        if (val == null) {
+          continue;
+        }
+        p += (p === '' ? 'M' : ' L') + n1(X(s)) + ' ' + n1(yf(val));
+      }
+      return p;
+    };
+    var rsiY = function (val) { return (100 - val) / 100 * 80; };
+
+    var last = NV - 1;
+    var exp = last + FUT;
+    var conePath = 'M' + n1(X(last)) + ' ' + n1(Y(S));
+    var lower = [];
+    for (var j = 1; j <= FUT; j++) {
+      var t = (dates[last + j].getTime() - today) / DAY / 365;
+      var mv = sigE * Math.sqrt(t);
+      conePath += ' L' + n1(X(last + j)) + ' ' + n1(Y(S * Math.exp(mv)));
+      lower.push(' L' + n1(X(last + j)) + ' ' + n1(Y(S * Math.exp(-mv))));
+    }
+    for (var q = lower.length - 1; q >= 0; q--) {
+      conePath += lower[q];
+    }
+    conePath += ' Z';
+
+    var seg = function (p) { return 'M' + n1(X(last)) + ' ' + n1(Y(p)) + ' H1000 '; };
+    var shortPath = '';
+    var longPath = '';
+    var strikeLabels = legs.map(function (l) {
+      if (l.q < 0) {
+        shortPath += seg(l.K);
+      } else {
+        longPath += seg(l.K);
+      }
+      return {
+        left: leftPct(X(last + 1)),
+        top: topPct(l.K),
+        label: (l.q > 0 ? '+1 ' : '−1 ') + (l.call ? 'C ' : 'P ') + l.K,
+        color: l.call ? '#4dabf7' : '#da77f2'
+      };
+    });
+    var bePath = seg(beLo) + seg(beHi);
+
+    var xB = X(exp + 5);
+    var payoff = function (p) {
+      var pl = credit;
+      for (var b = 0; b < legs.length; b++) {
+        pl += legs[b].q * (legs[b].call ? Math.max(p - legs[b].K, 0) : Math.max(legs[b].K - p, 0));
+      }
+      return pl * 100;
+    };
+    // the price scale is the range control here: the profile is scaled to what is in view
+    var maxAbs = 1;
+    for (var pp = yMin; pp <= yMax; pp += 1) {
+      maxAbs = Math.max(maxAbs, Math.abs(payoff(pp)));
+    }
+    var scale = 4 * slot / maxAbs;
+    var profLine = '';
+    var profArea = 'M' + n1(xB) + ' ' + n1(Y(yMin));
+    var lossArea = profArea;
+    for (var p = yMin; p <= yMax; p += 1) {
+      var pl = payoff(p);
+      var yy = n1(Y(p));
+      profLine += (profLine === '' ? 'M' : ' L') + n1(xB + pl * scale) + ' ' + yy;
+      profArea += ' L' + n1(xB + Math.max(pl, 0) * scale) + ' ' + yy;
+      lossArea += ' L' + n1(xB + Math.min(pl, 0) * scale) + ' ' + yy;
+    }
+    profArea += ' L' + n1(xB) + ' ' + n1(Y(yMax)) + ' Z';
+    lossArea += ' L' + n1(xB) + ' ' + n1(Y(yMax)) + ' Z';
+
+    var gridPath = '';
+    var yTicks = [];
+    for (var tk = Math.ceil(yMin / 20) * 20; tk <= yMax; tk += 20) {
+      gridPath += 'M0 ' + n1(Y(tk)) + ' H1000 ';
+      yTicks.push({ label: String(tk), top: topPct(tk) });
+    }
+    var xTicks = [];
+    var mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    for (var e = 1; e < N; e++) {
+      if (dates[e].getUTCMonth() !== dates[e - 1].getUTCMonth()) {
+        xTicks.push({ label: mo[dates[e].getUTCMonth()], left: leftPct(X(e)) });
+      }
+    }
+
+    var t1 = 30;
+    var t2 = 70;
+    var slope = (lo[base + t2] - lo[base + t1]) / (t2 - t1);
+    var tEnd = last + 12;
+    var trendPath = 'M' + n1(X(t1)) + ' ' + n1(Y(lo[base + t1])) + ' L' + n1(X(tEnd)) + ' ' + n1(Y(lo[base + t1] + slope * (tEnd - t1)));
+    var r1 = 58;
+    var r2 = 92;
+    var p1 = cl[base + r1];
+    var p2 = cl[base + r2];
+    var rulerBox = 'M' + n1(X(r1)) + ' ' + n1(Y(p1)) + ' H' + n1(X(r2)) + ' V' + n1(Y(p2)) + ' H' + n1(X(r1)) + ' Z';
+    var rulerLine = 'M' + n1(X(r1)) + ' ' + n1(Y(p1)) + ' L' + n1(X(r2)) + ' ' + n1(Y(p2));
+    var chg = (p2 / p1 - 1) * 100;
+    var pts = p2 - p1;
+    var sign = chg >= 0 ? '+' : '−';
+    var mk = 45;
+
+    var out = {};
+    out.spot = S.toFixed(2);
+    out.credit = credit.toFixed(2) + ' cr';
+    out.maxProfit = self.usd(maxProfit);
+    out.maxLoss = maxLoss === null ? 'Unlimited' : self.usd(-maxLoss);
+    out.ticketName = kind === 'strangle' ? 'Short strangle' : 'Iron condor';
+    out.pop = Math.round(pop * 100) + '%';
+    out.legs = legs.map(function (l) {
+      return {
+        qty: (l.q > 0 ? '+' : '−') + '1',
+        side: l.q > 0 ? 'Buy' : 'Sell',
+        sideColor: l.q > 0 ? '#26a69a' : '#ef5350',
+        strike: String(l.K),
+        type: l.call ? 'Call' : 'Put',
+        typeColor: l.call ? '#4dabf7' : '#da77f2',
+        mid: l.mid.toFixed(2)
+      };
+    });
+    out.gridPath = gridPath;
+    out.futX = n1(X(last) + slot / 2);
+    out.futW = n1(1000 - X(last) - slot / 2);
+    out.conePath = conePath;
+    out.sma15 = linePath(sma(15), Y);
+    out.sma50 = linePath(sma(50), Y);
+    out.sma100 = linePath(sma(100), Y);
+    out.sma200 = linePath(sma(200), Y);
+    out.wickUp = wickUp;
+    out.wickDn = wickDn;
+    out.bodyUp = bodyUp;
+    out.bodyDn = bodyDn;
+    out.volUp = volUp;
+    out.volDn = volDn;
+    out.rsiPath = linePath(rsi, rsiY);
+    out.levelPath = 'M0 ' + n1(Y(700)) + ' H1000';
+    out.levelTop = topPct(700);
+    out.trendPath = trendPath;
+    out.trendLabel = self.dayMon(dates[t1]) + ' to ' + self.dayMon(dates[t2]);
+    out.markerPath = 'M' + n1(X(mk)) + ' 0 V' + H;
+    out.markerLeft = leftPct(X(mk));
+    out.markerLabel = self.dayMon(dates[mk]);
+    out.rulerBox = rulerBox;
+    out.rulerLine = rulerLine;
+    out.rulerLeft = leftPct((X(r1) + X(r2)) / 2);
+    out.rulerTop = topPct(Math.max(p1, p2));
+    out.rulerLabel = sign + Math.abs(chg).toFixed(1) + '%, ' + sign + Math.abs(pts).toFixed(2) + ', ' + (r2 - r1) + ' bars';
+    out.expiryPath = 'M' + n1(X(exp)) + ' 0 V' + H;
+    out.expiryLeft = leftPct(X(exp) - 3);
+    out.shortPath = shortPath;
+    out.longPath = longPath;
+    out.bePath = bePath;
+    out.strikeLabels = strikeLabels;
+    out.profLine = profLine;
+    out.profArea = profArea;
+    out.lossArea = lossArea;
+    out.profBase = 'M' + n1(xB) + ' 0 V' + H;
+    out.profLeft = leftPct(xB);
+    out.yTicks = yTicks;
+    out.xTicks = xTicks;
+    out.spotTop = topPct(S);
+    return out;
+  }
+  renderVals() {
+    var self = this;
+    var st = this.state || {};
+    var kind = 'condor';
+    if (!this.ms) {
+      this.ms = {};
+    }
+    if (!this.ms[kind]) {
+      this.ms[kind] = this.build(kind);
+    }
+    var m = this.ms[kind];
+    var out = {};
+    for (var k in m) {
+      out[k] = m[k];
+    }
+    var layer = function (key, label, sw) {
+      var on = st[key] !== false;
+      return {
+        on: on,
+        sw: on ? sw : 'transparent',
+        swLine: on ? sw : '#8b919c',
+        label: label,
+        fg: on ? '#d6d9df' : '#8b919c',
+        line: on ? 'solid' : 'dashed',
+        check: on ? '#60a5fa' : 'transparent',
+        toggle: function () {
+          var next = {};
+          next[key] = !on;
+          self.setState(next);
+        }
+      };
+    };
+    var strikes = layer('strikes', 'Strikes', '#ef5350');
+    var be = layer('be', 'Breakevens', '#ffd54f');
+    var range = layer('range', 'Expected range, IV 19.3%', '#60a5fa');
+    var profile = layer('profile', 'Payoff at expiry', '#d6d9df');
+    if (!strikes.on) {
+      out.shortPath = '';
+      out.longPath = '';
+      out.strikeLabels = [];
+    }
+    if (!be.on) {
+      out.bePath = '';
+    }
+    if (!range.on) {
+      out.conePath = '';
+    }
+    if (!profile.on) {
+      out.profLine = '';
+      out.profArea = '';
+      out.lossArea = '';
+      out.profBase = '';
+    }
+    out.onProfile = profile.on;
+    var pop = st.pop || '';
+    var info = function (id, name) {
+      out[name + 'Open'] = pop === id;
+      out[name + 'Bg'] = pop === id ? '#60a5fa' : '#0f1115';
+      out[name + 'Fg'] = pop === id ? '#0f1115' : '#8b919c';
+    };
+    info('lay', 'layInfo');
+    info('rng', 'rngInfo');
+    out.toggleLayInfo = function () { self.setState({ pop: pop === 'lay' ? '' : 'lay' }); };
+    out.toggleRngInfo = function () { self.setState({ pop: pop === 'rng' ? '' : 'rng' }); };
+    out.layers = [strikes, be, range, profile];
+    return out;
+  }
+}
+</script>
+</body>
+</html>

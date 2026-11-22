@@ -2,7 +2,7 @@
 
 Status: draft 1, 2026-11-20, updated through 2026-11-22. Working name; the repo is
 `tradertoolbox`. The technical requirements built on this document are in
-`docs/technical_requirements.md`.
+`docs/technical_requirements.md`, and the work packages in `docs/implementation_plan.md`.
 
 ## 1. Purpose
 
