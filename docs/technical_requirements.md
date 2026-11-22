@@ -63,7 +63,7 @@ policy is under QA-07).
 | Price chart | Lightweight Charts 5.3.0 with `lightweight-charts-drawing` 0.11.1, both pinned and wrapped behind an own interface | Charting note, sections 10 and 11 (prototype) |
 | Other charts | ECharts: payoff, skew, term structure, histograms | Architecture note, section 7 |
 | Chain grid | Written new, on a virtual-row library | Same |
-| Backend tools | ruff (lint and format), pyright, pytest, hypothesis, pip-licenses | Architecture note, section 8 |
+| Backend tools | ruff (lint and format), pyright, pytest, hypothesis, pip-licenses; mpmath for the pricing cross-check (proposed 2026-11-22, WP-0.2) | Architecture note, section 8 |
 | Frontend tools | vitest, Playwright (Chromium, Firefox, WebKit), openapi-typescript, svelte-check, license-checker-rseidelsohn | Same; the prototype |
 
 Not chosen yet: the library for GARCH fitting (stage b of the probabilities), and the reverse
@@ -169,6 +169,27 @@ The conventions are those of the product definition, section 11.1.
 | PRC-11 | Buying power is a Reg-T estimate from the margin model taken from `backtester`, labelled as an estimate. | R1 | T |
 | PRC-12 | A platform mode holds the conventions of the Tastytrade replicas and is used by nothing else. | R1 | T |
 | PRC-13 | Own Greeks are used everywhere; the broker's are a cross-check and the fallback when the own inversion fails, and a fallback value is marked. | R1 | T |
+
+Proposed in WP-0.2 (2026-11-22), not yet confirmed by the owner:
+
+- **Discrete dividends (PRC-02)** use `volcalc`'s escrowed model: F = (S − PV(div)) e^{rτ},
+  priced with Black-76 on that forward. The spot Greeks follow by the chain rule and hold the
+  spot fixed while time passes. The Black-76 Greeks hold the forward fixed. One rate discounts
+  the strike and the dividends.
+- **Raw units (PRC-04).** Values are per unit of the underlying. Theta and charm are per year of
+  the calendar clock. Vega, vanna and volga are per unit of σ, rho per unit of r. The list is in
+  `s3t/pricing/__init__.py`.
+- **Trader units (PRC-04)**, in `s3t/analysis/units.py`. Everything is per position: multiplier
+  times signed quantity. Value in dollars; delta in share equivalents; gamma per one-dollar
+  move; theta and charm per calendar day; vega, vanna and rho per point; volga per volatility
+  point squared.
+- **PRC-01 and logging.** The standard-library logger is allowed in `pricing`. It does no I/O
+  without a handler, and only the application attaches one.
+- **The rate download is not in `pricing`.** The FRED download and the stored rate history
+  belong to `refdata` (WP-0.6, REF-01). The extraction table of the architecture note puts the
+  download with the rate curve, which PRC-01 does not allow.
+- **The independent cross-check (QA-01, plan 3.4)** is mpmath at 40 digits, a development
+  dependency. It replaces `volcalc`'s py-vollib, which brings numba and pandas.
 
 ### 4.7 Probability and risk
 
@@ -400,7 +421,8 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
   PSF-2.0, with the metadata spellings Python packages use for them.
 - Allowed, proposed 2026-11-22 (found at set-up, not yet confirmed): Python-2.0 (the PSF
   licence under another identifier), BlueOak-1.0.0 (a permissive licence; 12 npm development
-  packages) and CC0-1.0 (a public-domain dedication).
+  packages) and CC0-1.0 (a public-domain dedication). numpy, added in WP-0.2, needs CC0-1.0:
+  its expression is `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0`.
 - Named exceptions, each for the licence exactly as reported, so a change of licence ends the
   exception:
 

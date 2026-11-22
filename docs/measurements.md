@@ -20,3 +20,8 @@ implementation plan section 1; QA-08). Results from the research notes stay in t
 |---|---|---|---|---|---|
 
 No measurements yet. WP-0.1 has no performance requirement and took no timings.
+
+WP-0.2 has no performance requirement and took no timings. The throughput of IV inversion is
+measured with the stream reader at WP-0.9 (plan, section 7). The pricing agreement figures of
+WP-0.2 are accuracy results, not timings. They are in the tests:
+`tests/pricing/test_reference.py` and `test_greeks_mpmath.py`.
