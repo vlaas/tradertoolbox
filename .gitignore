@@ -1,0 +1,5 @@
+# secrets and local files: never commit
+.env
+.env.*
+.DS_Store
+node_modules/
