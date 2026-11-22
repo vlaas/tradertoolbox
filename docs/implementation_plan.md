@@ -233,6 +233,8 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   `status` and in the health route; the tier declaration that hides or marks features
   (GEN-04); the choice of the live or the fake broker in the configuration, with the mark of
   GEN-11 in `status`.
+- *Decide here:* whether pyright's strict mode applies to `api` (requirements, section 3,
+  linting).
 - *Done when:* the security tests of 3.6 for routes and the WebSocket pass, and a client that
   reconnects gets fresh snapshots.
 - *Closes:* API-01 to API-05, API-08, SEC-01 to SEC-03, SEC-06 to SEC-08, GEN-04, GEN-05
@@ -245,7 +247,7 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   the WebSocket client module and one store per topic; the login screen; the design tokens;
   a status screen showing connection, subscription use and a live quote list; the REST state
   of BRK-09 in the status bar; the "SYNTHETIC DATA" mark of GEN-11 in the status bar and
-  every screen header.
+  every screen header; a Prettier check with its Svelte plugin in `make check`, added first.
 - *Done when:* a quote changed in the fake broker appears in the browser, the connection
   loss is shown and recovered from, in three browsers.
 - *Closes:* UI-03, UI-05, BRK-09 and GEN-11 (shown); the base for UI-01, UI-04, UI-08 and
@@ -277,7 +279,9 @@ WP-0.9 closes the release.
 **WP-1.2 Chain service** (M)
 - *Build:* the chain view by expiration and strike window; own IV and Greeks per flush as one
   array call; expected move per expiration; earnings and ex-dividend dates; index handling;
-  stale marks; the grace period for closed views; the `chain` topic and the Arrow snapshot.
+  stale marks; the grace period for closed views; the `chain` topic and the Arrow snapshot;
+  Greeks in trader units per contract (requirements 4.6); a limit on the repeats of the IV
+  solver's warning, which it logs on every flush (requirements 4.6, logging).
 - *Measure:* PRF-03 on the synthetic market and on a local recording.
 - *Closes:* MKT-04 to MKT-06, REF-03, SUB-04, SUB-05, API-06, PRC-13, PRF-03.
 
@@ -340,7 +344,7 @@ WP-0.9 closes the release.
 **WP-1.9 R1 acceptance** (M)
 - *Do:* the OptionStrat checklist over the named structures; the end-to-end suite in three
   browsers; the layout assertions; the PRF measurements of R1 on an idle machine; a trial on
-  a trading day with the real broker.
+  a trading day with the real broker; the chain's Greek units against Tastytrade's chain.
 - *Write:* `docs/acceptance/R1.md` with inputs, results and the differences found.
 - *Closes:* WB-11, QA-03, QA-06 (R1).
 
@@ -399,9 +403,14 @@ Found but not planned into a package yet.
 - The studies of the product definition, section 11.2.
 - An American pricer for in-the-money values of stock and ETF options.
 - From WP-0.1 (2026-11-22):
-  - The owner has not yet confirmed the set-up proposals in requirements section 3 (version
-    rule, linting, committed generated code, configuration, the package name `s3t`) or the
-    licence additions and exceptions marked "proposed" under QA-07.
+  - The set-up proposals (requirements section 3) and the licence additions and exceptions
+    under QA-07 were decided with the owner on 2026-11-22. `make audit` was added the same day.
+  - The two npm audit exceptions (glob, minimatch) are revisited when
+    license-checker-rseidelsohn 6 is stable (only a release candidate on 2026-11-22).
+  - The fallback, if more advisories pile up on the npm licence checker: drop it, and let
+    `backend/tools/licences.py` read the licence fields from `frontend/node_modules` itself.
+    It already applies the policy and uses the checker only to collect. Packages that state
+    their licence only in a LICENSE file then fail, and each needs a named exception.
   - Move to TypeScript 7 when svelte-check and openapi-typescript support it.
   - Upgrade Playwright together with the chart prototype and the backtester viewer.
   - In TypeScript, int64 fields arrive as `bigint`. Choose per field, when the wire messages
@@ -414,9 +423,8 @@ Found but not planned into a package yet.
     same major version and no older. `uv.lock` keeps the two together. A `grpcio-tools`
     upgrade means `make gen`.
 - From WP-0.2 (2026-11-22):
-  - The owner has not yet confirmed the proposals under the pricing core in the requirements
-    (4.6): the escrowed dividend model, the raw and trader units, logging in `pricing`, mpmath
-    as the cross-check. numpy's licence passes only with the proposed CC0-1.0 allowance (QA-07).
+  - The proposals under the pricing core (requirements 4.6) and the CC0-1.0 allowance that
+    numpy needs (QA-07) were decided with the owner on 2026-11-22.
   - REF-05 is closed for the clock. Which instant a contract settles at (PM or AM settlement,
     early closes) is still to be taken from the broker's `expires-at` and settlement type and
     the calendar: WP-0.5 with WP-0.6.
@@ -434,8 +442,7 @@ Found but not planned into a package yet.
     scipy upgrade can break that; `tests/pricing/test_reference.py` says what to do then.
 - From WP-0.3 (2026-11-22):
   - The proposals of the broker package were reviewed with the owner on 2026-11-22 and
-    decided (requirements, section 3; the certifi exception under QA-07). Two remain
-    proposals: the field list of the REST state (BRK-09) and the replay mark (GEN-11).
+    decided (requirements, section 3; the certifi exception under QA-07).
   - BRK-09 was added in the review of the proposals (2026-11-22). The client gives the data
     (`rest_status()`). WP-0.7 publishes it and WP-0.8 shows it in the status bar. How the
     status bar lays it out is open: a mock-up change, or a proposal at WP-0.8.
@@ -471,7 +478,7 @@ Found but not planned into a package yet.
     commit.
   - GEN-11 was added in the review of the proposals (2026-11-22). WP-0.7 adds the broker
     choice to the configuration and the mark to `status`; WP-0.8 shows it; R4 puts it in the
-    MCP results. The same mark for the replay broker is a proposal (requirements, section 3).
+    MCP results. WP-0.4 gives the replay broker the recording's date for its "REPLAY" mark.
   - R5, when several accounts are read: account numbers may be shown with their last two
     digits, as in Tastytrade's privacy mode (the owner's suggestion, 2026-11-22), beside the
     nicknames of GEN-03.

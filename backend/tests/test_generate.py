@@ -45,3 +45,14 @@ def test_owned_trees_exist_and_are_separate() -> None:
     for a in OWNED:
         for b in OWNED:
             assert a == b or not a.is_relative_to(b)
+
+
+def test_generated_trees_are_listed() -> None:
+    """The root .gitattributes lists exactly the trees the script owns."""
+    listed = set()
+    for line in (REPO / ".gitattributes").read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and not line.startswith("#") and "linguist-generated=true" in parts:
+            assert parts[0].endswith("/**"), parts[0]
+            listed.add(Path(parts[0].removesuffix("/**")))
+    assert listed == set(OWNED)

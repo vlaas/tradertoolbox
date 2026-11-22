@@ -63,25 +63,60 @@ policy is under QA-07).
 | Price chart | Lightweight Charts 5.3.0 with `lightweight-charts-drawing` 0.11.1, both pinned and wrapped behind an own interface | Charting note, sections 10 and 11 (prototype) |
 | Other charts | ECharts: payoff, skew, term structure, histograms | Architecture note, section 7 |
 | Chain grid | Written new, on a virtual-row library | Same |
-| Backend tools | ruff (lint and format), pyright, pytest, hypothesis, pip-licenses; mpmath for the pricing cross-check (proposed 2026-11-22, WP-0.2) | Architecture note, section 8 |
+| Backend tools | ruff (lint and format), pyright, pytest, hypothesis, pip-licenses, pip-audit; mpmath for the pricing cross-check (decided 2026-11-22, WP-0.2) | Architecture note, section 8 |
 | Frontend tools | vitest, Playwright (Chromium, Firefox, WebKit), openapi-typescript, svelte-check, license-checker-rseidelsohn | Same; the prototype |
 
 Not chosen yet: the library for GARCH fitting (stage b of the probabilities), and the reverse
 proxy for TLS at the phone step.
 
-Proposed at set-up (WP-0.1, 2026-11-22), not yet confirmed by the owner:
+Set-up (WP-0.1). Decided 2026-11-22:
 
-- **Version rule.** Exact pins of the newest stable release that is at least two weeks old.
-  Two exceptions: TypeScript stays on 5.9, because svelte-check and openapi-typescript do not
-  support TypeScript 7 (the current stable release). Playwright stays on 1.64, the version of
-  the chart prototype and the backtester viewer, so one set of browsers serves all three.
-- **Linting.** Python: `ruff check` and `ruff format --check`; pyright in its standard mode,
-  as `volcalc` uses, so that ported code passes unchanged. Frontend: `svelte-check
-  --fail-on-warnings` and strict TypeScript settings. ESLint and Prettier are not used.
-- **Generated code is committed.** `make check` regenerates it into a temporary directory and
-  fails on any stale, missing or orphaned file (QA-05).
+- **Version rule.**
+  - Direct dependencies are pinned exactly. The versions are chosen to work together; they
+    need not be the newest.
+  - No package, direct or indirect, is younger than two weeks when the lock is made.
+    `[tool.uv] exclude-newer = "14 days"` in `backend/pyproject.toml` and
+    `min-release-age=14` in `frontend/.npmrc` apply this to the whole lock (tested
+    2026-11-22: a lock made a week earlier still passes `uv sync --locked`). An urgent fix
+    that is newer needs a named exception for that one package.
+  - An older version is acceptable while it is maintained and has no known exploitable
+    vulnerability. A version that becomes very stale is a signal to plan a change, not a
+    fault in itself.
+  - Two exceptions: TypeScript stays on 5.9, because svelte-check and openapi-typescript do
+    not support TypeScript 7. Playwright stays on 1.64, the version of the chart prototype
+    and the backtester viewer, so one set of browsers serves all three. Both are in plan
+    section 8, to be revisited when the tools allow.
+  - The npm lock is re-resolved without `node_modules`. Otherwise npm writes it from the
+    installed tree and drops the packages of the other platforms (seen 2026-11-22).
+- **Vulnerability audit.** `make audit` (`backend/tools/audit.py`) checks every package of
+  both lock files: pip-audit over `uv.lock`, `npm audit` over `package-lock.json`. It needs
+  the network, so it is not part of `make check`. It runs before a commit that changes
+  dependencies, and at each release acceptance. A known vulnerability judged not exploitable
+  here is a named exception by advisory, with its reason, printed on every run; any other
+  advisory fails the audit. First run 2026-11-22: Python clean. npm had two moderate
+  advisories, both inside the licence checker only, a development tool: GHSA-3g3m-2fjr-6pw4
+  (glob) and GHSA-g3hv-75wg-m249 (minimatch). They are named exceptions. Their fixes need
+  major versions that the checker does not accept yet.
+- **Linting.**
+  - Python: `ruff check` with the families E, F, I, UP, B and ASYNC, and `ruff format
+    --check`. ASYNC had no findings when it was added; it guards the stream reader of WP-0.4.
+    Bandit's S family (17 findings in code and tools, none real) and the style families
+    (RUF, SIM, PT) were measured and left out.
+  - pyright in its standard mode, as `volcalc` uses, so that ported code passes unchanged.
+    Strict mode gave 671 errors (474 in the ported `pricing`, where numpy and scipy are not
+    fully typed). It is reconsidered for `api` at WP-0.7.
+  - Frontend: `svelte-check --fail-on-warnings` and strict TypeScript settings. A Prettier
+    check with its Svelte plugin is added when WP-0.8 starts. No ESLint unless a need shows.
+- **Generated code is committed** (QA-05). `make check` regenerates it into a temporary
+  directory and fails on any stale, missing or orphaned file. The list of generated trees is
+  the root `.gitattributes`, where each is marked `linguist-generated`. A test keeps it equal
+  to the trees `backend/tools/generate.py` owns.
 - **Configuration** is one TOML file (`config/s3t.example.toml` documents it). Strict types;
-  unknown keys are refused. The backend package is named `s3t` until the final name is chosen.
+  unknown keys are refused; errors name the key, never the value.
+- **The package name `s3t` is permanent** as the internal name: the Python package, the
+  `S3T_CONFIG` variable, the configuration file and the frontend package. The final product
+  name, still open, appears only where people see it: the window title, the screens and the
+  documents.
 
 The broker package (WP-0.3). Decided 2026-11-22:
 
@@ -127,17 +162,14 @@ The broker package (WP-0.3). Decided 2026-11-22:
   Its contents are listed in its module docstring and grow with the packages that need more:
   quotes, Greeks and candles at WP-0.4, keys at WP-0.5, holidays at WP-0.6. It uses real
   tickers (SPY, SPX, AAPL, /ES) with invented values, so GEN-11 marks its data.
-
-Proposed 2026-11-22 (WP-0.3), not yet confirmed by the owner:
-
 - **The REST state of BRK-09** as the client gives it (`RestStatus`). The token state is one
   of: none yet, valid, due (inside the 60 s margin), lapsed (expired while nothing was
   called), renewing, refused with its reason. With it come the expiry, the instant from which
   the next call renews, the last renewal and the number of renewals. The limit is shown as
   the configured rate and burst, beside the requests sent in the last 60 s. A 429 shows its
-  hold end and the count of 429 answers so far.
-- **GEN-11 for the replay broker** (WP-0.4). The mark reads "REPLAY", with the date of the
-  recording.
+  hold end and the count of 429 answers so far. In the status bar it may be terse and
+  technical. An information icon explains the numbers where that is needed (product
+  definition 6.3).
 
 ## 4. Requirements
 
@@ -155,7 +187,7 @@ Proposed 2026-11-22 (WP-0.3), not yet confirmed by the owner:
 | GEN-08 | Machine-specific values (listen address, host name, paths to the stores, the T3 location) are configuration, not code. | R0 | R |
 | GEN-09 | The broker is reached through one interface. Everything the application asks of a broker is listed in that interface, so another broker can be judged against it. Broker-specific keys and shapes stay inside the broker module (decided 2026-11-22, section 3). | R0 | R |
 | GEN-10 | All timestamps inside the backend, in the stores and on the wire are UTC instants. Conversion to a zone happens only at display. | R0 | T |
-| GEN-11 | When the backend runs on the fake broker, the app says so everywhere: a permanent "SYNTHETIC DATA" mark in the status bar and in the header of every screen, and in every MCP result. The choice between the live and the fake broker is configuration, live by default, and logged at start. Decided 2026-11-22 (owner, WP-0.3 review). | R0 | T |
+| GEN-11 | When the backend does not run on the live broker, the app says so everywhere: a permanent mark in the status bar and in the header of every screen, and in every MCP result. On the fake broker it reads "SYNTHETIC DATA"; on the replay broker "REPLAY" with the date of the recording. The choice of broker is configuration, live by default, and logged at start. Decided 2026-11-22 (owner, WP-0.3 review). | R0 | T |
 
 ### 4.2 Broker connection
 
@@ -228,26 +260,40 @@ The conventions are those of the product definition, section 11.1.
 | PRC-12 | A platform mode holds the conventions of the Tastytrade replicas and is used by nothing else. | R1 | T |
 | PRC-13 | Own Greeks are used everywhere; the broker's are a cross-check and the fallback when the own inversion fails, and a fallback value is marked. | R1 | T |
 
-Proposed in WP-0.2 (2026-11-22), not yet confirmed by the owner:
+Decided 2026-11-22 (WP-0.2, reviewed with the owner):
 
 - **Discrete dividends (PRC-02)** use `volcalc`'s escrowed model: F = (S − PV(div)) e^{rτ},
-  priced with Black-76 on that forward. The spot Greeks follow by the chain rule and hold the
-  spot fixed while time passes. The Black-76 Greeks hold the forward fixed. One rate discounts
-  the strike and the dividends.
+  priced with Black-76 on that forward. It applies to stock and ETF options wherever the
+  forward is built from the spot and the dividend schedule. A continuous yield was rejected:
+  it is wrong around the ex-dates that fall inside short options. Early exercise waits for
+  the American pricer (plan, section 8).
+- **What the Greeks hold fixed.** The spot Greeks follow by the chain rule and hold the spot
+  fixed while time passes, so theta and charm include the carry, as platforms show them for
+  equity options. The Black-76 Greeks (indexes on the parity forward, futures options) hold
+  the forward fixed.
+- **One rate** discounts the strike and the dividends.
 - **Raw units (PRC-04).** Values are per unit of the underlying. Theta and charm are per year of
   the calendar clock. Vega, vanna and volga are per unit of σ, rho per unit of r. The list is in
   `s3t/pricing/__init__.py`.
-- **Trader units (PRC-04)**, in `s3t/analysis/units.py`. Everything is per position: multiplier
-  times signed quantity. Value in dollars; delta in share equivalents; gamma per one-dollar
-  move; theta and charm per calendar day; vega, vanna and rho per point; volga per volatility
-  point squared.
+- **Trader units per position (PRC-04)**, in `s3t/analysis/units.py`: multiplier times signed
+  quantity. Value in dollars; delta in share equivalents; gamma per one-dollar move; theta
+  and charm per calendar day; vega, vanna and rho per point; volga per volatility point
+  squared. A key without a defined unit is refused.
+- **Trader units per contract**, for the option chain (WP-1.2, WP-1.5): the same conversion
+  with multiplier and quantity 1. Delta as a fraction (0.30); theta per share in dollars a
+  calendar day; vega per share in dollars a vol point. To be checked against Tastytrade's
+  chain at the R1 acceptance (WP-1.9).
 - **PRC-01 and logging.** The standard-library logger is allowed in `pricing`. It does no I/O
-  without a handler, and only the application attaches one.
+  without a handler, and only the application attaches one. The ported solver keeps its
+  three log lines. The service layer that runs it on every flush (WP-1.2) limits a repeated
+  warning.
 - **The rate download is not in `pricing`.** The FRED download and the stored rate history
-  belong to `refdata` (WP-0.6, REF-01). The extraction table of the architecture note puts the
-  download with the rate curve, which PRC-01 does not allow.
+  belong to `refdata` (WP-0.6, REF-01); `pricing` has the conversions and the curve only. The
+  architecture note's extraction table was corrected to match.
 - **The independent cross-check (QA-01, plan 3.4)** is mpmath at 40 digits, a development
-  dependency. It replaces `volcalc`'s py-vollib, which brings numba and pandas.
+  dependency. The reference prices are written fresh in mpmath, and every reference Greek is
+  mpmath's numerical derivative of that price. It replaces `volcalc`'s py-vollib, which brings
+  numba and pandas.
 
 ### 4.7 Probability and risk
 
@@ -476,19 +522,23 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
   allowed; with OR, one part is enough. The collecting tools are not trusted with this: the
   npm checker passes `MIT AND CC-BY-3.0` because one part is allowed.
 - Allowed, decided 2026-11-22: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Zlib and
-  PSF-2.0, with the metadata spellings Python packages use for them.
-- Allowed, proposed 2026-11-22 (found at set-up, not yet confirmed): Python-2.0 (the PSF
-  licence under another identifier), BlueOak-1.0.0 (a permissive licence; 12 npm development
-  packages) and CC0-1.0 (a public-domain dedication). numpy, added in WP-0.2, needs CC0-1.0:
-  its expression is `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0`.
+  PSF-2.0, with the metadata spellings Python packages use for them. Also decided 2026-11-22,
+  found at set-up:
+  - Python-2.0, the PSF licence under another identifier. Used by `argparse`, a
+    development package.
+  - BlueOak-1.0.0, a permissive, OSI-approved licence with a patent grant. Used by 11 npm
+    development packages: glob, minimatch, tar and their relatives.
+  - CC0-1.0, a public-domain dedication. It grants no patent rights. numpy, a runtime
+    dependency, needs it: its expression is `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND
+    CC0-1.0`.
 - Named exceptions, each for the licence exactly as reported, so a change of licence ends the
   exception:
 
 | Package | Licence | Reason | Status |
 |---|---|---|---|
 | hypothesis | MPL-2.0 | Development only, used unmodified | Decided 2026-11-22 |
-| lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Proposed 2026-11-22 |
-| spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only | Proposed 2026-11-22 |
+| lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Decided 2026-11-22 |
+| spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only; not redistributed | Decided 2026-11-22 |
 | certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Decided 2026-11-22 (WP-0.3) |
 
 ## 5. Open points

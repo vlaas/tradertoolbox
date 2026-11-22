@@ -278,7 +278,7 @@ pyright, pytest, hypothesis; Vite and Playwright.
 |---|---|---|
 | `volcalc` `iv/bsm.py`, `black76.py`, `clocks.py` | price, IV, Greeks, clocks | None expected; add vanna, charm, volga |
 | `volcalc` `iv/forward.py` | forward, dividend schedule | Remove the `vrp.config` import; take quote mids |
-| `volcalc` `refdata/rates.py` | rate curve | Keep the FRED download; drop the local parquet merge |
+| `volcalc` `refdata/rates.py` | rate curve | Conversions and the curve only. The FRED download goes to `refdata` (WP-0.6), because PRC-01 allows no I/O in `pricing` (corrected 2026-11-22) |
 | `volcalc` `surface/svi.py`, `ssvi.py`, `fixed_delta.py`, `mfiv.py` | surface, density, model-free IV | Add the three `bt_dataset` items of section 11.1 |
 | `backtester` `lib/expected_move.py`, `broker/margin_model.py` | expected move, margin | Detach from the position book |
 | `tt` payoff functions | payoff, breakevens | Rewrite on arrays; several expiries |

@@ -1,0 +1,10 @@
+# Generated code: the list (requirements, section 3; decided 2026-11-22).
+#
+# Each tree below is owned by backend/tools/generate.py (`make gen`) and replaced whole when
+# it runs. Never edit these files by hand: change the .proto file or the API and run
+# `make gen`. `make check` fails when a committed file is stale, missing or orphaned.
+# linguist-generated folds these files in GitHub diffs. backend/tests/test_generate.py
+# checks that this list equals the script's OWNED trees.
+backend/src/s3t/wire/** linguist-generated=true
+frontend/src/gen/** linguist-generated=true
+proto/fixtures/** linguist-generated=true

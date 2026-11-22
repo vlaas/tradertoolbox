@@ -59,6 +59,7 @@ make gen        # regenerate Protocol Buffers code, OpenAPI schema and types, th
 make check      # ruff, pyright, pytest, svelte-check, tsc, vitest, stale check, licence check
 make e2e        # build the frontend; Playwright in Chromium, Firefox and WebKit
 make licences   # the licence check alone (policy in backend/tools/licences.py)
+make audit      # known vulnerabilities in both lock files; needs the network
 
 # configuration: copy config/s3t.example.toml to config/s3t.toml (git-ignored)
 
@@ -72,9 +73,10 @@ cd prototypes/chart && npm install --ignore-scripts && npx playwright test
 cd docs/mockups && node check_logic.js project/Main.dc.html
 ```
 
-Generated code is committed and owned by `backend/tools/generate.py`. Never edit
-`backend/src/s3t/wire/`, `frontend/src/gen/` or `proto/fixtures/` by hand; change the
-`.proto` file or the API and run `make gen`.
+Generated code is committed and owned by `backend/tools/generate.py`. The list of generated
+trees is the root `.gitattributes`: `backend/src/s3t/wire/`, `frontend/src/gen/`,
+`proto/fixtures/`. Never edit them by hand; change the `.proto` file or the API and run
+`make gen`.
 
 ## Mock-ups
 

@@ -5,6 +5,7 @@
 #   make check     lint, type checks, tests, the generated-code check and the licence check
 #   make e2e       build the frontend and run the browser suite in Chromium, Firefox and WebKit
 #   make licences  the licence check alone
+#   make audit     known vulnerabilities in both lock files (needs the network)
 #
 # The recipes stay one line each (macOS ships GNU make 3.81); logic lives in the scripts.
 
@@ -13,7 +14,7 @@ FRONTEND := cd frontend &&
 
 # The licence policy (QA-07: allow-list and named exceptions) lives in backend/tools/licences.py.
 
-.PHONY: setup gen check lint types test gen-check licences e2e
+.PHONY: setup gen check lint types test gen-check licences audit e2e
 
 setup:
 	$(BACKEND) uv sync --locked
@@ -41,6 +42,9 @@ gen-check:
 
 licences:
 	$(BACKEND) uv run python tools/licences.py
+
+audit:
+	$(BACKEND) uv run python tools/audit.py
 
 e2e:
 	$(FRONTEND) npm run --silent build

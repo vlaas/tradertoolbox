@@ -14,8 +14,8 @@ tools show is per position: multiplied by the contract multiplier and the signed
     charm   change of the position delta per calendar day
     volga   change of the dollar vega per volatility point
 
-Proposed 2026-11-22 (WP-0.2); the product definition fixes only theta, vega and dollars per
-position.
+Decided 2026-11-22 with the owner (requirements 4.6). The option chain shows the same units
+per contract: multiplier and quantity 1.
 """
 
 from collections.abc import Mapping

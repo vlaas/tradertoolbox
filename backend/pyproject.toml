@@ -16,6 +16,13 @@ dependencies = [
 requires = ["uv_build>=0.9.26,<0.10.0"]
 build-backend = "uv_build"
 
+[tool.uv]
+# The version rule (requirements, section 3; decided 2026-11-22): no package, direct or
+# indirect, younger than two weeks. uv records the cutoff in uv.lock; `uv sync --locked`
+# keeps accepting the lock on later days, and the cutoff moves only when the lock is resolved
+# again. An urgent fix newer than that needs a named exclude-newer-package entry.
+exclude-newer = "14 days"
+
 [tool.uv.build-backend]
 module-name = "s3t"
 
@@ -24,6 +31,7 @@ dev = [
     "grpcio-tools==1.85.1",
     "hypothesis==6.170.15",
     "mpmath==1.4.1",
+    "pip-audit==2.10.1",
     "pip-licenses==5.5.5",
     "pyright==1.1.414",
     "pytest==9.2.0",
@@ -40,7 +48,9 @@ src = ["src", "tests", "tools"]
 extend-exclude = ["src/s3t/wire", "tests/pricing/_iv_reference.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# ASYNC (blocking calls and other mistakes in async code): decided 2026-11-22. Bandit's S and
+# the style families were measured and left out (requirements, section 3).
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.pyright]
 include = ["src", "tests", "tools"]

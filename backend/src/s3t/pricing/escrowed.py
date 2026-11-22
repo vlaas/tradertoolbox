@@ -1,6 +1,7 @@
 """Black-Scholes with discrete cash dividends (PRC-02), on the escrowed-dividend model.
 
-New in WP-0.2 (2026-11-22). It is `volcalc`'s model (forward.model_forward, then Black-76 on that
+New in WP-0.2 (2026-11-22); the model and its conventions were decided with the owner the same
+day (requirements 4.6). It is `volcalc`'s model (forward.model_forward, then Black-76 on that
 forward) written out with spot Greeks:
 
     F = (S - PV(div)) e^{r tau},   DF = e^{-r tau},   V = Black-76(F, K, tau, DF, sigma)
