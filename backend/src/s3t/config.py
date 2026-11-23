@@ -118,15 +118,17 @@ class StreamConfig(_Section):
 class SubscriptionsConfig(_Section):
     """The subscription budget (SUB-02). Decided 2026-11-23 (owner, WP-0.4 review).
 
-    ``limit`` is the application's own: 10,000, well below the published 25,000 (note B,
+    ``limit`` is the application's own: 11,000, well below the published 25,000 (note B,
     section 7), so that the broker's own app and the owner's other programs have room on the
-    same account. The candle and change limits are the published ones. Each reserve is kept
-    free. The budget counts symbol and event pairs, the cautious reading until WP-0.9 has
-    measured how the broker counts.
+    same account. It is the session's hard cap. The manager grants up to ``limit`` less
+    ``reserve``: 10,000. Nothing draws on the reserve; it is the distance between what the
+    manager grants and where the session refuses. The candle and change limits are the
+    published ones. The budget counts symbol and event pairs, the cautious reading until
+    WP-0.9 has measured how the broker counts.
     """
 
-    limit: int = Field(default=10_000, ge=1)
-    reserve: int = Field(default=0, ge=0)
+    limit: int = Field(default=11_000, ge=1)
+    reserve: int = Field(default=1_000, ge=0)
     candle_limit: int = Field(default=100, ge=0)
     candle_reserve: int = Field(default=5, ge=0)
     changes_per_minute: int = Field(default=10_000, ge=100)

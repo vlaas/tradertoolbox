@@ -182,7 +182,7 @@ def test_stream_and_subscription_sections(tmp_path: Path) -> None:
     assert config.stream.stall_after == 30.0 and config.subscriptions.budget == 20_000
 
     for section in (
-        "[subscriptions]\nreserve = 25000\n",
+        "[subscriptions]\nreserve = 11000\n",
         "[subscriptions]\ncandle_reserve = 101\n",
         "[subscriptions]\nchange_reserve = 9950\n",
         "[stream]\nstall_after = 1.0\n",

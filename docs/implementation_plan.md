@@ -508,7 +508,8 @@ Found but not planned into a package yet.
       current connection, in messages of 100, and are refused while the session is not
       connected. How the refusal is shown (an error or a return value) is open.
     - The session counts what it sent on the current connection and refuses beyond the hard
-      cap: `[subscriptions] limit` (10,000) in total and `candle_limit` (100) for candles.
+      cap: `[subscriptions] limit` (11,000) in total and `candle_limit` (100) for candles.
+      The manager grants up to the limit less the reserve (10,000; 95 candles).
     - After a reconnect the session emits the gap, then `connected`, and holds nothing.
       The phase `resubscribing` leaves the session and becomes a state of the manager.
     - `synced()` and the status fields `held`, `pending`, `changes_last_minute`,

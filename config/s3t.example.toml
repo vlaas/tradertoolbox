@@ -53,8 +53,9 @@ state_file = "../data/state.sqlite"
 # is kept free.
 # limit is the application's own, well below the broker's published 25,000, so that the
 # broker's own app and other programs on the same account have room. Raise it when needed.
-# limit = 10000
-# reserve = 0
+# The session refuses beyond limit. The manager grants up to limit less reserve: 10,000.
+# limit = 11000
+# reserve = 1000
 # The candle and change limits are the broker's published ones.
 # candle_limit = 100
 # candle_reserve = 5

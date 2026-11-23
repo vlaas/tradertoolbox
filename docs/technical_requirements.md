@@ -261,13 +261,13 @@ The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
   The feed publishes both. DXLink has no sequence of its own, so "from sequence number to
   sequence number" means the stream's counter.
 - **Budget figures** (SUB-02).
-  - Subscriptions: 10,000, the application's own limit, configurable (`[subscriptions]
-    limit`). It is well below the published 25,000 on purpose. The broker has objected to
+  - Subscriptions: the manager grants up to 10,000. The session's hard cap is 11,000. Both
+    are configuration: `[subscriptions] limit` is the hard cap, and `reserve` (1,000) is
+    taken off it for the manager. Nothing draws on the reserve; it is the distance between
+    what the manager grants and where the session refuses.
+  - The figures are well below the published 25,000 on purpose. The broker has objected to
     high subscription use on this account before, and its own app and the owner's
-    `streamer` (always running, 0DTE SPX) use the same account. The figure can be raised
-    later.
-  - The session's hard cap is the same figure. A reserve below it can be configured; it is
-    0 by default.
+    `streamer` (always running, 0DTE SPX) use the same account. They can be raised later.
   - Candles: 100 less a reserve of 5. Changes: 10,000 a minute less a reserve of 2,000.
   - The budget counts symbol and event pairs until WP-0.9 has measured how the broker
     counts, and whether it counts per session (as published) or per account.
@@ -317,7 +317,7 @@ The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
 | ID | Requirement | Release | Verify |
 |---|---|---|---|
 | SUB-01 | The rest of the backend reaches the stream only through the feed interface: declarative demand (the full wanted set with a priority), data as plain batches, connection state in the stream. | R0 | R, T |
-| SUB-02 | The subscription manager is the only caller of subscribe and unsubscribe. It keeps the session inside the configured subscription limit (10,000 by default, decided 2026-11-23; 25,000 are published), 100 candle subscriptions and the change-rate limit, with a configured reserve. | R0 | T |
+| SUB-02 | The subscription manager is the only caller of subscribe and unsubscribe. It keeps the session inside the configured subscription limit (10,000 granted and a hard cap of 11,000 by default, decided 2026-11-23; 25,000 are published), 100 candle subscriptions and the change-rate limit, with a configured reserve. | R0 | T |
 | SUB-03 | Demand has priority classes: recorder, open positions and alerts, visible views, background work. When the budget is short, lower classes are reduced first and the consumer is told. | R0 | T |
 | SUB-04 | A closed view keeps its subscriptions for a grace period before release. | R1 | T |
 | SUB-05 | A chain view subscribes by expiration and strike window, never a whole chain of a large root. | R1 | T |
