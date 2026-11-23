@@ -45,7 +45,7 @@ names its split point.
 | WP-0.1 | Repository skeleton and tooling | S | done 2026-11-22 |
 | WP-0.2 | Pricing core: extraction | M | done 2026-11-22 |
 | WP-0.3 | Broker interface and REST client | M | done 2026-11-22 |
-| WP-0.4 | Stream, feed interface, subscriptions | L | not started |
+| WP-0.4 | Stream, feed interface, subscriptions | L | part 1 done 2026-11-23, before the review decisions of that day; rework and part 2 not started |
 | WP-0.5 | Market state and instruments | M | not started |
 | WP-0.6 | Storage, configuration, reference data | M | not started |
 | WP-0.7 | API shell, login, WebSocket | M | not started |
@@ -195,16 +195,28 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   BRK-09 (the data, `rest_status()`; added 2026-11-22).
 
 **WP-0.4 Stream, feed interface, subscriptions** (L; split after the stream client)
-- *Read first:* architecture note, sections 1 and 3; code audit, section 2.
-- *Build, part 1:* the DXLink session with reconnect, resubscribe and stall detection; the
-  fake broker's stream side with the failure scenarios of 3.3; the capture tool for local
+- *Read first:* architecture note, sections 1 and 3; code audit, section 2; requirements,
+  section 3, "The session and the subscription manager" and "The stream package, the rest"
+  (the decisions of 2026-11-23); section 8 of this plan, "From WP-0.4".
+- *Build, part 1:* the DXLink session with reconnect, loss and stall detection; the fake
+  broker's stream side with the failure scenarios of 3.3; the capture tool for local
   recordings and the replay broker.
+- *Build, rework of part 1* (decided 2026-11-23, listed in section 8): the session without
+  a subscription set and without pacing, with a hard cap; the application's own event
+  records; `data_time()`; zstd for recordings.
 - *Build, part 2:* the feed interface (declarative demand, plain batches, connection state)
   with its in-process implementation; the subscription manager with budget, reserve, priority
-  classes and use reporting.
+  classes, pacing, the refill of a session by class, and use reporting.
 - *Done when:* a dropped or silent stream recovers with the full demand restored and the gap
   reported; demand beyond the budget reduces the lowest class first.
-- *Closes:* BRK-02, BRK-03, BRK-05, BRK-06, SUB-01 to SUB-03, SUB-07.
+- *Closes:* BRK-02, BRK-03, BRK-05, BRK-06, SUB-01 to SUB-03, SUB-07. BRK-06 and SUB-07 are
+  closed here for the data (`StreamStatus`, the state items, the use report); WP-0.7
+  publishes them and WP-0.8 shows them, as with BRK-09 (decided 2026-11-23).
+- *Part 1, done 2026-11-23:* BRK-03 and BRK-05 have their tests, and BRK-06 its data. As
+  built, the session restores the subscriptions itself, and the first "done when" sentence
+  holds at the session (`tests/broker/test_stream_recovery.py`). After the rework the
+  manager restores them, and the sentence is tested on manager and session together. Part 2
+  brings SUB-01 to SUB-03 and SUB-07 and the second sentence.
 
 **WP-0.5 Market state and instruments** (M)
 - *Read first:* broker capability note, sections 3 to 5; requirements 4.4.
@@ -231,14 +243,15 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   WebSocket with Protocol Buffers messages, the JSON development mode, topics with snapshot,
   changes and resubscribe; the `status` and `quotes` topics, with the REST state of BRK-09 in
   `status` and in the health route; the tier declaration that hides or marks features
-  (GEN-04); the choice of the live or the fake broker in the configuration, with the mark of
-  GEN-11 in `status`.
+  (GEN-04); the choice of the live, the fake or the replay broker in the configuration (the
+  replay needs the name of a recording), with the mark of GEN-11 in `status`; the stream
+  state of BRK-06 and the subscription use of SUB-07 in `status` and in the health route.
 - *Decide here:* whether pyright's strict mode applies to `api` (requirements, section 3,
   linting).
 - *Done when:* the security tests of 3.6 for routes and the WebSocket pass, and a client that
   reconnects gets fresh snapshots.
 - *Closes:* API-01 to API-05, API-08, SEC-01 to SEC-03, SEC-06 to SEC-08, GEN-04, GEN-05
-  (structure), QA-02; BRK-09 and GEN-11 (published).
+  (structure), QA-02; BRK-06, BRK-09, SUB-07 and GEN-11 (published).
 
 **WP-0.8 Frontend shell** (M)
 - *Read first:* code audit, section 3; product definition, 6.3 ("All screens"); the
@@ -250,8 +263,8 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   every screen header; a Prettier check with its Svelte plugin in `make check`, added first.
 - *Done when:* a quote changed in the fake broker appears in the browser, the connection
   loss is shown and recovered from, in three browsers.
-- *Closes:* UI-03, UI-05, BRK-09 and GEN-11 (shown); the base for UI-01, UI-04, UI-08 and
-  UI-10.
+- *Closes:* UI-03, UI-05, BRK-06, BRK-09, SUB-07 and GEN-11 (shown); the base for UI-01,
+  UI-04, UI-08 and UI-10.
 
 **WP-0.9 R0 live measurements and acceptance** (S)
 - *Do, read-only and rate-limited, on a trading day:* how the subscription cap counts; REST
@@ -457,8 +470,8 @@ Found but not planned into a package yet.
   - The broker's REST limits are not known. The defaults (2 requests per second, burst 4) are
     in `[broker]`. WP-0.9 measures the real limits. The batch of 50 symbols per metrics call
     is untried: the live check asked for two.
-  - Whether the quote-token response states an expiry was not seen. WP-0.4 checks it when the
-    stream uses the token. Until then the 24 h measured in section 1 of note B applies.
+  - Whether the quote-token response states an expiry: it does (`expires-at`, seen
+    2026-11-23 at WP-0.4). The client reads it. Closed.
   - The expiry instant of a contract (`expires-at`) comes only from the per-contract
     instrument call. A chain has many contracts. If WP-0.5 or WP-1.2 needs it per contract,
     the bulk instrument call (`/instruments/equity-options?symbol[]=`) has to go on the
@@ -483,6 +496,92 @@ Found but not planned into a package yet.
     digits, as in Tastytrade's privacy mode (the owner's suggestion, 2026-11-22), beside the
     nicknames of GEN-03.
   - `config/s3t.toml` was created from the example for the live check. It is git-ignored.
+- From WP-0.4, part 1 (2026-11-23):
+  - **Where a fresh session starts.** Part 1 is built and green, but it was written before
+    the owner's review of 2026-11-23. The decisions are in the requirements, section 3
+    ("The session and the subscription manager" and "The stream package, the rest"). They
+    hold over the code and over the docstrings of part 1. The order of work: the rework
+    below, then part 2.
+  - **Rework, the session and the interface:**
+    - The subscription set (`_held`), the difference logic (`_adds`, `_removes`, `_sync`)
+      and the pacer leave the session. `subscribe` and `unsubscribe` send at once on the
+      current connection, in messages of 100, and are refused while the session is not
+      connected. How the refusal is shown (an error or a return value) is open.
+    - The session counts what it sent on the current connection and refuses beyond the hard
+      cap: `[subscriptions] limit` (10,000) in total and `candle_limit` (100) for candles.
+    - After a reconnect the session emits the gap, then `connected`, and holds nothing.
+      The phase `resubscribing` leaves the session and becomes a state of the manager.
+    - `synced()` and the status fields `held`, `pending`, `changes_last_minute`,
+      `change_limit` and `rate_errors` leave the `Stream` interface. The manager reports
+      them.
+    - A rate error of the server stays a notice of the session. The manager pauses, halves
+      its rate and sends again what it sent for that event type in the 2 s before
+      (`ChangePacer` is unchanged and gets the manager as its owner).
+    - `Broker.now()` becomes `data_time()`.
+    - The docstring of `Gap` in `interface.py` describes an older timing and is rewritten.
+  - **Rework, the event records:**
+    - One record type per event in `s3t.broker.interface`, with the fields of the
+      requirements. `EventBatch` stays columnar.
+    - `s3t.broker.tastytrade` converts by the server's field order (`FEED_CONFIG`). Text
+      becomes a float (SPX quote sizes arrive as text; a missing number is the text `NaN`).
+      Candle flags become the two marks. Fields without a place in a record are dropped.
+    - `Sub` gets the candle period as a value; the broker module builds dxFeed's candle
+      symbol. Nothing outside `s3t.broker` parses or composes a stream symbol.
+    - The fake server keeps speaking dxFeed on its wire, so the conversion is tested on it.
+  - **Rework, recordings:** the stream file becomes `stream.jsonl.zst`, written through
+    `backports.zstd` (1.8.0 was published 2026-10-10; PSF-2.0 is on the allowed list; the
+    licence check and `make audit` were not run on it). A frame ends every few seconds.
+    The format stays version 1, since no recording in the old form is kept. It holds the
+    application's records, with a missing number written as `null`. The compression ratio
+    against gzip, on a recording of the fake, goes to `docs/measurements.md`.
+  - **Rework, tests and tools:** the pacing and rate-error tests of
+    `test_stream_session.py` move to the manager. `test_stream_recovery.py` keeps "reopens,
+    reports the gap, is empty" at the session; "the full demand is back" becomes a test of
+    manager and session. `tools/stream_check.py` sends its subscriptions again itself
+    after its forced drop.
+  - **Part 2** (`s3t.subs`): the feed interface; the pure budget (classes, deduplication,
+    total and candle limit, who was reduced and by how much; inside a class the first
+    registered consumer keeps its pairs and each consumer is cut from the end of its own
+    order); the in-process feed, which sends the difference between what is granted and
+    what the current connection was sent (removals first, the highest class first), paces
+    it, coalesces demand that changes quickly, fans the items out to readers with a bounded
+    queue each, and reports its use. A rule test: only `s3t.subs` calls `subscribe` and
+    `unsubscribe`. `tools/capture.py` moves onto the feed.
+  - For WP-0.9, with `streamer` running: whether the subscription cap and the change limit
+    count per session or per account, and the server's answer to a sixth session (5 are
+    published).
+  - The stall rule (BRK-03) uses a stand-in for "the market is open": weekdays 09:30 to 16:00
+    New York, without holidays (`regular_hours`). WP-0.7 passes the calendar of WP-0.6 to the
+    broker instead (`data_expected`). Until then a holiday causes reconnects, at growing
+    waits of up to 15 minutes.
+  - Not verified live, all for WP-0.9: the session in regular hours; whether `remove` stops
+    the events of a ticking symbol (the live check ran on a closed market, where no quote
+    came either way); the server's answer beyond the subscription cap and beyond the change
+    limit (the fake's cap answer is invented); a full day; the stall rule on real silence.
+  - A candle snapshot ends with an event that carries the end and the remove flag (seen live
+    2026-11-23). Its other values were not looked at. The candle module (R2) drops such
+    events. The fake sends the marker with the start time and no prices, which is assumed.
+  - A candle subscription is sent again with its original start after a reconnect, so the
+    whole history comes again. The candle module (R2) may narrow the start.
+  - The fake stream:
+    - moves only in the regular session; the live intraday feed runs around the clock on
+      weekdays;
+    - prices options on a flat 4% rate without dividends (WP-1.1 extends it when it tests
+      dividends);
+    - states its Greeks in assumed units: theta per day, vega and rho per percentage point
+      (WP-1.9 compares the live units);
+    - serves candles in minutes, hours and days only, and needs about a second for the
+      first 8,000 daily bars of a symbol.
+  - The replay broker does not loop at the end of a recording, and a pair subscribed late
+    gets its last recorded bar, not a candle history. Add either when a package needs it.
+  - A recording is replayed at the interface level, so the DXLink decoding is not in a
+    replayed run. The reader's throughput is measured live at WP-0.9.
+  - `s3t.broker.tastytrade.chain` is a stop-gap that reads stream symbols from the chain
+    document for the two tools. It goes when WP-0.5 types the chain.
+  - `tools/stream_check.py` reaches into the session to close its own socket. That is the
+    only way to force a drop from outside, and it stays inside the tool.
+  - An untracked `package-lock.json` lies in the repository root. It is not from a package
+    of this plan. The owner decides whether it goes.
 
 ## 9. Starting a package in a fresh session
 

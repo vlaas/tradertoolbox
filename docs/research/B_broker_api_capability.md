@@ -206,3 +206,35 @@ measured.
   - The first entry of the IV list per expiration had no `implied-volatility` value. It was
     dated 2026-11-20, two days earlier.
   - SPY's `dividend-rate-per-share` and `dividend-yield` were 0.0.
+
+
+## Addendum 2026-11-23 (WP-0.4): the streaming session
+
+One run of `backend/tools/stream_check.py` on Sunday 2026-11-22, 18:55 New York (2026-11-23
+in UTC), market closed. Production API, one session, 9 subscriptions, 88 seconds. All
+measured, on one run.
+
+- **The quote-token response states its expiry.** Its keys are `dxlink-url`, `expires-at`,
+  `issued-at`, `level` and `token`. This closes the open point of the WP-0.3 addendum.
+- The session opened with the sequence of the client: SETUP, AUTH after the first
+  `UNAUTHORIZED`, one channel per event type, the compact format.
+- The server granted the aggregation period asked, 0.5 s, on every channel.
+- The server accepted the field lists as asked for all six event types, Candle included, and
+  kept their order.
+- Every subscription delivered its current value at once on a closed market: Quote, Trade,
+  Summary and Profile of SPY, Quote and Trade of SPX, Quote and Greeks of one SPY option.
+- **A candle snapshot** (`SPY{=d}` from ten days back) came in one message, newest first.
+  The first event carried the flag 4 (snapshot begin). The last event carried 10: snapshot
+  end and remove. So the last event of a snapshot is a marker, not a bar. Its other values
+  were not looked at.
+- The SPX quote sizes arrive as text (`NaN`), as section 5 says.
+- **Removal:** after `remove` of the SPY quote no SPY quote came in 13 s. On a closed market
+  none would have come anyway, so this shows only that the server accepts the message. After
+  the reconnect the removed pair was not subscribed again and stayed silent.
+- **Forced drop:** the tool closed its own socket. The server answered with close code 1000.
+  The session was authorized again 1.08 s after the close, and the first data came 1.34 s
+  after it (`docs/measurements.md`). The gap item named the last batch before the drop.
+- No rate error, no parse error and no error message from the server.
+
+Not tested: regular hours; removal on a ticking symbol; the subscription cap; the change
+limit; a stall; a token that expires during a session. All are for WP-0.9.

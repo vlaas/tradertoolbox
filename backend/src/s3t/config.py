@@ -22,7 +22,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 ENV_VAR = "S3T_CONFIG"
 DEFAULT_PATH = Path("config") / "s3t.toml"
@@ -79,6 +86,11 @@ class PathsConfig(_Section):
     t3_root: Path | None = None
     """The optional read-only T3 store (STO-04)."""
 
+    @property
+    def recordings_dir(self) -> Path:
+        """Local recordings of broker sessions (implementation plan 3.2)."""
+        return self.data_dir / "recordings"
+
 
 class BrokerConfig(_Section):
     """The REST client's request limit (BRK-04). Decided 2026-11-22 (WP-0.3).
@@ -93,10 +105,64 @@ class BrokerConfig(_Section):
     """Requests that may go at once after a quiet spell."""
 
 
+class StreamConfig(_Section):
+    """The streaming session (BRK-02, BRK-03). Proposed 2026-11-23 (WP-0.4)."""
+
+    aggregation_period: float = Field(default=0.5, ge=0.1, le=60)
+    """Seconds. The period asked of the feed; the server grants it or its own."""
+    stall_after: float = Field(default=60.0, ge=5, le=3600)
+    """Seconds without data, while the market is open and something is subscribed, after
+    which the session is taken for stalled and dropped (BRK-03)."""
+
+
+class SubscriptionsConfig(_Section):
+    """The subscription budget (SUB-02). Decided 2026-11-23 (owner, WP-0.4 review).
+
+    ``limit`` is the application's own: 10,000, well below the published 25,000 (note B,
+    section 7), so that the broker's own app and the owner's other programs have room on the
+    same account. The candle and change limits are the published ones. Each reserve is kept
+    free. The budget counts symbol and event pairs, the cautious reading until WP-0.9 has
+    measured how the broker counts.
+    """
+
+    limit: int = Field(default=10_000, ge=1)
+    reserve: int = Field(default=0, ge=0)
+    candle_limit: int = Field(default=100, ge=0)
+    candle_reserve: int = Field(default=5, ge=0)
+    changes_per_minute: int = Field(default=10_000, ge=100)
+    change_reserve: int = Field(default=2_000, ge=0)
+
+    @model_validator(mode="after")
+    def _reserves_fit(self) -> "SubscriptionsConfig":
+        if self.reserve >= self.limit:
+            raise ValueError("reserve must be below limit")
+        if self.candle_reserve > self.candle_limit:
+            raise ValueError("candle_reserve must not exceed candle_limit")
+        if self.changes_per_minute - self.change_reserve < 100:
+            raise ValueError("changes_per_minute less change_reserve must leave at least 100")
+        return self
+
+    @property
+    def budget(self) -> int:
+        """Subscriptions the manager may hold."""
+        return self.limit - self.reserve
+
+    @property
+    def candle_budget(self) -> int:
+        return self.candle_limit - self.candle_reserve
+
+    @property
+    def change_budget(self) -> int:
+        """Subscription changes allowed in any 60 s."""
+        return self.changes_per_minute - self.change_reserve
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
+    stream: StreamConfig = Field(default_factory=StreamConfig)
+    subscriptions: SubscriptionsConfig = Field(default_factory=SubscriptionsConfig)
     source: Path
     """The file this configuration was read from."""
 

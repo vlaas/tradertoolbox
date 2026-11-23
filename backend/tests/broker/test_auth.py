@@ -179,9 +179,15 @@ async def test_production_and_sandbox_headers(
 
 
 def test_client_implements_the_interface() -> None:
-    from s3t.broker.interface import Broker
+    from s3t.broker.fake.broker import FakeBroker
+    from s3t.broker.interface import Broker, Stream
+    from s3t.broker.tastytrade.broker import Tastytrade
+    from s3t.broker.tastytrade.dxlink import DxLinkSession
 
-    def typed(client: TastytradeRest) -> Broker:  # checked by pyright
-        return client
+    def typed(client: Tastytrade, fake: FakeBroker) -> tuple[Broker, Broker]:  # by pyright
+        return client, fake
 
-    assert typed
+    def typed_stream(session: DxLinkSession) -> Stream:
+        return session
+
+    assert typed and typed_stream

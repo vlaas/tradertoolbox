@@ -62,7 +62,9 @@ after the split.
   wants, with a priority. Either side can resend the set after a reconnect; there is no
   call-by-call subscription history to replay.
 - **Data crosses as plain batches:** symbol, event type, fields as received, receipt
-  timestamp, sequence number. No object references and no callbacks.
+  timestamp, sequence number. No object references and no callbacks. (Changed 2026-11-23:
+  the fields are the application's own records, not "as received". The broker module
+  converts them. See the technical requirements, section 3.)
 - **Connection state is part of the stream:** connected, resubscribed, stalled, gap from
   sequence number to sequence number.
 - **REST stays outside the interface.** Each process refreshes its own access token, so the

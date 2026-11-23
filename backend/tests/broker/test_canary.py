@@ -6,8 +6,9 @@ redaction filter. Some log lines put a secret in on purpose. The canaries, and e
 the fake issued, must not appear in the log output, in any error, in any returned value,
 or in the repr of the client and the secrets.
 
-The stream token (WP-0.4), the routes (WP-0.7) and the MCP results (R4) extend this test
-when they exist.
+The stream token is covered by the second test (WP-0.4): a session with a drop and a
+refused token, logged at DEBUG. The recording files are checked in test_replay.py. The routes
+(WP-0.7) and the MCP results (R4) extend this test when they exist.
 """
 
 import io
@@ -26,7 +27,7 @@ from s3t.broker.tastytrade.endpoints import Endpoint
 from s3t.broker.tastytrade.rest import TastytradeRest
 from s3t.secrets import install_redaction, load_broker_secrets
 
-from .conftest import ACCOUNT, CLIENT_SECRET, REFRESH_TOKEN
+from .conftest import ACCOUNT, CLIENT_SECRET, REFRESH_TOKEN, StreamRig
 
 pytestmark = pytest.mark.anyio
 
@@ -138,3 +139,36 @@ async def test_canaries_never_leave(
     assert "accounts:<acct>:owner" in text and "/accounts/<acct>/positions" in text
     assert "Bearer ***" in text and "RuntimeError" in text
     await client.aclose()
+
+
+async def test_the_stream_token_never_leaves(rig: StreamRig, captured: io.StringIO) -> None:
+    from s3t.broker.interface import EventType, Sub
+
+    session = rig.session()
+    session.start()
+    session.subscribe([Sub("SPY", EventType.QUOTE), Sub("SPY", EventType.TRADE)])
+    await rig.synced()
+    rig.dxlink.expire_tokens()
+    rig.dxlink.drop()
+    await rig.clock.advance(5)
+    rig.dxlink.sub_cap = 1
+    session.subscribe([Sub("AAPL", EventType.QUOTE)])
+    await rig.synced()
+    assert session.status().phase == "connected" and len(rig.rest.quote_tokens) == 2
+    logging.getLogger("s3t.test").debug("the token is %s", rig.rest.quote_tokens[1])
+
+    canaries = [CLIENT_SECRET, REFRESH_TOKEN, ACCOUNT, *rig.rest.issued_tokens]
+    canaries += rig.rest.quote_tokens
+    text = captured.getvalue()
+    surfaces = {
+        "log": text,
+        "items": repr(rig.items),
+        "status": repr(session.status()),
+        "repr": f"{session!r} {rig.broker!r}",
+    }
+    for where, surface in surfaces.items():
+        assert not [c for c in canaries if c in surface], f"canary in {where}"
+    # The run did what it should, and the log says so without the token.
+    assert "stream -> AUTH channel 0" in text and "the quote token was refused" in text
+    assert "the token is ***" in text and "Subscription limit exceeded" in text
+    assert [m["token"] for m in rig.sent("AUTH")][-1] == rig.rest.quote_tokens[1]

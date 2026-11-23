@@ -10,6 +10,7 @@ dependencies = [
     "protobuf==7.36.2",
     "pydantic==2.14.3",
     "scipy==1.18.1",
+    "websockets==17.4",
 ]
 
 [build-system]

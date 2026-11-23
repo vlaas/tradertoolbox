@@ -10,7 +10,8 @@ import pytest
 from s3t.broker.fake.clock import FakeClock
 from s3t.broker.fake.rest import FakeTastytrade
 from s3t.broker.interface import BrokerProtocolError, ForbiddenCall, NotFound
-from s3t.broker.tastytrade.rest import METRICS_BATCH, TastytradeRest, from_config
+from s3t.broker.tastytrade.broker import from_config
+from s3t.broker.tastytrade.rest import METRICS_BATCH, TastytradeRest
 from s3t.config import load_config
 
 from .conftest import CLIENT_SECRET, REFRESH_TOKEN, MakeClient

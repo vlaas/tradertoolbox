@@ -64,7 +64,13 @@ make audit      # known vulnerabilities in both lock files; needs the network
 # configuration: copy config/s3t.example.toml to config/s3t.toml (git-ignored)
 
 # live read-only check of the broker client: a stated check, about 10 requests at 1 per second
-cd backend && uv run python tools/broker_check.py
+cd backend && uv run python tools/broker_check.py --config ../config/s3t.toml
+
+# live read-only check of the stream: a stated check, one session, 9 subscriptions, 90 seconds
+cd backend && uv run python tools/stream_check.py --config ../config/s3t.toml
+
+# record a session into <data_dir>/recordings/NAME (git-ignored); --fake needs no broker
+cd backend && uv run python tools/capture.py NAME --fake --minutes 1 --config ../config/s3t.toml
 
 # chart prototype (throw-away): see prototypes/chart/README.md
 cd prototypes/chart && npm install --ignore-scripts && npx playwright test

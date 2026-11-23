@@ -160,3 +160,34 @@ def test_broker_section_refused(tmp_path: Path, line: str) -> None:
     text = VALID.format(address="127.0.0.1") + f"\n[broker]\n{line}\n"
     with pytest.raises(ConfigError, match="broker"):
         load_config(write(tmp_path, text))
+
+
+def test_stream_and_subscription_sections(tmp_path: Path) -> None:
+    base = (
+        '[server]\nlisten_address = "127.0.0.1"\nport = 8740\n'
+        '[paths]\nenv_file = ".env"\ndata_dir = "data"\nstate_file = "data/state.sqlite"\n'
+    )
+    file = tmp_path / "s3t.toml"
+    file.write_text(base)
+    config = load_config(file)
+    assert config.stream.aggregation_period == 0.5 and config.stream.stall_after == 60.0
+    subs = config.subscriptions
+    assert (subs.budget, subs.candle_budget, subs.change_budget) == (10_000, 95, 8_000)
+    assert config.paths.recordings_dir == tmp_path / "data" / "recordings"
+
+    file.write_text(
+        base + "[stream]\nstall_after = 30.0\n[subscriptions]\nlimit = 25000\nreserve = 5000\n"
+    )
+    config = load_config(file)
+    assert config.stream.stall_after == 30.0 and config.subscriptions.budget == 20_000
+
+    for section in (
+        "[subscriptions]\nreserve = 25000\n",
+        "[subscriptions]\ncandle_reserve = 101\n",
+        "[subscriptions]\nchange_reserve = 9950\n",
+        "[stream]\nstall_after = 1.0\n",
+        "[stream]\nperiod = 1.0\n",
+    ):
+        file.write_text(base + section)
+        with pytest.raises(ConfigError):
+            load_config(file)

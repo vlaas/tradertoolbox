@@ -58,8 +58,7 @@ from s3t.broker.interface import (
 )
 from s3t.broker.limits import Backoff, Clock, Sleep, TokenBucket, parse_retry_after
 from s3t.broker.tastytrade.endpoints import BY_NAME, Endpoint, match
-from s3t.config import Config
-from s3t.secrets import REDACTOR, BrokerSecrets, load_broker_secrets, redact
+from s3t.secrets import REDACTOR, BrokerSecrets, redact
 
 API_URL = "https://api.tastyworks.com"
 SANDBOX_URL = "https://api.cert.tastyworks.com"
@@ -133,6 +132,8 @@ class TastytradeRest:
         self._rate_limited = 0
         self.renewals = 0
         """Access-token renewals so far."""
+        self.quote_token_keys: tuple[str, ...] = ()
+        """The key names of the last quote-token response, for the live check."""
 
     def __repr__(self) -> str:
         return f"TastytradeRest(base_url={self.base_url!r})"
@@ -146,6 +147,7 @@ class TastytradeRest:
 
     async def quote_token(self) -> QuoteToken:
         data = await self._read("quote_token")
+        self.quote_token_keys = tuple(sorted(data))
         token, url, level = data.get("token"), data.get("dxlink-url"), data.get("level", "")
         if not isinstance(token, str) or not isinstance(url, str):
             raise BrokerProtocolError("quote token: the response has no token or no address")
@@ -418,19 +420,6 @@ class TastytradeRest:
             )
             self._refuse(reason)
             raise AuthError(self._refusal or reason)
-
-
-def from_config(
-    config: Config, *, transport: httpx.AsyncBaseTransport | None = None
-) -> TastytradeRest:
-    """The client for the configured environment file and request limit."""
-    secrets = load_broker_secrets(config.paths.env_file)
-    return TastytradeRest(
-        secrets,
-        rate=config.broker.rest_rate,
-        burst=config.broker.rest_burst,
-        transport=transport,
-    )
 
 
 def jwt_scopes(token: str) -> tuple[str, ...] | None:

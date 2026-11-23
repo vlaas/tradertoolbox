@@ -22,8 +22,8 @@ app marks every screen as synthetic when it runs on this market (GEN-11):
 Expiration rules: every weekday up to 14 days ahead, every Friday up to 63 days, the third
 Friday of each month up to a year, and the December third Friday two years ahead (a LEAPS).
 SPX AM has the third Fridays only; AAPL has no dailies. The fake has no holiday calendar:
-that comes at WP-0.6. Quotes, Greeks, candles and the seeded paths come with the stream side
-at WP-0.4.
+that comes at WP-0.6. Quotes, Greeks, candles and the seeded paths are in ``ticks.py``, and
+the stream that serves them in ``stream.py`` (WP-0.4).
 """
 
 import math
@@ -39,7 +39,7 @@ CHICAGO = ZoneInfo("America/Chicago")
 
 MONTH_CODES = "FGHJKMNQUVXZ"
 DXLINK_URL = "wss://dxlink.fake.invalid/realtime"
-"""Replaced by the fake stream's address at WP-0.4. `.invalid` never resolves."""
+"""The address the fake stream answers to, in memory. `.invalid` never resolves."""
 
 type Doc = dict[str, Any]
 

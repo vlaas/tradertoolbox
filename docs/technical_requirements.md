@@ -171,6 +171,115 @@ The broker package (WP-0.3). Decided 2026-11-22:
   technical. An information icon explains the numbers where that is needed (product
   definition 6.3).
 
+The session and the subscription manager (BRK-02, SUB-02). **Decided 2026-11-23 (owner,
+WP-0.4 review):**
+
+- **The manager holds the content.** It alone knows which pairs are subscribed and in which
+  order. It keeps the budget, removes duplicates, reduces by class, paces the changes and
+  counts them. Nothing else calls the session; every other part asks the manager for data.
+- **The session does the technical work.** It connects, authorizes, opens the channels,
+  keeps the connection alive and renews the quote token. It detects a loss or a stall, waits
+  and reconnects without being asked. It reports its phase, the gap, and a rate error of the
+  server.
+- **The session keeps no subscription set and never resubscribes by itself.** `subscribe`
+  and `unsubscribe` mean "send this now on the current connection", in messages of 100. A
+  call while the session is not connected is refused, not queued.
+- **After a reconnect the session is open and empty, and says so.** The manager sends the
+  granted set again, the highest class first, by the same rule as any other change: the
+  difference between what is granted and what the current connection was sent. A new
+  session object is filled the same way.
+- **A hard cap in the session** is a backstop. The session counts the pairs sent on the
+  current connection and refuses to go beyond a configured figure. The manager never
+  reaches it in correct operation.
+- **Items go to a sink.** `broker.stream(sink)` gives every item to one synchronous
+  function: event batches, phase changes, gaps and notices, numbered by the stream's own
+  counter. The session holds no queue; the feed owns the one queueing rule (SUB-01).
+- **The broker states its source and the time of its data.** The source is live, fake or
+  replay with the date of the recording (GEN-11). The time of the data is the wall clock on
+  a live or fake broker and the position in the recording on a replay. Time to expiry and
+  the age of a quote are measured against it, never against the system clock.
+- **Broker keys stay strictly inside the broker module, for the stream too** (GEN-09). No
+  dxFeed field name and no value "as received" crosses the interface. The broker module
+  converts every event into the application's own record. This replaces "fields as
+  received" in the architecture note, section 3.
+- **Recordings** (BRK-05) are at the interface level, not the wire level: a directory under
+  `<data_dir>/recordings/` with `meta.json`, `rest.jsonl` and the stream file, with a format
+  version (`s3t.broker.recording`). The quote token is never written. A thread writes; a
+  full queue loses the item, counts it and marks it in the file.
+- **The time of the data is `data_time()`** on the broker, in place of `now()`.
+- **The event records** (GEN-09, SUB-01). One record type per event, defined in
+  `s3t.broker.interface`, with the application's names:
+  - Quote: symbol, bid, ask, bid size, ask size, bid time, ask time.
+  - Trade: symbol, price, size, time, day volume.
+  - Summary: symbol, day open, high, low and close, previous close, open interest.
+  - Greeks: symbol, time, price, IV, delta, gamma, theta, rho, vega. The units are the
+    broker's until WP-1.9 has compared them.
+  - Profile: symbol, description, trading status, halt start and end, 52-week high and low.
+  - Candle: symbol, period, time, open, high, low, close, volume, VWAP, IV, open interest,
+    and two marks: end of the snapshot, bar removed.
+  - Numbers are floats and a missing number is NaN, never zero and never text. Times are
+    UTC. A batch stays columnar: one event type, the receipt time taken before decoding,
+    and the rows. A field is added when a package needs it.
+- **Symbols.** The stream symbol is the broker's (`streamer-symbol` of the chain document).
+  Outside the broker module it is an opaque key: taken from the broker, given back to it,
+  never parsed or composed. A candle subscription names the symbol and the period as
+  separate values; the broker module builds dxFeed's candle symbol. WP-0.5 puts the
+  instrument model on top.
+- **The REST documents** stay under the rule of 2026-11-22 above: the broker's JSON until
+  the package that first uses a document types it.
+- **Compression of the stream file:** zstd, through `backports.zstd` (PSF-2.0; the module of
+  Python 3.14's standard library for 3.13, so the dependency goes with the move to 3.14).
+  The file is `stream.jsonl.zst`. The writer ends a frame every few seconds, so a recording
+  that was cut off is readable up to there.
+- The code of part 1 was written before these decisions. It is reworked with part 2
+  (implementation plan, section 8).
+
+The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
+
+- **Dependency.** `websockets` 17.4 (BSD-3-Clause), the library section 3 already names.
+- **Events.** Quote, Trade, Summary, Greeks, Profile and Candle, one channel each, in the
+  compact format with the field lists of the official SDK. Aggregation period 0.5 s
+  (`[stream]`; granted live on 2026-11-23).
+- **Pacing** (SUB-02) is the manager's, by the decision above. Removals go first. The
+  figures: chunks of 100, 150 changes a second, at most 8,000 in any 60 s (the published
+  10,000 less a reserve of 2,000, `[subscriptions]`). On "rate is too high" every change
+  waits 5 s (longer when it repeats), the rate is halved, and what was sent on that channel
+  in the 2 s before is sent again. The rate recovers after 10 minutes without such an error.
+- **Reconnect** (BRK-02). After any loss: waits from 1 s, doubling, at most 30 s, with
+  jitter, without an attempt limit. A new quote token is fetched when the server refuses the
+  held one, or when it has less than 5 minutes left.
+- **Loss and stall** (BRK-03). No message at all for 60 s is a loss at any hour (the
+  keepalive runs every 30 s). No data for `stall_after` (60 s, `[stream]`) while the market
+  is open and something is subscribed is a stall: the phase `stalled`, then a loss. Each
+  stall in a row doubles the wait, up to 15 minutes; data that keeps coming resets it. "The
+  market is open" is a rule passed to the session. Until the calendar of WP-0.6 is wired in,
+  it is weekdays 09:30 to 16:00 New York.
+- **Gap** (BRK-02, BRK-06). When a session is open again, a gap item goes out before any of
+  its data: the number and the receipt time of the last batch before the loss, and the time
+  the new session opened. The session is then `connected`. "Resubscribing" (BRK-06) is a
+  state of the manager: from the opening of a session until everything granted was sent.
+  The feed publishes both. DXLink has no sequence of its own, so "from sequence number to
+  sequence number" means the stream's counter.
+- **Budget figures** (SUB-02).
+  - Subscriptions: 10,000, the application's own limit, configurable (`[subscriptions]
+    limit`). It is well below the published 25,000 on purpose. The broker has objected to
+    high subscription use on this account before, and its own app and the owner's
+    `streamer` (always running, 0DTE SPX) use the same account. The figure can be raised
+    later.
+  - The session's hard cap is the same figure. A reserve below it can be configured; it is
+    0 by default.
+  - Candles: 100 less a reserve of 5. Changes: 10,000 a minute less a reserve of 2,000.
+  - The budget counts symbol and event pairs until WP-0.9 has measured how the broker
+    counts, and whether it counts per session (as published) or per account.
+- **Reduction inside a class** (SUB-03). The consumer that registered first keeps its pairs.
+  A consumer gives its pairs in order of importance and is cut from the end.
+- **Replay** (BRK-05). REST reads return the recorded document or "not found". The stream
+  emits the recorded items for the pairs subscribed now, at the recorded pace, a multiple of
+  it, or as fast as they are taken. A pair subscribed late gets its last recorded event. At
+  the end the stream is `disconnected` with the reason "end of the recording".
+- **Tests of replay** (QA-02, plan 3.1 and 3.2). `make check` holds no market data, so it
+  tests the replay broker on a recording made from the fake broker in a temporary directory.
+
 ## 4. Requirements
 
 ### 4.1 General
@@ -208,7 +317,7 @@ The broker package (WP-0.3). Decided 2026-11-22:
 | ID | Requirement | Release | Verify |
 |---|---|---|---|
 | SUB-01 | The rest of the backend reaches the stream only through the feed interface: declarative demand (the full wanted set with a priority), data as plain batches, connection state in the stream. | R0 | R, T |
-| SUB-02 | The subscription manager is the only caller of subscribe and unsubscribe. It keeps the session inside 25,000 subscriptions, 100 candle subscriptions and the change-rate limit, with a configured reserve. | R0 | T |
+| SUB-02 | The subscription manager is the only caller of subscribe and unsubscribe. It keeps the session inside the configured subscription limit (10,000 by default, decided 2026-11-23; 25,000 are published), 100 candle subscriptions and the change-rate limit, with a configured reserve. | R0 | T |
 | SUB-03 | Demand has priority classes: recorder, open positions and alerts, visible views, background work. When the budget is short, lower classes are reduced first and the consumer is told. | R0 | T |
 | SUB-04 | A closed view keeps its subscriptions for a grace period before release. | R1 | T |
 | SUB-05 | A chain view subscribes by expiration and strike window, never a whole chain of a large root. | R1 | T |

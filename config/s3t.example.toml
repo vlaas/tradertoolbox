@@ -39,3 +39,24 @@ state_file = "../data/state.sqlite"
 # and the burst allowed after a quiet spell. The broker's real limits are measured at WP-0.9.
 # rest_rate = 2.0
 # rest_burst = 4
+
+[stream]
+# Optional. The streaming session (BRK-02, BRK-03).
+# The aggregation period asked of the feed, in seconds. The server grants it or its own.
+# aggregation_period = 0.5
+# Seconds without data, while the market is open and something is subscribed, after which
+# the session is taken for stalled and opened again.
+# stall_after = 60.0
+
+[subscriptions]
+# Optional. The subscription budget (SUB-02). It counts symbol and event pairs; each reserve
+# is kept free.
+# limit is the application's own, well below the broker's published 25,000, so that the
+# broker's own app and other programs on the same account have room. Raise it when needed.
+# limit = 10000
+# reserve = 0
+# The candle and change limits are the broker's published ones.
+# candle_limit = 100
+# candle_reserve = 5
+# changes_per_minute = 10000
+# change_reserve = 2000
