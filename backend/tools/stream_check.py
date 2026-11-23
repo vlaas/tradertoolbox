@@ -5,27 +5,34 @@
 A stated check: one session, about ten subscriptions, about 100 seconds. It reads the SPY
 chain once (two REST requests with the token renewal, three with the quote token). Then it:
 
-1. subscribes Quote, Trade, Summary and Profile of SPY, Quote and Trade of SPX, Quote and
-   Greeks of one SPY option near the money, and the daily candles of SPY from ten days ago;
+1. waits for the session to say ``connected`` (all six channels open), and subscribes Quote,
+   Trade, Summary and Profile of SPY, Quote and Trade of SPX, Quote and Greeks of one SPY
+   option near the money, and the daily candles of SPY from ten days ago;
 2. after 30 s removes the SPY quote and counts whether quotes still come;
-3. after 45 s closes its own socket and watches the session come back;
+3. after 45 s closes its own socket, watches the session come back open and empty, and
+   sends its subscriptions again itself, as the subscription manager does in the backend;
 4. prints what it saw: the granted aggregation period, the field lists the server set, the
-   counts per event type, the candle snapshot (order and flags), the phases, the gap, and
+   counts per event type, the candle snapshot (order and marks), the phases, the gap, and
    the key names of the quote-token response.
 
-Nothing is written to disk and no value of the market is kept. Logging goes through the
-redaction filter. It places no order and changes nothing (GEN-01).
+It talks to the session directly, without the feed, because it checks the session alone.
+Nothing is written to disk and no value of the market is kept or printed. Logging goes
+through the redaction filter. It places no order and changes nothing (GEN-01).
 """
 
 import argparse
 import asyncio
 import logging
+import math
 import sys
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from s3t.broker.interface import (
     BrokerError,
+    Candle,
+    CandlePeriod,
     EventBatch,
     EventType,
     Gap,
@@ -36,7 +43,7 @@ from s3t.broker.interface import (
 )
 from s3t.broker.tastytrade.broker import from_config
 from s3t.broker.tastytrade.chain import near_the_money
-from s3t.broker.tastytrade.dxlink import EVENT_FIELDS
+from s3t.broker.tastytrade.convert import EVENT_FIELDS
 from s3t.config import load_config
 from s3t.secrets import install_redaction
 
@@ -46,53 +53,72 @@ async def run(config_path: str | None) -> int:
     started = datetime.now(UTC)
     items: list[tuple[float, StreamItem]] = []
 
-    def sink(item: StreamItem) -> None:
-        items.append(((datetime.now(UTC) - started).total_seconds(), item))
+    def elapsed() -> float:
+        return (datetime.now(UTC) - started).total_seconds()
 
-    def rows(event: EventType, symbol: str, since: float = 0.0) -> list[dict]:
+    def sink(item: StreamItem) -> None:
+        items.append((elapsed(), item))
+
+    def rows(event: EventType, symbol: str, since: float = 0.0) -> list[Any]:
         return [
             row
             for at, item in items
             if isinstance(item, EventBatch) and item.event is event and at >= since
             for row in item.rows()
-            if row["eventSymbol"] == symbol
+            if row.symbol == symbol
         ]
+
+    async def connected(times: int) -> float:
+        """Wait until the session has said ``connected`` this many times."""
+        for _ in range(600):
+            seen = [at for at, i in items if isinstance(i, StreamState) and i.phase == "connected"]
+            if len(seen) >= times:
+                return seen[times - 1]
+            await asyncio.sleep(0.05)
+        raise TimeoutError(f"not connected {times} time(s) within 30 s")
 
     stream = broker.stream(sink)
     try:
         chain = await broker.option_chain("SPY")
         stream.start()
+        await connected(1)
         spy = [Sub("SPY", e) for e in (EventType.QUOTE, EventType.TRADE, EventType.SUMMARY)]
-        candle = Sub("SPY{=d}", EventType.CANDLE, from_time=started - timedelta(days=10))
-        first = [*spy, Sub("SPY", EventType.PROFILE), candle]
-        first += [Sub("SPX", EventType.QUOTE), Sub("SPX", EventType.TRADE)]
-        stream.subscribe(first)
-        await asyncio.wait_for(stream.synced(), 60)
+        day = CandlePeriod(1, "day")
+        candle = Sub("SPY", EventType.CANDLE, day, started - timedelta(days=10))
+        held = [*spy, Sub("SPY", EventType.PROFILE), candle]
+        held += [Sub("SPX", EventType.QUOTE), Sub("SPX", EventType.TRADE)]
+        await stream.subscribe(held)
         for _ in range(100):
             if rows(EventType.TRADE, "SPY") or rows(EventType.QUOTE, "SPY"):
                 break
             await asyncio.sleep(0.1)
         trades, quotes = rows(EventType.TRADE, "SPY"), rows(EventType.QUOTE, "SPY")
-        spot = trades[-1]["price"] if trades else quotes[-1]["bidPrice"] if quotes else None
+        spot = trades[-1].price if trades else quotes[-1].bid if quotes else math.nan
         option = None
-        if isinstance(spot, int | float):
-            found = near_the_money(chain, float(spot), expirations=1, strikes=1, min_days=7)
+        if math.isfinite(spot):
+            found = near_the_money(chain, spot, expirations=1, strikes=1, min_days=7)
             option = found[0] if found else None
         if option:
-            stream.subscribe([Sub(option, EventType.QUOTE), Sub(option, EventType.GREEKS)])
+            more = [Sub(option, EventType.QUOTE), Sub(option, EventType.GREEKS)]
+            await stream.subscribe(more)
+            held += more
         await asyncio.sleep(30)
 
-        removed_at = (datetime.now(UTC) - started).total_seconds()
-        stream.unsubscribe([Sub("SPY", EventType.QUOTE)])
-        await asyncio.wait_for(stream.synced(), 30)
+        removed_at = elapsed()
+        await stream.unsubscribe([Sub("SPY", EventType.QUOTE)])
+        held.remove(Sub("SPY", EventType.QUOTE))
         await asyncio.sleep(15)
         after_remove = len(rows(EventType.QUOTE, "SPY", removed_at + 2.0))
 
-        dropped_at = (datetime.now(UTC) - started).total_seconds()
+        dropped_at = elapsed()
         conn = stream._conn
         if conn is not None:
             await conn.close()  # our own socket: the forced drop
-        await asyncio.sleep(40)
+        back_at = await connected(2)
+        empty = stream.status().subscribed == 0
+        await stream.subscribe(held)  # the session sends nothing again by itself
+        sent_again_at = elapsed()
+        await asyncio.sleep(max(0.0, dropped_at + 40 - elapsed()))
         status = stream.status()
     except (BrokerError, TimeoutError) as e:
         print(f"FAILED: {type(e).__name__}: {e}")
@@ -105,11 +131,13 @@ async def run(config_path: str | None) -> int:
     for event, fields in stream._fields.items():
         same = "as asked" if fields == EVENT_FIELDS[event] else f"SERVER'S OWN: {fields}"
         print(f"fields of {event.value}: {same}")
+    silent = [e.value for e in EventType if e not in stream._fields]
+    print(f"event types without a field list from the server: {silent or 'none'}")
     counts: Counter[tuple[str, str]] = Counter()
     for _, item in items:
         if isinstance(item, EventBatch):
             for row in item.rows():
-                kind = "option" if row["eventSymbol"] == option else row["eventSymbol"]
+                kind = "option" if row.symbol == option else row.symbol
                 counts[(item.event.value, kind)] += 1
     for (event, symbol), n in sorted(counts.items()):
         print(f"events {event:8} {symbol:10} {n}")
@@ -117,17 +145,31 @@ async def run(config_path: str | None) -> int:
         (i for _, i in items if isinstance(i, EventBatch) and i.event is EventType.CANDLE), None
     )
     if snapshot is not None:
-        bars = list(snapshot.rows())
-        times = [b["time"] for b in bars]
+        bars = [b for b in snapshot.rows() if isinstance(b, Candle)]
+        times = [b.time for b in bars]
         order = "newest first" if times == sorted(times, reverse=True) else "NOT newest first"
-        flags = [b["eventFlags"] for b in bars]
-        print(f"first candle message: {len(bars)} bars, {order}, flags {flags}")
+        marks = [("end" if b.snapshot_end else "") + ("removed" if b.removed else "") for b in bars]
+        last = bars[-1]
+        print(f"first candle message: {len(bars)} events, {order}, period {last.period.text()}")
+        print(f"  marks, in order: {['-' if not m else m for m in marks]}")
+        at_start = (
+            abs((last.time - candle.from_time).total_seconds()) < 1 if candle.from_time else False
+        )
+        print(
+            f"  the last event: has prices: {math.isfinite(last.close)}; "
+            f"its time is the start asked for: {at_start}"
+        )
     quote = rows(EventType.QUOTE, "SPX")
     if quote:
-        sizes = {type(quote[-1][k]).__name__ for k in ("bidSize", "askSize")}
-        print(f"SPX quote sizes are of type: {sorted(sizes)}")
+        sizes = "NaN" if math.isnan(quote[-1].bid_size) else "numbers"
+        print(f"SPX quote sizes after conversion: {sizes} (floats)")
     print(f"SPY quotes later than 2 s after the removal: {after_remove} (0 means it works)")
     print(f"removal at {removed_at:.1f} s, forced drop at {dropped_at:.1f} s")
+    print(
+        f"after the drop: connected again {back_at - dropped_at:.2f} s later, "
+        f"empty: {empty}; {len(held)} subscriptions sent again "
+        f"{sent_again_at - dropped_at:.2f} s after the drop"
+    )
     for at, item in items:
         if isinstance(item, StreamState):
             print(f"{at:7.2f} s  phase {item.phase}" + (f" ({item.reason})" if item.reason else ""))
@@ -140,10 +182,12 @@ async def run(config_path: str | None) -> int:
     if after_drop:
         print(f"first data after the drop: {after_drop[0] - dropped_at:.2f} s later")
     print(
-        f"reconnects {status.reconnects}, stalls {status.stalls}, held {status.held}, "
-        f"rate errors {status.rate_errors}, parse errors {stream.parse_errors}"
+        f"reconnects {status.reconnects}, stalls {status.stalls}, "
+        f"subscribed {status.subscribed}, candles {status.candles}, "
+        f"parse errors {stream.parse_errors}, ignored events {stream.ignored_events}"
     )
-    ok = status.phase == "connected" and status.reconnects == 1 and bool(after_drop)
+    ok = status.phase == "connected" and status.reconnects == 1 and empty and bool(after_drop)
+    ok = ok and status.subscribed == len(held) and stream.parse_errors == 0
     print("OK" if ok else "NOT AS EXPECTED")
     return 0 if ok else 1
 

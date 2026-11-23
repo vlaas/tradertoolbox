@@ -106,7 +106,7 @@ class BrokerConfig(_Section):
 
 
 class StreamConfig(_Section):
-    """The streaming session (BRK-02, BRK-03). Proposed 2026-11-23 (WP-0.4)."""
+    """The streaming session (BRK-02, BRK-03). Decided 2026-11-23 (owner, WP-0.4 review)."""
 
     aggregation_period: float = Field(default=0.5, ge=0.1, le=60)
     """Seconds. The period asked of the feed; the server grants it or its own."""

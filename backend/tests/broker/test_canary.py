@@ -144,16 +144,14 @@ async def test_canaries_never_leave(
 async def test_the_stream_token_never_leaves(rig: StreamRig, captured: io.StringIO) -> None:
     from s3t.broker.interface import EventType, Sub
 
-    session = rig.session()
-    session.start()
-    session.subscribe([Sub("SPY", EventType.QUOTE), Sub("SPY", EventType.TRADE)])
-    await rig.synced()
+    session = await rig.open()
+    await session.subscribe([Sub("SPY", EventType.QUOTE), Sub("SPY", EventType.TRADE)])
     rig.dxlink.expire_tokens()
     rig.dxlink.drop()
     await rig.clock.advance(5)
     rig.dxlink.sub_cap = 1
-    session.subscribe([Sub("AAPL", EventType.QUOTE)])
-    await rig.synced()
+    await session.subscribe([Sub("AAPL", EventType.QUOTE), Sub("AAPL", EventType.TRADE)])
+    await rig.clock.settle()
     assert session.status().phase == "connected" and len(rig.rest.quote_tokens) == 2
     logging.getLogger("s3t.test").debug("the token is %s", rig.rest.quote_tokens[1])
 

@@ -37,14 +37,17 @@ async def test_the_session_over_a_real_websocket(market: SyntheticMarket) -> Non
         items: list[StreamItem] = []
         session = DxLinkSession(token, items.append, now=lambda: ASOF)
         session.start()
-        session.subscribe([Sub("SPY", EventType.QUOTE)])
-        await asyncio.wait_for(session.synced(), 5)
+        for _ in range(500):
+            if session.status().phase == "connected":
+                break
+            await asyncio.sleep(0.01)
+        await session.subscribe([Sub("SPY", EventType.QUOTE)])
         for _ in range(100):
             if any(isinstance(i, EventBatch) for i in items):
                 break
             await asyncio.sleep(0.01)
         batch = next(i for i in items if isinstance(i, EventBatch))
-        assert next(batch.rows())["eventSymbol"] == "SPY"
+        assert next(batch.rows()).symbol == "SPY"
         headers = {m["type"] for m in fake.received}
         assert {"SETUP", "AUTH", "CHANNEL_REQUEST", "FEED_SETUP", "FEED_SUBSCRIPTION"} <= headers
 

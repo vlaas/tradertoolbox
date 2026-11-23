@@ -2,7 +2,9 @@
 
 :class:`Tastytrade` is the implementation of :class:`s3t.broker.interface.Broker`. The REST
 part is :class:`TastytradeRest`; this class adds the stream, the data source mark and the
-clock. The fake broker is this same class on fake transports (``s3t.broker.fake.broker``).
+time of the data. The session gets the hard cap of ``[subscriptions]``; the budget, the
+pacing and the content of the subscriptions belong to the feed (``s3t.subs``). The fake
+broker is this same class on fake transports (``s3t.broker.fake.broker``).
 """
 
 from collections.abc import Callable
@@ -12,7 +14,6 @@ from typing import Any
 import httpx
 
 from s3t.broker.interface import BrokerError, DataSource, StreamSink
-from s3t.broker.limits import ChangePacer
 from s3t.broker.tastytrade.dxlink import DxLinkSession, regular_hours
 from s3t.broker.tastytrade.rest import TastytradeRest
 from s3t.broker.tastytrade.ws import Connect, open_websocket
@@ -50,11 +51,8 @@ class Tastytrade(TastytradeRest):
             aggregation_period=self._stream_config.aggregation_period,
             stall_after=self._stream_config.stall_after,
             data_expected=self._data_expected,
-            pacer=ChangePacer(
-                window_cap=self._subscriptions.change_budget,
-                clock=self._clock,
-                sleep=self._sleep,
-            ),
+            limit=self._subscriptions.limit,
+            candle_limit=self._subscriptions.candle_limit,
             clock=self._clock,
             sleep=self._sleep,
             now=self._now,
@@ -65,7 +63,7 @@ class Tastytrade(TastytradeRest):
     def source(self) -> DataSource:
         return self._source
 
-    def now(self) -> datetime:
+    def data_time(self) -> datetime:
         return self._now()
 
     async def aclose(self) -> None:

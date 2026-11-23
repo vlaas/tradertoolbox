@@ -229,10 +229,11 @@ WP-0.4 review):**
   the package that first uses a document types it.
 - **Compression of the stream file:** zstd, through `backports.zstd` (PSF-2.0; the module of
   Python 3.14's standard library for 3.13, so the dependency goes with the move to 3.14).
-  The file is `stream.jsonl.zst`. The writer ends a frame every few seconds, so a recording
-  that was cut off is readable up to there.
-- The code of part 1 was written before these decisions. It is reworked with part 2
-  (implementation plan, section 8).
+  The file is `stream.jsonl.zst`. The writer flushes every few seconds, so a recording
+  that was cut off is readable up to there. (Changed 2026-11-24: the flush is a block
+  flush inside one frame, not the end of a frame. See below.)
+- The code of part 1 was written before these decisions. It was reworked on 2026-11-23,
+  with part 2.
 
 The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
 
@@ -279,6 +280,90 @@ The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
   the end the stream is `disconnected` with the reason "end of the recording".
 - **Tests of replay** (QA-02, plan 3.1 and 3.2). `make check` holds no market data, so it
   tests the replay broker on a recording made from the fake broker in a temporary directory.
+
+The event records and the feed, as built (WP-0.4, rework and part 2). **Decided 2026-11-23
+(owner, review of the WP-0.4 plan).** The signatures are in `s3t.broker.interface` and
+`s3t.subs.feed`.
+
+- **A batch is columnar in the strict sense.** `EventBatch.columns` holds one sequence per
+  field of the event's record, in the order of the record's fields, all of one length.
+  `rows()` gives records, for tests and tools.
+- **A time in a record** is a `datetime` in UTC, and `None` where the broker gives none
+  (dxFeed sends 0). A missing number is NaN, as decided before. The time of a candle is the
+  exception: it is always present (decided 2026-11-24, below).
+- **Values have the application's names.** The event types are `quote`, `trade`, `summary`,
+  `greeks`, `profile`, `candle`. The trading status is `active`, `halted` or `unknown`. The
+  wire names and the whole mapping are in `s3t.broker.tastytrade.convert`.
+- **The candle period is a value,** `CandlePeriod(count, unit)`, with the units minute,
+  hour, day, week and month. It has no session and no price attribute until R2 needs one.
+  Its text form is `15m`, `1h`, `1d`, `1w`, `1mo`.
+- **The session refuses by an error** (`StreamRefused`) with a reason: `not_connected`,
+  `limit`, `candle_limit`. The whole call is refused before anything is sent. A connection
+  lost during the sending gives the same error with `not_connected`.
+- **`subscribe` and `unsubscribe` are `async`** and return when their messages were handed
+  to the connection. The session opens and sets up all six channels before it says
+  `connected` (seen live 2026-11-23: 1.15 s from `connecting` to `connected`).
+- **The stall clock** (BRK-03) starts when the first pair is sent on a connection. A session
+  that holds nothing cannot stall.
+- **The feed separates demand from reading** (SUB-01). A consumer has a name and one
+  priority class and states the full set it wants, the most important pair first. A reader
+  gets every batch of the event types it names, whoever asked for the pairs.
+- **The stream's items pass through the feed unchanged,** with the stream's numbers. The
+  feed's own items carry a time and no number: `FillState` (`resubscribing`,
+  `resubscribed`; BRK-06), `Reduction` (SUB-03) and `Lost`.
+- **A consumer is told of a reduction** by a `Reduction` item, which every reader gets, and
+  by the status. `Demand.set()` returns nothing. The grant is computed 0.05 s after the
+  first change, so quick changes cost one computation.
+- **A reader's queue is bounded:** 2,000 batches by default, set per reader. A full queue
+  loses the newest batch, counts it and tells the reader with a `Lost` item. States, gaps,
+  notices and the feed's own items are never lost.
+- **The budget** (`s3t.subs.budget`, pure). Classes in order; inside a class the consumers
+  in the order they registered; each consumer's pairs in its order. A pair that is granted
+  already costs nothing and counts for the class that got it first.
+- **The order of sending:** removals first, then additions, the highest class first, per
+  event type in chunks of 100.
+- **The lines of a recording** (format 1). A batch line holds the columns. NaN is `null`, an
+  instant is microseconds since 1970, a candle period is text. The line with the field
+  names of an event type stays, so a field added later leaves older files readable.
+- **The replay broker follows the session's contract.** It refuses a call while it is not
+  connected. After a recorded reconnect it holds nothing and is filled again by the
+  manager. `ReplayBroker(paused=True)` stops after the first `connected` until `resume()`.
+- **Not solved:** two consumers that ask the same candle with different start times. The
+  start time is part of the identity of a subscription, so they count twice, and one removal
+  ends both at the broker. Carried to R2 (plan, section 8).
+
+**Decided 2026-11-24 (owner):**
+
+- **`Candle.time` is never `None`.** A candle event without a time is ignored by the broker
+  module, and the session counts it (`ignored_events`). In six days of the owner's streamer
+  dumps all 423,183 candle events had a time, the markers included (note B, addendum of
+  2026-11-24).
+- **The end of a snapshot is either of two dxFeed flags.** `snapshot_end` is set for
+  "snapshot end" (0x8, seen live on a history with a start) and for "snapshot snip" (0x10,
+  in the streamer dumps on a history cut at 8,000 bars).
+- **The stream file of a recording is one zstd frame with a block flush every 3 s,** and
+  when the writer falls idle. It replaces the frame end of the decision of 2026-11-23. A
+  frame every 3 s made the file larger than gzip did on the synthetic market: 6.9 times
+  smaller than the lines, against 8.4 for gzip level 5. The block flush gives 9.9
+  (measured, `docs/measurements.md`). A recording that was cut off is still readable up to
+  the last flush. The reader reads the file as a stream.
+- **A third figure per class in the use report:** `counted`, the pairs that count against
+  the budget for the class. `granted` says how many of the class's pairs are held, by this
+  class or a higher one. The counts of all classes add up to the total.
+- **`meta.json` is written when a recording starts,** with `complete` false, and again at
+  the end. Without it a recording that was cut off could not be opened at all.
+- **The manager's worker does not end by an error.** An unexpected error is logged with its
+  trace, counted (`failures`) and tried again after 5 s.
+- **A hard-cap refusal** is counted (`cap_refusals`) and not tried again until the demand
+  changes or a new session opens. Both counts are attributes of the feed, not in
+  `FeedStatus`. WP-0.7 publishes them.
+- **The replay broker has no hard cap.** Its status shows 0 for the limits.
+- **The synthetic smile** is kept at a quarter of the at-the-money variance or more. The raw
+  slice has no value in the last half hour before an expiry, and the fake failed there.
+- **pyright** also searches `tests`, so that the feed tests can use the rig of the broker
+  tests.
+
+Nothing of WP-0.4 is left as a proposal.
 
 ## 4. Requirements
 

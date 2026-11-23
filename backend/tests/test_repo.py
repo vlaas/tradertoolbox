@@ -1,10 +1,12 @@
 """Repository guards: no market data or credentials (GEN-07), no machine-specific values in
-code and configuration (GEN-08).
+code and configuration (GEN-08), and the subscription manager as the only caller of
+subscribe and unsubscribe (SUB-02).
 
 The files examined are those git would commit: tracked files plus untracked files that are
 not ignored. Documents are covered by review, not by this scan.
 """
 
+import ast
 import re
 import subprocess
 from pathlib import Path
@@ -77,3 +79,28 @@ def test_no_machine_specific_values_in_code() -> None:
             if MACHINE_SPECIFIC.search(line):
                 hits.append(f"{f}:{n}")
     assert hits == []
+
+
+# Outside ``s3t.subs`` nothing calls subscribe or unsubscribe (SUB-02), except these files.
+SUBSCRIBE_CALLERS = {
+    "backend/src/s3t/broker/recording.py": "the recording wrapper passes the manager's calls on",
+    "backend/tools/stream_check.py": "the live check of the session alone, without the feed",
+}
+
+
+def test_only_the_subscription_manager_calls_subscribe() -> None:
+    callers = set()
+    for f in committable():
+        if not f.startswith(("backend/src/s3t/", "backend/tools/")) or not f.endswith(".py"):
+            continue
+        if f.startswith("backend/src/s3t/subs/") or not (REPO / f).is_file():
+            continue
+        tree = ast.parse((REPO / f).read_text())
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("subscribe", "unsubscribe")
+            ):
+                callers.add(f)
+    assert callers == set(SUBSCRIBE_CALLERS)

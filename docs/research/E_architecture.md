@@ -69,6 +69,9 @@ after the split.
   sequence number to sequence number.
 - **REST stays outside the interface.** Each process refreshes its own access token, so the
   gateway carries the stream only.
+- (Added 2026-11-23, WP-0.4.) Asking and reading are separate: a consumer states demand
+  with one priority class, and a reader gets every batch of the event types it names. The
+  interface is `s3t.subs.feed`; the decisions are in the technical requirements, section 3.
 
 ## 2. Pricing core placement (open decision 2)
 

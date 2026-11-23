@@ -238,3 +238,74 @@ measured, on one run.
 
 Not tested: regular hours; removal on a ticking symbol; the subscription cap; the change
 limit; a stall; a token that expires during a session. All are for WP-0.9.
+
+## Addendum 2026-11-23 (WP-0.4, after the rework): the session without a subscription set
+
+One run of `backend/tools/stream_check.py` on Monday 2026-11-23, 16:28 New York, in the late
+session. Production API, one session, 9 subscriptions, 87 seconds. All measured, on one run.
+
+- **All six channels opened at once.** The session asks for the six channels right after
+  the authorization and sets each one up. It was `connected` 1.15 s after `connecting`.
+- The server granted 0.5 s and accepted the six field lists as asked, in their order.
+  Every one of the six channels had a subscription in this run. Whether the server states a
+  field list before the first subscription of a channel was not looked at.
+- **Removal on a ticking symbol.** SPY sent 37 quotes in the 32 s before the removal and
+  none in the 13 s after it. In regular hours this is still to be seen (WP-0.9).
+- **The marker that ends a candle snapshot** (flags 10) has a time and no prices. The
+  snapshot of `SPY{=d}` from ten days back had 7 events: 6 bars and the marker, newest
+  first.
+- **After a forced drop the new session is empty.** The tool closed its own socket (close
+  code 1000). The session was connected again 1.64 s later and held nothing. The tool sent
+  its 8 subscriptions again itself, and the first data came 1.78 s after the close.
+- The SPX quote sizes, text on the wire, arrive in the application as NaN.
+- No rate error, no parse error and no error message from the server.
+
+Not tested: the subscription manager against the live server (the tool talks to the session
+alone); regular hours; the subscription cap; the change limit; a stall. All are for WP-0.9.
+
+## Addendum 2026-11-24: what the owner's streamer dumps show about the events
+
+Read on 2026-11-24: the dumps the owner's `streamer` wrote on six trading days, 2026-11-16
+to 2026-11-23. They hold SPXW options with 0 DTE (Quote, Greeks, Summary) and the candles
+`SPX{=s}` and `SPX{=m}`. They are not DXLink messages: each event went through the
+streamer and is written with its field names. Today's DXLink sends the compact format only.
+Only counts and value types were taken, no prices. All measured.
+
+**Candles** (every candle event of the six days, 423,183 in all):
+
+- **Every event has a time**, the markers included. None was 0 or missing.
+- The flags seen: 0 (plain), 4 (snapshot begin), 1 (transaction pending) and 18 (snapshot
+  snip with remove). The flags 8 and 10 (snapshot end) did not occur.
+- **A history asked from the start is cut at 8,000 bars** and ends differently from the one
+  of the WP-0.4 live check. The first event has the flag 4. 8,000 bars follow, newest first.
+  The last event has the flags 18, no prices, a count of 0, and a time at a midnight before
+  the oldest bar: about 3 days before it for `SPX{=s}`, about 16 days for `SPX{=m}`
+  (2026-11-23). The rule behind that midnight is not known.
+- So a snapshot ends in one of two ways: "snapshot end" with remove (10) when the history
+  is complete from the start asked for (seen live 2026-11-23), "snapshot snip" with remove
+  (18) when it was cut.
+- **The snip marker comes again during the day.** An update of the bar in progress carries
+  the flag 1, and the next event of the symbol is the marker with the flags 18 and the
+  same time as before. Per day between 1 and 7,907 such pairs.
+- On these index candles volume, VWAP, bid and ask volume and open interest are always
+  NaN, written as text. The implied volatility is present on about half of the events.
+
+**Quotes, Greeks and Summary** (the first three million lines of 2026-11-23):
+
+- Quote of an SPXW option: the bid time, the ask time, the event time and the sequence
+  are always 0. A size is a number or the text `NaN`: 5.0% of the bid sizes and 1.0% of the
+  ask sizes were `NaN`. The ask's exchange code was empty on exactly those events; the
+  bid's was empty on 0.6% of the events.
+- Greeks: the time is always present; the flags are 0.
+- Summary: the day's open, high and low are `NaN` on 15% of the events; the day's close is
+  always `NaN` during the day; the previous close is `NaN` on 6.5%. The open interest is a
+  whole number.
+- Trade and Profile do not occur: the streamer does not subscribe them.
+
+**Consequences taken on 2026-11-24:** a candle's time is always present in the application's
+record, and an event without one is ignored and counted. The end of a snapshot is read from
+either flag. The fake sends the snip marker when it cuts a history at 8,000 bars.
+
+Not looked at: the order of the fields on the wire (the dumps are not wire data); whether
+the time of the "snapshot end" marker is the start asked for; other symbols than SPX and
+SPXW.

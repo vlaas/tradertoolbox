@@ -8,7 +8,8 @@ the exponential waits for a retry without a stated retry time.
 The clock and the sleep function are injected, so tests run on a fake clock and never sleep.
 Decided 2026-11-22: the defaults of :class:`Backoff` and of the bucket (configuration).
 
-:class:`ChangePacer` does the same for subscription changes on the stream (WP-0.4).
+:class:`ChangePacer` does the same for subscription changes on the stream (WP-0.4). The
+subscription manager owns it (``s3t.subs.local``), not the session (decided 2026-11-23).
 """
 
 import asyncio

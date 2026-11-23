@@ -7,14 +7,13 @@ It records what crosses the broker interface (``s3t.broker.recording``) into
 ``<data_dir>/recordings/NAME``, which the configuration names and git ignores (GEN-07). The
 replay broker serves it back (``s3t.broker.replay``).
 
-Per symbol it reads the instrument, the option chain and the market metrics, and subscribes
-Quote, Trade, Summary and Profile of the underlying, and Quote, Greeks and Summary of the
-options nearest the money. On the live broker this is a stated, read-only use: it refuses
-more than 500 subscriptions. ``--fake`` records the synthetic market instead, to try the
-tool without the broker. Ctrl-C ends the recording cleanly.
-
-Until part 2 of WP-0.4 the tool calls the stream directly. With the feed it goes through
-the subscription manager, the only caller of subscribe (SUB-02).
+Per symbol it reads the instrument, the option chain and the market metrics, and asks the
+feed for Quote, Trade, Summary and Profile of the underlying, and Quote, Greeks and Summary
+of the options nearest the money. It goes through the feed (``s3t.subs``), as everything
+does: the subscription manager is the only caller of subscribe (SUB-02). On the live broker
+this is a stated, read-only use: it refuses more than 500 subscriptions. ``--fake`` records
+the synthetic market instead, to try the tool without the broker; the synthetic market
+moves only in the regular session of a weekday. Ctrl-C ends the recording cleanly.
 """
 
 import argparse
@@ -23,12 +22,14 @@ import logging
 import sys
 
 from s3t.broker.fake.broker import FakeBroker
-from s3t.broker.interface import Broker, BrokerError, EventBatch, EventType, StreamItem, Sub
+from s3t.broker.interface import Broker, BrokerError, EventBatch, EventType, Sub, Trade
 from s3t.broker.recording import RecordingBroker
 from s3t.broker.tastytrade.broker import from_config
 from s3t.broker.tastytrade.chain import near_the_money
 from s3t.config import load_config
 from s3t.secrets import install_redaction
+from s3t.subs.feed import Priority, Reduction
+from s3t.subs.local import LocalFeed
 
 MAX_SUBSCRIPTIONS = 500
 UNDERLYING_EVENTS = (EventType.QUOTE, EventType.TRADE, EventType.SUMMARY, EventType.PROFILE)
@@ -38,40 +39,47 @@ OPTION_EVENTS = (EventType.QUOTE, EventType.GREEKS, EventType.SUMMARY)
 async def run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     symbols = [s for s in args.symbols.split(",") if s]
-    inner: Broker = FakeBroker() if args.fake else from_config(config)
+    fake = FakeBroker() if args.fake else None
+    inner: Broker = fake or from_config(config)
     try:
         broker = RecordingBroker(inner, config.paths.recordings_dir / args.name)
     except FileExistsError as e:
         await inner.aclose()
         print(f"FAILED: {e}")
         return 1
+    feed = LocalFeed(broker, config.subscriptions)
+    demand = feed.consumer("capture", Priority.RECORDER)
     prices: dict[str, float] = {}
-    batches = 0
+    batches = cut = 0
 
-    def sink(item: StreamItem) -> None:
-        nonlocal batches
-        if not isinstance(item, EventBatch):
-            return
-        batches += 1
-        if item.event is EventType.TRADE:
-            for row in item.rows():
-                if isinstance(row["price"], int | float):
-                    prices.setdefault(row["eventSymbol"], float(row["price"]))
+    async def read() -> None:
+        nonlocal batches, cut
+        async for item in feed.reader("capture"):
+            if isinstance(item, Reduction) and item.consumer == demand.name:
+                cut = len(item.cut)
+            if not isinstance(item, EventBatch):
+                continue
+            batches += 1
+            if item.event is EventType.TRADE:
+                for row in item.rows():
+                    if isinstance(row, Trade) and row.price == row.price:
+                        prices.setdefault(row.symbol, row.price)
 
+    reader = asyncio.create_task(read())
+    ticker = asyncio.create_task(fake.dxlink.run()) if fake is not None else None
     try:
-        stream = broker.stream(sink)
-        stream.start()
+        feed.start()
         chains = {}
         for symbol in symbols:
             await broker.equity(symbol)
             chains[symbol] = await broker.option_chain(symbol)
         await broker.market_metrics(symbols)
-        stream.subscribe([Sub(s, e) for s in symbols for e in UNDERLYING_EVENTS])
+        wanted = [Sub(s, e) for s in symbols for e in UNDERLYING_EVENTS]
+        demand.set(wanted)
         for _ in range(150):
             if all(s in prices for s in symbols):
                 break
             await asyncio.sleep(0.1)
-        options: list[Sub] = []
         for symbol in symbols:
             if symbol not in prices:
                 print(f"no trade price for {symbol}: its options are left out")
@@ -79,19 +87,25 @@ async def run(args: argparse.Namespace) -> int:
             near = near_the_money(
                 chains[symbol], prices[symbol], expirations=args.expirations, strikes=args.strikes
             )
-            options += [Sub(o, e) for o in near for e in OPTION_EVENTS]
-        total = len(options) + len(symbols) * len(UNDERLYING_EVENTS)
-        if total > MAX_SUBSCRIPTIONS and not args.fake:
+            wanted += [Sub(o, e) for o in near for e in OPTION_EVENTS]
+        if len(wanted) > MAX_SUBSCRIPTIONS and not args.fake:
             limit = f"at most {MAX_SUBSCRIPTIONS} on the live broker"
-            print(f"FAILED: {total} subscriptions asked, {limit}")
+            print(f"FAILED: {len(wanted)} subscriptions asked, {limit}")
             return 1
-        stream.subscribe(options)
-        print(f"recording {total} subscriptions for {args.minutes:g} minutes; Ctrl-C ends it")
+        demand.set(wanted)
+        await asyncio.wait_for(feed.settled(), 120)
+        print(f"recording {len(wanted)} subscriptions for {args.minutes:g} minutes; Ctrl-C ends it")
+        if cut:
+            print(f"the budget cut {cut} of them")
         await asyncio.sleep(args.minutes * 60)
-    except BrokerError as e:
+    except (BrokerError, TimeoutError) as e:
         print(f"FAILED: {type(e).__name__}: {e}")
         return 1
     finally:
+        if ticker is not None:
+            ticker.cancel()
+        await feed.aclose()
+        reader.cancel()
         await broker.aclose()
         print(f"recording {args.name}: {batches} batches seen, {broker.lost} items lost")
     return 0

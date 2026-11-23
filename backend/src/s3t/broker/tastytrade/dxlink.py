@@ -1,35 +1,37 @@
-"""The DXLink streaming session (BRK-02, BRK-03, BRK-06; the data of SUB-02).
+"""The DXLink streaming session (BRK-02, BRK-03, BRK-06).
 
 Source: `tt` tt_capture.py, class ``DXLinkFeed``, version 1.6.0 (`tt` is not a git
 repository, so no commit can be named). Kept from it: SETUP, then AUTH after the server's
 first ``UNAUTHORIZED``; one channel per event type; the COMPACT format with explicit field
 lists, the same lists as the official SDK; the server's field order is the one used for
-decoding; a keepalive every 30 s; subscription changes in chunks of 100, paced
-(``s3t.broker.limits.ChangePacer``); a pause and half the rate when the server says the rate
-is too high.
+decoding; a keepalive every 30 s; subscription messages of 100.
 
-Changed in the port (2026-11-23, WP-0.4):
+The session does the technical work and holds no content (decided 2026-11-23, requirements
+section 3):
 
 - **It stays up.** A loop opens the session again after any loss: a closed socket, no
   message for 60 s, a stall, a refused token, a protocol error. The waits between attempts
   are exponential with jitter, from 1 s to 30 s, without an attempt limit.
-- **It holds the wanted set.** ``subscribe`` and ``unsubscribe`` change the set and return.
-  One task sends the difference between the set and what this session was sent, removals
-  first. After a reconnect nothing was sent, so the whole set goes out again (BRK-02). A
-  pair added and removed before its turn is never sent.
-- **Unsubscription and candles**, which `tt` did not have.
-- **No cache and no tape.** Each data block becomes an :class:`EventBatch` for the sink, with
-  the values as received and the receipt time taken before decoding.
+- **It keeps no subscription set.** ``subscribe`` and ``unsubscribe`` send their pairs now,
+  on the current connection, and are refused while the session is not connected. After a
+  reconnect the session is open and empty. The subscription manager (``s3t.subs``) knows
+  what is wanted, paces the changes and sends them again.
+- **A hard cap.** The session counts the pairs sent on the current connection and refuses a
+  call that would go beyond the configured limit. It is a backstop.
+- **All six channels open with the session,** before it says ``connected``, so a subscribe
+  call never waits for the server.
+- **The application's own records.** Each data block becomes an :class:`EventBatch` of
+  columns (``s3t.broker.tastytrade.convert``), with the receipt time taken before decoding.
 - **Stall detection** (BRK-03). No data for ``stall_after`` seconds, while data is expected
-  and something is subscribed, makes the session ``stalled`` and drops it. Each stall in a
-  row doubles the wait, up to 15 minutes, so a quiet symbol does not cause a reconnect a
-  minute; data that arrives well after the subscriptions were sent resets it.
-- **The gap is reported** (BRK-02): a :class:`Gap` item when a session is open again, before
-  any of its data, then the phase ``resubscribing``, then ``connected``.
-- **Rate errors.** DXLink does not confirm a subscription. `tt` found the refused ones by the
-  data that never came. Here every change sent on that channel in the 2 s before the error
-  is sent again after the pause, behind the changes that still wait. Sending an accepted
-  one twice is harmless.
+  and something is subscribed, makes the session ``stalled`` and drops it. The clock starts
+  when the first pair is sent on a connection. Each stall in a row doubles the wait, up to
+  15 minutes, so a quiet symbol does not cause a reconnect a minute; data that arrives well
+  after the last subscription was sent resets it.
+- **The gap is reported** (BRK-02): a :class:`Gap` item when a session is open again,
+  before the phase ``connected`` and before any of its data.
+- **Rate errors.** DXLink does not confirm a subscription. When the server says the rate is
+  too high, the session passes that on as a notice with the event type of the channel. The
+  manager slows down and sends again what it sent just before.
 - **A new quote token** is fetched when the server refuses the held one, and when less than
   five minutes of its life are left at a reconnect.
 - The clock, the sleep and the connection are injected. Nothing is logged of a message but
@@ -43,10 +45,8 @@ import json
 import logging
 import random
 import time
-from collections import deque
 from collections.abc import Awaitable, Callable, Collection
 from datetime import UTC, datetime, timedelta
-from itertools import islice
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -59,12 +59,14 @@ from s3t.broker.interface import (
     StreamItem,
     StreamNotice,
     StreamPhase,
+    StreamRefused,
     StreamSink,
     StreamState,
     StreamStatus,
     Sub,
 )
-from s3t.broker.limits import Backoff, ChangePacer, Clock, Sleep
+from s3t.broker.limits import Backoff, Clock, Sleep
+from s3t.broker.tastytrade.convert import EVENT_FIELDS, EVENT_OF, WIRE_NAME, Decoder, wire_symbol
 from s3t.broker.tastytrade.ws import Connect, Connection, ConnectionLost, open_websocket
 from s3t.secrets import redact
 
@@ -75,46 +77,12 @@ SILENCE_DROP_S = 60.0
 HANDSHAKE_TIMEOUT_S = 20.0
 CHANNEL_TIMEOUT_S = 15.0
 WATCH_PERIOD_S = 5.0
-RESEND_WINDOW_S = 2.0
+MESSAGE_SIZE = 100
 MAX_STALL_WAIT_S = 900.0
 LIVELY_AFTER_S = 5.0
 STEADY_AFTER_S = 30.0
 TOKEN_MARGIN = timedelta(minutes=5)
 
-# The fields asked per event. The first six lists are `tt`'s, which are the official SDK's.
-EVENT_FIELDS: dict[EventType, tuple[str, ...]] = {
-    EventType.QUOTE: (
-        "eventSymbol", "eventTime", "sequence", "timeNanoPart", "bidTime", "bidExchangeCode",
-        "askTime", "askExchangeCode", "bidPrice", "askPrice", "bidSize", "askSize",
-    ),
-    EventType.TRADE: (
-        "eventSymbol", "eventTime", "time", "timeNanoPart", "sequence", "exchangeCode",
-        "dayId", "tickDirection", "extendedTradingHours", "price", "change", "size",
-        "dayVolume", "dayTurnover",
-    ),
-    EventType.SUMMARY: (
-        "eventSymbol", "eventTime", "dayId", "dayClosePriceType", "prevDayId",
-        "prevDayClosePriceType", "openInterest", "dayOpenPrice", "dayHighPrice",
-        "dayLowPrice", "dayClosePrice", "prevDayClosePrice", "prevDayVolume",
-    ),
-    EventType.GREEKS: (
-        "eventSymbol", "eventTime", "eventFlags", "index", "time", "sequence", "price",
-        "volatility", "delta", "gamma", "theta", "rho", "vega",
-    ),
-    EventType.PROFILE: (
-        "eventSymbol", "eventTime", "description", "shortSaleRestriction", "tradingStatus",
-        "haltStartTime", "haltEndTime", "exDividendDayId", "statusReason",
-        "high52WeekPrice", "low52WeekPrice", "beta", "shares", "highLimitPrice",
-        "lowLimitPrice", "earningsPerShare", "exDividendAmount", "dividendFrequency",
-        "freeFloat",
-    ),
-    EventType.CANDLE: (
-        "eventSymbol", "eventTime", "eventFlags", "index", "time", "sequence", "count",
-        "open", "high", "low", "close", "volume", "vwap", "bidVolume", "askVolume",
-        "impVolatility", "openInterest",
-    ),
-}  # fmt: skip
-_EVENTS = {e.value: e for e in EventType}
 _NY = ZoneInfo("America/New_York")
 
 LOG = logging.getLogger(__name__)
@@ -146,7 +114,8 @@ class DxLinkSession:
         aggregation_period: float = 0.5,
         stall_after: float = 60.0,
         data_expected: Callable[[datetime], bool] = regular_hours,
-        pacer: ChangePacer | None = None,
+        limit: int = 11_000,
+        candle_limit: int = 100,
         clock: Clock = time.monotonic,
         sleep: Sleep = asyncio.sleep,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -157,17 +126,15 @@ class DxLinkSession:
         self._aggregation, self._stall_after = aggregation_period, stall_after
         self._data_expected = data_expected
         self._clock, self._sleep, self._now = clock, sleep, now
-        self._pacer = pacer or ChangePacer(clock=clock, sleep=sleep)
+        self._limit, self._candle_limit = limit, candle_limit
         self._backoff = backoff or Backoff()
         self._rng = rng or random.Random()
-        # what is wanted, and what this session was sent
-        self._held: dict[Sub, None] = {}
-        self._sent: set[Sub] = set()
-        self._adds: dict[Sub, None] = {}
-        self._removes: dict[Sub, None] = {}
-        self._recent: deque[tuple[float, int, tuple[Sub, ...], tuple[Sub, ...]]] = deque()
-        self._wake = asyncio.Event()
-        self._synced = asyncio.Event()
+        # what the current connection was sent: counts only, never the pairs
+        self._subscribed = 0
+        self._candles = 0
+        self._first_sub: float | None = None
+        self._last_sub = clock()
+        self._sending = asyncio.Lock()
         # the session
         self._token: QuoteToken | None = None
         self._conn: Connection | None = None
@@ -180,6 +147,7 @@ class DxLinkSession:
         self._channel_events: dict[int, EventType] = {}
         self._opened: dict[int, asyncio.Event] = {}
         self._fields: dict[EventType, tuple[str, ...]] = {}
+        self._decoders: dict[EventType, Decoder] = {}
         self._granted_period: float | None = None
         # state and counters
         self._seq = 0
@@ -201,9 +169,11 @@ class DxLinkSession:
         self._last_gap: Gap | None = None
         self.parse_errors = 0
         self.sink_errors = 0
+        self.ignored_events = 0
+        """Candle events left out for a missing time or an unknown symbol form."""
 
     def __repr__(self) -> str:
-        return f"DxLinkSession(phase={self._phase!r}, held={len(self._held)})"
+        return f"DxLinkSession(phase={self._phase!r}, subscribed={self._subscribed})"
 
     # ------------------------------------------------------------------ Stream
 
@@ -211,37 +181,71 @@ class DxLinkSession:
         if self._main is None and not self._closed:
             self._main = asyncio.create_task(self._run(), name="dxlink-session")
 
-    def subscribe(self, subs: Collection[Sub]) -> None:
+    async def subscribe(self, subs: Collection[Sub]) -> None:
+        subs = list(subs)
+        if not subs:
+            return
+        async with self._sending:
+            self._must_be_connected()
+            candles = sum(1 for sub in subs if sub.event is EventType.CANDLE)
+            if self._subscribed + len(subs) > self._limit:
+                raise StreamRefused(
+                    f"{len(subs)} subscriptions would go beyond the cap of {self._limit}",
+                    reason="limit",
+                )
+            if self._candles + candles > self._candle_limit:
+                raise StreamRefused(
+                    f"{candles} candles would go beyond the cap of {self._candle_limit}",
+                    reason="candle_limit",
+                )
+            await self._send_changes("add", subs)
+
+    async def unsubscribe(self, subs: Collection[Sub]) -> None:
+        subs = list(subs)
+        if not subs:
+            return
+        async with self._sending:
+            self._must_be_connected()
+            await self._send_changes("remove", subs)
+
+    def _must_be_connected(self) -> None:
+        if self._phase != "connected" or self._conn is None:
+            raise StreamRefused(
+                f"the session is {self._phase}, not connected", reason="not_connected"
+            )
+
+    async def _send_changes(self, kind: str, subs: list[Sub]) -> None:
+        """Send the pairs in messages of 100 per event type, and count them."""
+        by_event: dict[EventType, list[Sub]] = {}
         for sub in subs:
-            if sub.from_time is not None and sub.event is not EventType.CANDLE:
-                raise ValueError("only a candle subscription has a start time")
-            if sub in self._held:
-                continue
-            self._held[sub] = None
-            if sub in self._sent:
-                self._removes.pop(sub, None)
-            else:
-                self._adds[sub] = None
-        self._changed()
-
-    def unsubscribe(self, subs: Collection[Sub]) -> None:
-        for sub in subs:
-            if sub not in self._held:
-                continue
-            del self._held[sub]
-            if sub in self._sent:
-                self._removes[sub] = None
-            else:
-                self._adds.pop(sub, None)
-        self._changed()
-
-    def _changed(self) -> None:
-        if self._adds or self._removes:
-            self._synced.clear()
-            self._wake.set()
-
-    async def synced(self) -> None:
-        await self._synced.wait()
+            by_event.setdefault(sub.event, []).append(sub)
+        add = kind == "add"
+        for event, group in by_event.items():
+            channel = self._channels[event]
+            for i in range(0, len(group), MESSAGE_SIZE):
+                chunk = group[i : i + MESSAGE_SIZE]
+                entries = [_add_entry(s) if add else _entry(s) for s in chunk]
+                try:
+                    message = {"type": "FEED_SUBSCRIPTION", "channel": channel, kind: entries}
+                    await self._send(message)
+                except (ConnectionLost, _SessionEnded) as e:
+                    self._fail(str(e))
+                    raise StreamRefused(
+                        "the session was lost while sending", reason="not_connected"
+                    ) from None
+                candles = len(chunk) if event is EventType.CANDLE else 0
+                if add:
+                    now = self._clock()
+                    if self._subscribed == 0:
+                        self._first_sub = now
+                    self._last_sub = now
+                    self._subscribed += len(chunk)
+                    self._candles += candles
+                else:
+                    self._subscribed = max(self._subscribed - len(chunk), 0)
+                    self._candles = max(self._candles - candles, 0)
+                    if self._subscribed == 0:
+                        self._first_sub = None
 
     def status(self) -> StreamStatus:
         return StreamStatus(
@@ -253,11 +257,10 @@ class DxLinkSession:
             reconnects=max(self._sessions - 1, 0),
             stalls=self._stalls,
             last_gap=self._last_gap,
-            held=len(self._held),
-            pending=len(self._adds) + len(self._removes),
-            changes_last_minute=self._pacer.used(),
-            change_limit=self._pacer.window_cap,
-            rate_errors=self._pacer.rate_errors,
+            subscribed=self._subscribed,
+            candles=self._candles,
+            limit=self._limit,
+            candle_limit=self._candle_limit,
             aggregation_period=self._granted_period,
         )
 
@@ -327,7 +330,9 @@ class DxLinkSession:
         self._channel_events.clear()
         self._opened.clear()
         self._fields.clear()
-        self._recent.clear()
+        self._decoders.clear()
+        self._subscribed = self._candles = 0
+        self._first_sub = None
         self._conn = await self._connect(token.url)
         self._last_message = self._clock()
         self._spawn(self._read(self._conn), "dxlink-reader")
@@ -341,6 +346,7 @@ class DxLinkSession:
             }
         )
         await self._until(self._authorized, HANDSHAKE_TIMEOUT_S, "not authorized")
+        await self._open_channels()
 
     async def _serve(self) -> str:
         assert self._failed is not None
@@ -355,11 +361,7 @@ class DxLinkSession:
             gap = Gap(self._next(), last_seq, since, at, self._reason or "lost")
             self._last_gap = gap
             self._emit(gap)
-        self._sent.clear()
-        self._removes.clear()
-        self._adds = dict.fromkeys(self._held)
-        self._set_phase("resubscribing" if self._held else "connected")
-        self._spawn(self._sync(), "dxlink-sync")
+        self._set_phase("connected")
         self._spawn(self._keepalive(), "dxlink-keepalive")
         self._spawn(self._watch(), "dxlink-watch")
         return await self._failed
@@ -370,7 +372,6 @@ class DxLinkSession:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         conn, self._conn = self._conn, None
-        self._synced.clear()
         if conn is not None:
             if self._authorized.is_set() and self._lost is None:
                 since = self._last_data_at if self._last_batch_seq else None
@@ -439,9 +440,9 @@ class DxLinkSession:
                 continue
             if self._expected_since is None:
                 self._expected_since = now
-            if self._phase != "connected" or not self._sent:
+            if self._phase != "connected" or self._first_sub is None:
                 continue
-            quiet = now - max(self._last_data, self._phase_clock, self._expected_since)
+            quiet = now - max(self._last_data, self._first_sub, self._expected_since)
             if quiet > self._stall_wait:
                 self._stalls += 1
                 reason = f"no data for {quiet:.0f} s"
@@ -449,95 +450,35 @@ class DxLinkSession:
                 self._set_phase("stalled", reason)
                 raise _SessionEnded(reason)
 
-    # ------------------------------------------------------------------ subscriptions
+    # ------------------------------------------------------------------ channels
 
-    def _next_chunk(self) -> tuple[EventType, list[Sub], list[Sub]] | None:
-        first = next(iter(self._removes), None) or next(iter(self._adds), None)
-        if first is None:
-            return None
-        event, size = first.event, self._pacer.burst
-        removes = list(islice((s for s in self._removes if s.event is event), size))
-        adds = list(islice((s for s in self._adds if s.event is event), size - len(removes)))
-        return event, adds, removes
-
-    async def _sync(self) -> None:
-        while True:
-            chunk = self._next_chunk()
-            if chunk is None:
-                if self._phase == "resubscribing":
-                    self._set_phase("connected")
-                self._synced.set()
-                self._wake.clear()
-                await self._wake.wait()
-                continue
-            event, adds, removes = chunk
-            channel = await self._channel(event)
-            await self._pacer.acquire(len(adds) + len(removes))
-            # The wanted set may have changed during the waits.
-            adds = [s for s in adds if s in self._adds]
-            removes = [s for s in removes if s in self._removes]
-            if not adds and not removes:
-                continue
-            message: dict[str, Any] = {"type": "FEED_SUBSCRIPTION", "channel": channel}
-            if removes:
-                message["remove"] = [{"type": event.value, "symbol": s.symbol} for s in removes]
-            if adds:
-                message["add"] = [_add_entry(s) for s in adds]
-            await self._send(message)
-            for sub in adds:
-                del self._adds[sub]
-                self._sent.add(sub)
-            for sub in removes:
-                del self._removes[sub]
-                self._sent.discard(sub)
-            now = self._clock()
-            self._recent.append((now, channel, tuple(adds), tuple(removes)))
-            while self._recent and now - self._recent[0][0] > RESEND_WINDOW_S:
-                self._recent.popleft()
-
-    async def _channel(self, event: EventType) -> int:
-        """The channel of an event type; opened and set up on first use."""
-        if event in self._channels:
-            return self._channels[event]
-        channel = 1 + 2 * len(self._channels)
-        opened = self._opened[channel] = asyncio.Event()
-        self._channel_events[channel] = event
-        await self._send(
-            {
-                "type": "CHANNEL_REQUEST",
-                "channel": channel,
-                "service": "FEED",
-                "parameters": {"contract": "AUTO"},
-            }
-        )
-        await self._until(opened, CHANNEL_TIMEOUT_S, f"channel {channel} not opened")
-        await self._send(
-            {
-                "type": "FEED_SETUP",
-                "channel": channel,
-                "acceptAggregationPeriod": self._aggregation,
-                "acceptDataFormat": "COMPACT",
-                "acceptEventFields": {event.value: list(EVENT_FIELDS[event])},
-            }
-        )
-        self._channels[event] = channel
-        return channel
-
-    def _send_again(self, channel: int) -> None:
-        """After a rate error: what was sent on this channel lately may not have counted."""
-        for _, sent_on, adds, removes in self._recent:
-            if sent_on != channel:
-                continue
-            for sub in adds:
-                if sub in self._held and sub in self._sent:
-                    self._sent.discard(sub)
-                    self._adds[sub] = None
-            for sub in removes:
-                if sub not in self._held and sub not in self._sent:
-                    self._sent.add(sub)
-                    self._removes[sub] = None
-        self._recent = deque(r for r in self._recent if r[1] != channel)
-        self._changed()
+    async def _open_channels(self) -> None:
+        """One channel per event type, opened and set up before the session is connected."""
+        for number, event in enumerate(EventType):
+            channel = 1 + 2 * number
+            self._opened[channel] = asyncio.Event()
+            self._channel_events[channel] = event
+            await self._send(
+                {
+                    "type": "CHANNEL_REQUEST",
+                    "channel": channel,
+                    "service": "FEED",
+                    "parameters": {"contract": "AUTO"},
+                }
+            )
+        for channel, opened in self._opened.items():
+            await self._until(opened, CHANNEL_TIMEOUT_S, f"channel {channel} not opened")
+        for channel, event in self._channel_events.items():
+            await self._send(
+                {
+                    "type": "FEED_SETUP",
+                    "channel": channel,
+                    "acceptAggregationPeriod": self._aggregation,
+                    "acceptDataFormat": "COMPACT",
+                    "acceptEventFields": {WIRE_NAME[event]: list(EVENT_FIELDS[event])},
+                }
+            )
+            self._channels[event] = channel
 
     # ------------------------------------------------------------------ reading
 
@@ -581,31 +522,27 @@ class DxLinkSession:
             if isinstance(period, int | float):
                 self._granted_period = float(period)
             for name, fields in (message.get("eventFields") or {}).items():
-                event = _EVENTS.get(name)
+                event = EVENT_OF.get(name)
                 if event is None or not isinstance(fields, list):
                     continue
                 if tuple(fields) != EVENT_FIELDS[event] and event not in self._fields:
                     LOG.info("stream: the server set its own field list for %s", name)
                 self._fields[event] = tuple(str(f) for f in fields)
+                decoder = self._decoders[event] = Decoder(event, self._fields[event])
+                if decoder.missing:
+                    LOG.warning("stream: the server leaves out fields of %s", name)
         elif kind == "ERROR":
             text = redact(str(message.get("message", "")))[:200]
             code = str(message.get("error", ""))
+            event = self._channel_events.get(channel)
             if "rate" in text.lower():
-                pause = self._pacer.on_rate_error()
-                self._send_again(channel)
-                if pause:
-                    LOG.warning(
-                        "stream: %r; changes wait %.0f s, rate now %.0f a second",
-                        text,
-                        pause,
-                        self._pacer.rate,
-                    )
-                self._emit(StreamNotice(self._next(), at, "rate", text))
+                LOG.warning("stream: %r on channel %s", text, channel)
+                self._emit(StreamNotice(self._next(), at, "rate", text, event))
             else:
                 refused = code in ("BAD_ACTION", "UNAUTHORIZED", "UNSUPPORTED_PROTOCOL")
                 LOG.warning("stream: error %s on channel %s: %s", code, channel, text)
                 kind_of = "refused" if refused else "error"
-                self._emit(StreamNotice(self._next(), at, kind_of, f"{code}: {text}"))
+                self._emit(StreamNotice(self._next(), at, kind_of, f"{code}: {text}", event))
         elif kind == "CHANNEL_CLOSED":
             raise _SessionEnded(f"channel {channel} closed by the server")
 
@@ -616,39 +553,46 @@ class DxLinkSession:
             blocks: dict[str, list[Any]] = {}
             for ev in data:
                 name = ev.get("eventType")
-                known = _EVENTS.get(name)
+                known = EVENT_OF.get(name)
                 names = () if known is None else self._fields.get(known, ())
                 blocks.setdefault(name, []).extend(ev.get(f) for f in names)
             data = [x for pair in blocks.items() for x in pair]
         delivered = False
         for i in range(0, len(data) - 1, 2):
             name, values = data[i], data[i + 1]
-            event = _EVENTS.get(name) if isinstance(name, str) else None
-            fields = None if event is None else self._fields.get(event)
-            if (
-                event is None
-                or not fields
-                or not isinstance(values, list)
-                or len(values) % len(fields)
-            ):
+            event = EVENT_OF.get(name) if isinstance(name, str) else None
+            decoder = None if event is None else self._decoders.get(event)
+            columns = None
+            if event is not None and decoder is not None and isinstance(values, list):
+                columns = decoder(values)
+            if event is None or columns is None:
                 self.parse_errors += 1
                 if self.parse_errors <= 5:
                     LOG.warning("stream: cannot decode a block of %s", redact(str(name))[:40])
                 continue
-            if not values:
+            ignored = len(values) // decoder.width - len(columns[0]) if decoder else 0
+            if ignored:
+                self.ignored_events += ignored
+                if self.ignored_events - ignored < 5:
+                    LOG.warning("stream: %d %s event(s) ignored", ignored, event.value)
+            if not columns[0]:
                 continue
             self._last_batch_seq = self._next()
-            self._emit(EventBatch(self._last_batch_seq, event, fields, values, received_at))
+            self._emit(EventBatch(self._last_batch_seq, event, received_at, columns))
             delivered = True
         if delivered:
             now = self._clock()
             self._last_data, self._last_data_at = now, received_at
-            if self._phase == "connected" and now - self._phase_clock >= LIVELY_AFTER_S:
+            if self._phase == "connected" and now - self._last_sub >= LIVELY_AFTER_S:
                 self._stall_wait = self._stall_after
 
 
+def _entry(sub: Sub) -> dict[str, Any]:
+    return {"type": WIRE_NAME[sub.event], "symbol": wire_symbol(sub)}
+
+
 def _add_entry(sub: Sub) -> dict[str, Any]:
-    entry: dict[str, Any] = {"type": sub.event.value, "symbol": sub.symbol}
+    entry = _entry(sub)
     if sub.event is EventType.CANDLE:
         start = sub.from_time or datetime.now(UTC)
         entry["fromTime"] = round(start.timestamp() * 1000)

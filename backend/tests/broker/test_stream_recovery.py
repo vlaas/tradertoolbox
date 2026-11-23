@@ -1,6 +1,8 @@
 """The session recovers by itself (BRK-02, BRK-03, BRK-06): after a drop, a refused
-connection, a silent stream, a frozen stream and a refused token. Each time the full set of
-subscriptions is back and the gap is reported."""
+connection, a silent stream, a frozen stream and a refused token. Each time it is open
+again, has reported the gap, and is empty: it holds no subscription and sends none by itself
+(decided 2026-11-23). That the full demand comes back is the manager's work and is tested
+on manager and session together (tests/subs/test_feed_recovery.py)."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -10,13 +12,14 @@ from s3t.broker.fake.clock import VirtualClock
 from s3t.broker.fake.market import SyntheticMarket
 from s3t.broker.interface import (
     BrokerUnavailable,
+    CandlePeriod,
     EventBatch,
     EventType,
-    Gap,
     QuoteToken,
     StreamState,
     Sub,
 )
+from s3t.broker.tastytrade.convert import WIRE_NAME, wire_symbol
 from s3t.broker.tastytrade.dxlink import regular_hours
 
 from .conftest import ASOF, StreamRig
@@ -28,26 +31,27 @@ SATURDAY = datetime(2026, 11, 21, 15, 0, tzinfo=UTC)
 
 
 def demand(market: SyntheticMarket) -> list[Sub]:
+    minute = CandlePeriod(1, "minute")
     return [
         Sub("SPY", EventType.QUOTE),
         Sub("SPY", EventType.TRADE),
         Sub("SPX", EventType.TRADE),
-        Sub("SPY{=m}", EventType.CANDLE, from_time=ASOF - timedelta(minutes=5)),
+        Sub("SPY", EventType.CANDLE, minute, ASOF - timedelta(minutes=5)),
         *option_quotes(market, 130),
     ]
 
 
 def held_at_server(subs: list[Sub]) -> set[tuple[str, str]]:
-    return {(s.event.value, s.symbol) for s in subs}
+    """The pairs as the fake server holds them: in dxFeed's names."""
+    return {(WIRE_NAME[s.event], wire_symbol(s)) for s in subs}
 
 
-async def test_a_dropped_stream_recovers_the_full_demand_and_reports_the_gap(
+async def test_a_dropped_stream_reopens_reports_the_gap_and_is_empty(
     rig: StreamRig, market: SyntheticMarket
 ) -> None:
-    session = rig.session()
-    session.start()
+    session = await rig.open()
     subs = demand(market)
-    session.subscribe(subs)
+    await session.subscribe(subs)
     rig.tick_every_second()
     await rig.clock.advance(3)
     assert rig.dxlink.subscriptions() == held_at_server(subs)
@@ -60,34 +64,34 @@ async def test_a_dropped_stream_recovers_the_full_demand_and_reports_the_gap(
     dropped_at = rig.clock.wall()
     await rig.clock.advance(4)
 
-    # The full demand is back on a new session of the server.
+    # A new session of the server, open and empty: the session sent nothing by itself.
     assert rig.dxlink.session is not first_session
-    assert rig.dxlink.subscriptions() == held_at_server(subs)
-    assert rig.phases()[-3:] == ["connecting", "resubscribing", "connected"]
+    assert rig.dxlink.subscriptions() == set() and session.status().subscribed == 0
+    assert rig.phases()[-2:] == ["connecting", "connected"]
 
-    # The gap: from the last batch before the drop to the new session, before any new data.
+    # The gap: from the last batch before the drop to the new session, before `connected`.
     (gap,) = rig.gaps()
     assert gap.last_seq == last_before.seq and gap.since == last_before.received_at
     assert dropped_at < gap.until <= dropped_at + timedelta(seconds=2)
     assert "closed" in gap.reason
     between = [i for i in rig.items if last_before.seq < i.seq < gap.seq]
     assert between and not any(isinstance(i, EventBatch) for i in between)
-    after = [i for i in rig.items if i.seq > gap.seq and isinstance(i, EventBatch)]
-    assert {b.event for b in after} == {EventType.QUOTE, EventType.TRADE, EventType.CANDLE}
+    after = [i for i in rig.items if i.seq > gap.seq]
+    assert [type(i) for i in after] == [StreamState] and rig.phases()[-1] == "connected"
 
     status = session.status()
     assert (status.phase, status.reconnects, status.stalls) == ("connected", 1, 0)
-    assert status.last_gap == gap and status.held == len(subs) and status.pending == 0
-    # The data goes on.
-    seen = len(rig.batches(EventType.TRADE))
+    assert status.last_gap == gap
+    # Whoever sends the pairs again gets the data again.
+    await session.subscribe(subs)
     await rig.clock.advance(3)
-    assert len(rig.batches(EventType.TRADE)) > seen
+    kinds = {i.event for i in rig.items if isinstance(i, EventBatch) and i.seq > gap.seq}
+    assert kinds == {EventType.QUOTE, EventType.TRADE, EventType.CANDLE}
 
 
 async def test_refused_connections_are_retried_with_growing_waits(rig: StreamRig) -> None:
     rig.dxlink.refuse_connects = 4
     session = rig.session()
-    session.subscribe([Sub("SPY", EventType.QUOTE)])
     session.start()
     attempts = []
     for _ in range(16):
@@ -96,7 +100,6 @@ async def test_refused_connections_are_retried_with_growing_waits(rig: StreamRig
     # Attempts at 0, 1, 3, 7 and 15 seconds: waits of 1, 2, 4 and 8 seconds.
     assert attempts == [2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5]
     assert rig.phases()[-1] == "connected" and rig.gaps() == []
-    assert rig.dxlink.subscriptions() == {("Quote", "SPY")}
     assert session.status().reconnects == 0  # the first session that opened
 
 
@@ -104,10 +107,9 @@ async def test_a_silent_stream_in_market_hours_is_a_stall(
     rig: StreamRig, market: SyntheticMarket
 ) -> None:
     assert regular_hours(ASOF)
-    session = rig.session(stall_after=20.0)
-    session.start()
+    session = await rig.open(stall_after=20.0)
     subs = demand(market)
-    session.subscribe(subs)
+    await session.subscribe(subs)
     rig.tick_every_second()
     await rig.clock.advance(30)
     assert session.status().stalls == 0  # data every second: no stall
@@ -120,13 +122,18 @@ async def test_a_silent_stream_in_market_hours_is_a_stall(
     stalled = next(s for s in states if s.phase == "stalled")
     assert stalled.reason and stalled.reason.startswith("no data for 2")
     assert session.status().stalls == 1
-    # It is treated as a drop: a new session with the full demand.
-    assert rig.phases()[-4:] == ["disconnected", "connecting", "resubscribing", "connected"]
-    assert rig.dxlink.subscriptions() == held_at_server(subs)
+    # It is treated as a drop: a new session, open and empty.
+    assert rig.phases()[-3:] == ["disconnected", "connecting", "connected"]
+    assert rig.dxlink.subscriptions() == set()
     assert len(rig.gaps()) == 1 and "no data" in rig.gaps()[0].reason
 
-    # Still silent: the next stall takes twice as long, so a quiet symbol does not cause a
-    # reconnect every few seconds.
+    # A session that holds nothing expects no data: however long the silence, no stall.
+    await rig.clock.advance(120)
+    assert (session.status().stalls, session.status().reconnects) == (1, 1)
+
+    # Subscribed again and still silent: the next stall takes twice as long, so a quiet
+    # symbol does not cause a reconnect every few seconds.
+    await session.subscribe(subs)
     await rig.clock.advance(35)
     assert session.status().stalls == 1
     await rig.clock.advance(15)
@@ -134,6 +141,8 @@ async def test_a_silent_stream_in_market_hours_is_a_stall(
 
     # Data again: once it flows, the wait is back to the configured one.
     rig.dxlink.silent = False
+    await rig.until_connected(session)
+    await session.subscribe(subs)
     await rig.clock.advance(30)
     assert session.status().stalls == 2 and session.status().phase == "connected"
     rig.dxlink.silent = True
@@ -145,9 +154,8 @@ async def test_silence_on_a_closed_market_is_not_a_stall(market: SyntheticMarket
     assert not regular_hours(SATURDAY)
     clock = VirtualClock(SATURDAY)
     rig = StreamRig(market, clock)
-    session = rig.session(stall_after=20.0)
-    session.start()
-    session.subscribe(demand(market))
+    session = await rig.open(stall_after=20.0)
+    await session.subscribe(demand(market))
     rig.tick_every_second()
     await clock.advance(600)
     status = session.status()
@@ -162,9 +170,8 @@ async def test_the_stall_clock_starts_when_the_market_opens(market: SyntheticMar
     before_open = datetime(2026, 11, 23, 14, 29, 30, tzinfo=UTC)  # a Monday, 09:29:30
     clock = VirtualClock(before_open)
     rig = StreamRig(market, clock)
-    session = rig.session(stall_after=20.0)
-    session.start()
-    session.subscribe([Sub("SPY", EventType.QUOTE)])
+    session = await rig.open(stall_after=20.0)
+    await session.subscribe([Sub("SPY", EventType.QUOTE)])
     await clock.advance(45)  # 15 s into the session, 45 s without data: not a stall yet
     assert session.status().stalls == 0
     await clock.advance(15)
@@ -172,13 +179,23 @@ async def test_the_stall_clock_starts_when_the_market_opens(market: SyntheticMar
     await rig.aclose()
 
 
+async def test_the_stall_clock_starts_with_the_first_pair(rig: StreamRig) -> None:
+    session = await rig.open(stall_after=20.0)
+    rig.dxlink.silent = True
+    await rig.clock.advance(100)  # connected for 100 s with nothing subscribed
+    assert session.status().stalls == 0
+    await session.subscribe([Sub("SPY", EventType.QUOTE)])
+    await rig.clock.advance(15)  # 15 s since the first pair: not 115 s of silence
+    assert session.status().stalls == 0
+    await rig.clock.advance(15)
+    assert session.status().stalls == 1
+
+
 async def test_a_frozen_stream_is_dropped_at_any_hour(market: SyntheticMarket) -> None:
     clock = VirtualClock(SATURDAY)
     rig = StreamRig(market, clock)
-    session = rig.session()
-    session.start()
-    subs = [Sub("SPY", EventType.QUOTE), Sub("SPY", EventType.TRADE)]
-    session.subscribe(subs)
+    session = await rig.open()
+    await session.subscribe([Sub("SPY", EventType.QUOTE), Sub("SPY", EventType.TRADE)])
     await clock.advance(40)
     rig.dxlink.frozen = True  # the last message was the keepalive answer at 30 s
     await clock.advance(45)
@@ -194,16 +211,14 @@ async def test_a_frozen_stream_is_dropped_at_any_hour(market: SyntheticMarket) -
     rig.dxlink.frozen = False
     await clock.advance(40)
     assert session.status().phase == "connected"
-    assert rig.dxlink.subscriptions() == held_at_server(subs)
+    assert rig.dxlink.subscriptions() == set()
     assert session.status().stalls == 0 and len(rig.gaps()) == 1
     await rig.aclose()
 
 
 async def test_a_refused_token_is_replaced(rig: StreamRig) -> None:
-    session = rig.session()
-    session.start()
-    session.subscribe([Sub("SPY", EventType.QUOTE)])
-    await rig.synced()
+    session = await rig.open()
+    await session.subscribe([Sub("SPY", EventType.QUOTE)])
     assert len(rig.rest.quote_tokens) == 1
 
     rig.dxlink.expire_tokens()
@@ -218,7 +233,7 @@ async def test_a_refused_token_is_replaced(rig: StreamRig) -> None:
         rig.rest.quote_tokens[1],
     ]
     assert session.status().phase == "connected"
-    assert rig.dxlink.subscriptions() == {("Quote", "SPY")}
+    assert rig.dxlink.subscriptions() == set()
 
 
 async def test_a_broker_that_gives_no_token_is_retried(rig: StreamRig) -> None:
@@ -239,26 +254,3 @@ async def test_a_broker_that_gives_no_token_is_retried(rig: StreamRig) -> None:
     assert state.reason.startswith("BrokerUnavailable: GET /api-quote-tokens")
     await rig.clock.advance(2)
     assert session.status().phase == "connected" and calls == 2
-
-
-async def test_demand_changed_while_down_is_what_comes_back(
-    rig: StreamRig, market: SyntheticMarket
-) -> None:
-    session = rig.session()
-    session.start()
-    subs = demand(market)
-    session.subscribe(subs)
-    await rig.clock.advance(2)
-    await rig.synced()
-    rig.dxlink.refuse_connects = 2
-    rig.dxlink.drop()
-    await rig.clock.settle()
-    session.unsubscribe(subs[:3])
-    extra = Sub("AAPL", EventType.QUOTE)
-    session.subscribe([extra])
-    await rig.clock.advance(10)
-    await rig.synced()
-    assert rig.dxlink.subscriptions() == held_at_server([*subs[3:], extra])
-    assert not any("remove" in m for m in rig.sent("FEED_SUBSCRIPTION"))
-    (gap,) = rig.gaps()
-    assert isinstance(gap, Gap) and gap.until - gap.since >= timedelta(seconds=3)

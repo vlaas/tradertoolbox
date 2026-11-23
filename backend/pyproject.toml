@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "Self-3-Trader backend: broker connection, market state, numerics and the API"
 requires-python = "==3.13.*"
 dependencies = [
+    "backports-zstd==1.8.0",
     "fastapi==0.162.2",
     "httpx==0.28.1",
     "numpy==2.5.4",
@@ -56,7 +57,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 [tool.pyright]
 include = ["src", "tests", "tools"]
 exclude = ["src/s3t/wire", "**/__pycache__", ".venv"]
-extraPaths = ["tools"]
+extraPaths = ["tools", "tests"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 venvPath = "."

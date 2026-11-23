@@ -21,9 +21,11 @@ The price model:
   and the daily bar of the same day agree. Intraday bars are aligned to the UTC clock and
   daily bars are stamped at midnight UTC of their day, as the live feed does (note B,
   addendum of 2026-11-22). A snapshot arrives newest first. Its first event carries the
-  snapshot-begin flag. Its last event is not a bar: it carries the snapshot-end and the
-  remove flag, as the live feed showed on 2026-11-23 (note B, addendum "WP-0.4"). A reader
-  drops events with the remove flag.
+  snapshot-begin flag. Its last event is not a bar: it has a time and no prices, and
+  carries the remove flag with the snapshot-end flag, as the live feed showed on 2026-11-23
+  (note B, addendum "WP-0.4"), or with the snapshot-snip flag when the history was cut at
+  the depth of 8,000 bars (note B, addendum of 2026-11-24). A reader drops events with the
+  remove flag.
 - **Options.** One fixed smile per expiration: a raw SVI slice in total variance
   (:func:`svi_params`), on the forward ``F = S exp(r tau)`` with a flat rate of 4% and no
   dividends. Prices and Greeks come from ``s3t.pricing.black76``. The quote is the model
@@ -67,6 +69,7 @@ NAN = "NaN"
 REMOVE_EVENT = 0x2
 SNAPSHOT_BEGIN = 0x4
 SNAPSHOT_END = 0x8
+SNAPSHOT_SNIP = 0x10
 
 CANDLE_DEPTH_BARS = 8000  # minute and daily candles, as live (note B, section 6)
 CANDLE_DEPTH_DAYS = 90  # the other intraday periods, about what live gives for 15 minutes
@@ -99,10 +102,15 @@ def svi_params(atm_vol: Any, tau: Any) -> tuple[Any, Any, float, float, Any]:
 
 
 def smile_vol(atm_vol: Any, tau: Any, k: Any) -> Any:
-    """The implied volatility of the fixed smile at log-moneyness ``k``."""
+    """The implied volatility of the fixed smile at log-moneyness ``k``.
+
+    The total variance is kept at a quarter of the at-the-money one or more. The raw slice
+    turns negative on the call side in the last half hour before expiry (at 16% volatility),
+    and a 0DTE option is priced until its expiry, 15 minutes after the close.
+    """
     a, b, rho, m, s = svi_params(atm_vol, tau)
     w = a + b * (rho * (k - m) + np.sqrt((k - m) ** 2 + s * s))
-    return np.sqrt(w / tau)
+    return np.sqrt(np.maximum(w, 0.25 * atm_vol * atm_vol * tau) / tau)
 
 
 def tick_for(price: float, tick_sizes: tuple[Doc, ...]) -> float:
@@ -675,18 +683,24 @@ class Ticks:
                 found = self._bars_of_day(path, day, period, at)
                 bars.extend(b for b in reversed(found) if b[0] >= _ms(from_time))
             day -= timedelta(days=1)
+        cut = len(bars) >= limit
         bars = bars[:limit]
         vol = self.market.atm_vol(inst.vol, self.market.today + timedelta(days=30))
         out = [self._candle(symbol, inst, bar, vol) for bar in bars]
         if out:
             out[0]["eventFlags"] |= SNAPSHOT_BEGIN
-            # Live (2026-11-23): the last event of a snapshot is not a bar. It carries the
-            # end and the remove flag. Its other values were not looked at; here they are
-            # the start asked for and no prices.
+            # The last event of a snapshot is not a bar: it has a time and no prices.
+            # A history that is complete ends with "snapshot end" and the remove flag (seen
+            # live 2026-11-23). One that was cut at the depth of 8,000 bars ends with
+            # "snapshot snip" and the remove flag, at a midnight before its oldest bar (the
+            # owner's streamer dumps, read 2026-11-24). Assumed: the time of the first is
+            # the start asked for, and the midnight of the second is that of the oldest bar.
             nan = math.nan
-            marker = self._candle(symbol, inst, (_ms(from_time), nan, nan, nan, nan, nan), vol)
+            stamp = bars[-1][0] // 86_400_000 * 86_400_000 if cut else _ms(from_time)
+            marker = self._candle(symbol, inst, (stamp, nan, nan, nan, nan, nan), vol)
             marker.update({k: NAN for k in ("open", "high", "low", "close", "vwap", "count")})
-            marker["volume"], marker["eventFlags"] = NAN, SNAPSHOT_END | REMOVE_EVENT
+            marker["volume"] = NAN
+            marker["eventFlags"] = (SNAPSHOT_SNIP if cut else SNAPSHOT_END) | REMOVE_EVENT
             out.append(marker)
         return out
 

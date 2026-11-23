@@ -6,44 +6,66 @@ through the same interface. A recording is market data: it goes to the git-ignor
 directory named by the configuration and never into the repository (GEN-07). ``make check``
 records only the fake broker, into a temporary directory.
 
-The format, version 1, proposed 2026-11-23 (WP-0.4). A directory with three files:
+The format, version 1 (decided 2026-11-23). A directory with three files:
 
-- ``meta.json``: the format version, the name, the kind of broker recorded, the start and
-  the end in UTC, the New York date of the start (for the "REPLAY" mark, GEN-11), and the
-  number of items written and lost.
+- ``meta.json``: the format version, the name, the kind of broker recorded, the start in
+  UTC and the New York date of the start (for the "REPLAY" mark, GEN-11). It is written at
+  the start with ``complete`` false. Closing the recording adds the end and the number of
+  items written and lost, and sets ``complete``.
 - ``rest.jsonl``: one line per REST read: ``at``, ``call``, ``args`` and ``result``, or
   ``error`` with the name of the error.
-- ``stream.jsonl.gz``: one line per stream item, in order. ``k`` says what the line is:
-  ``f`` the field names of an event type, written before its first batch and when they
-  change; ``b`` a batch (``t`` receipt time in microseconds since 1970 UTC, ``e`` event
-  type, ``v`` the values as received); ``s`` a state; ``g`` a gap; ``n`` a notice; ``+`` and
-  ``-`` a subscribe and an unsubscribe call; ``x`` items lost by the writer.
+- ``stream.jsonl.zst``: one line per stream item, in order, compressed with zstd. ``k`` says
+  what the line is:
+
+  - ``f``: the field names of an event type's record, written before its first batch. A
+    field added to a record later leaves an older recording readable.
+  - ``b``: a batch. ``t`` is the receipt time, ``e`` the event type and ``c`` the columns
+    in the order of the ``f`` line.
+  - ``s`` a state, ``g`` a gap, ``n`` a notice;
+  - ``+`` and ``-``: a subscribe and an unsubscribe call, with the time of the data;
+  - ``x``: items lost by the writer.
+
+  Values: an instant is microseconds since 1970 UTC, or ``null``. A missing number (NaN) is
+  ``null``. A candle period is text (``15m``).
+
+The stream file is one zstd frame. The writer flushes a block every few seconds and when it
+falls idle, so a recording that was cut off is readable up to its last flush. A block flush
+keeps what the compressor has learnt. Ending a frame each time, as first built, cost about a
+third of the compression (``docs/measurements.md``; decided 2026-11-24).
 
 The recording is at the interface level, not the wire level: it holds what the application
-saw, whichever broker gave it. The streaming token is never written. The account is not in
-any of these documents.
+saw, the application's own records, whichever broker gave them. The streaming token is
+never written. The account is not in any of these documents.
 
-Writing never holds up the stream. Items go to a bounded queue and a thread writes them. A
-full queue loses the item, counts it and says so in the file.
+Writing never holds up the stream. Items go to a bounded queue and a thread encodes and
+writes them. A full queue loses the item, counts it and says so in the file.
 """
 
-import gzip
 import json
 import logging
+import math
 import queue
 import threading
+import time
 from collections.abc import Collection, Sequence
+from dataclasses import fields
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
+
+from backports import zstd
 
 from s3t import __version__
 from s3t.broker.interface import (
+    FIELDS,
+    RECORDS,
     Broker,
     BrokerError,
+    CandlePeriod,
     DataSource,
     EventBatch,
+    EventType,
     Gap,
     JsonObject,
     QuoteToken,
@@ -57,12 +79,33 @@ from s3t.broker.interface import (
 )
 
 FORMAT = 1
-META, REST, STREAM = "meta.json", "rest.jsonl", "stream.jsonl.gz"
+META, REST, STREAM = "meta.json", "rest.jsonl", "stream.jsonl.zst"
 QUEUE_SIZE = 50_000
+FLUSH_SECONDS = 3.0
 _NY = ZoneInfo("America/New_York")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 LOG = logging.getLogger(__name__)
+
+type ColumnKind = Literal["text", "number", "time", "period", "mark"]
+
+
+def _kind(annotation: Any) -> ColumnKind:
+    if annotation is float:
+        return "number"
+    if annotation is bool:
+        return "mark"
+    if annotation is CandlePeriod:
+        return "period"
+    if annotation is datetime or datetime in get_args(annotation):
+        return "time"
+    return "text"
+
+
+KINDS: dict[EventType, dict[str, ColumnKind]] = {
+    event: {f.name: _kind(f.type) for f in fields(record)} for event, record in RECORDS.items()
+}
+"""How each field of a record is written: by the type the record gives it."""
 
 
 def to_micros(instant: datetime) -> int:
@@ -71,27 +114,68 @@ def to_micros(instant: datetime) -> int:
 
 
 def encode_sub(sub: Sub) -> list[Any]:
+    period = None if sub.period is None else sub.period.text()
     start = None if sub.from_time is None else to_micros(sub.from_time)
-    return [sub.symbol, sub.event.value, start]
+    return [sub.symbol, sub.event.value, period, start]
+
+
+def encode_column(kind: ColumnKind, column: Sequence[Any]) -> list[Any]:
+    if kind == "number":
+        return [x if math.isfinite(x) else None for x in column]
+    if kind == "time":
+        return [None if x is None else to_micros(x) for x in column]
+    if kind == "period":
+        return [x.text() for x in column]
+    return list(column)
+
+
+def encode_item(item: StreamItem) -> dict[str, Any]:
+    """The line of a stream item."""
+    if isinstance(item, EventBatch):
+        kinds = KINDS[item.event].values()
+        columns = [encode_column(k, c) for k, c in zip(kinds, item.columns, strict=True)]
+        return {"k": "b", "t": to_micros(item.received_at), "e": item.event.value, "c": columns}
+    if isinstance(item, StreamState):
+        return {"k": "s", "t": to_micros(item.at), "p": item.phase, "r": item.reason}
+    if isinstance(item, Gap):
+        line = {"k": "g", "t": to_micros(item.until), "since": to_micros(item.since)}
+        return {**line, "r": item.reason}
+    event = None if item.event is None else item.event.value
+    return {"k": "n", "t": to_micros(item.at), "kind": item.kind, "m": item.message, "e": event}
 
 
 class RecordingWriter:
     """Writes the lines of one recording on its own thread."""
 
-    def __init__(self, directory: Path, *, queue_size: int = QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        meta: dict[str, Any] | None = None,
+        *,
+        queue_size: int = QUEUE_SIZE,
+        flush_seconds: float = FLUSH_SECONDS,
+    ) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         if (directory / META).exists():
             raise FileExistsError(f"a recording exists already in {directory.name}")
         self.directory = directory
         self.written = 0
         self.lost = 0
-        self._queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue(queue_size)
-        self._fields: dict[str, tuple[str, ...]] = {}
+        self._meta = {**(meta or {}), "format": FORMAT}
+        self._write_meta({"complete": False})
+        self._flush_seconds = flush_seconds
+        self._queue: queue.Queue[tuple[str, Any] | None] = queue.Queue(queue_size)
+        self._named: set[EventType] = set()
         self._thread = threading.Thread(target=self._run, name="recording-writer", daemon=True)
         self._thread.start()
 
-    def put(self, file: str, line: dict[str, Any]) -> None:
-        """Queue a line. Never waits: a full queue loses the line and counts it."""
+    def _write_meta(self, more: dict[str, Any]) -> None:
+        text = json.dumps({**self._meta, **more}, indent=2) + "\n"
+        (self.directory / META).write_text(text, encoding="utf-8")
+
+    def put(self, file: str, line: Any) -> None:
+        """Queue a line for a file, or a stream item. Never waits: a full queue loses it
+        and counts it."""
         try:
             self._queue.put_nowait((file, line))
         except queue.Full:
@@ -100,42 +184,67 @@ class RecordingWriter:
                 LOG.warning("recording: the writer cannot keep up; items are being lost")
 
     def item(self, item: StreamItem) -> None:
-        if isinstance(item, EventBatch):
-            if self._fields.get(item.event) != item.fields:
-                self._fields[item.event] = item.fields
-                self.put(STREAM, {"k": "f", "e": item.event.value, "f": list(item.fields)})
-            line = {"k": "b", "t": to_micros(item.received_at), "e": item.event.value}
-            self.put(STREAM, {**line, "v": item.values})
-        elif isinstance(item, StreamState):
-            self.put(STREAM, {"k": "s", "t": to_micros(item.at), "p": item.phase, "r": item.reason})
-        elif isinstance(item, Gap):
-            line = {"k": "g", "t": to_micros(item.until), "since": to_micros(item.since)}
-            self.put(STREAM, {**line, "r": item.reason})
-        else:
-            line = {"k": "n", "t": to_micros(item.at), "kind": item.kind}
-            self.put(STREAM, {**line, "m": item.message})
+        self.put(STREAM, item)
+
+    def _lines(self, entry: Any) -> list[dict[str, Any]]:
+        """The lines of one queued entry. Runs on the writer's thread."""
+        if isinstance(entry, dict):
+            return [entry]
+        lines: list[dict[str, Any]] = []
+        if isinstance(entry, EventBatch) and entry.event not in self._named:
+            self._named.add(entry.event)
+            names = list(FIELDS[entry.event])
+            lines.append({"k": "f", "e": entry.event.value, "f": names})
+        lines.append(encode_item(entry))
+        return lines
 
     def _run(self) -> None:
         reported = 0
+        dirty = False
+        ended = time.monotonic()
         with (
             (self.directory / REST).open("w", encoding="utf-8") as rest,
-            gzip.open(self.directory / STREAM, "wt", encoding="utf-8", compresslevel=5) as stream,
+            zstd.ZstdFile(self.directory / STREAM, "w") as stream,
         ):
-            while (entry := self._queue.get()) is not None:
-                file, line = entry
-                out = rest if file == REST else stream
+
+            def write(line: dict[str, Any]) -> None:
+                stream.write(json.dumps(line, separators=(",", ":")).encode() + b"\n")
+
+            def flush() -> None:
+                stream.flush(stream.FLUSH_BLOCK)
+                rest.flush()
+
+            while True:
+                try:
+                    entry = self._queue.get(timeout=self._flush_seconds)
+                except queue.Empty:
+                    if dirty:
+                        flush()
+                        dirty, ended = False, time.monotonic()
+                    continue
+                if entry is None:
+                    break
+                file, content = entry
                 if self.lost > reported:
-                    stream.write(json.dumps({"k": "x", "lost": self.lost - reported}) + "\n")
+                    write({"k": "x", "lost": self.lost - reported})
                     reported = self.lost
-                out.write(json.dumps(line, separators=(",", ":")) + "\n")
+                if file == REST:
+                    rest.write(json.dumps(content, separators=(",", ":")) + "\n")
+                else:
+                    for line in self._lines(content):
+                        write(line)
                 self.written += 1
+                dirty = True
+                if time.monotonic() - ended >= self._flush_seconds:
+                    flush()
+                    dirty, ended = False, time.monotonic()
 
     def close(self, meta: dict[str, Any]) -> None:
         """Write what is queued, then the description of the recording."""
         self._queue.put(None)
         self._thread.join()
-        meta = {**meta, "format": FORMAT, "items": self.written, "lost": self.lost}
-        (self.directory / META).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+        self._meta.update(meta)
+        self._write_meta({"items": self.written, "lost": self.lost, "complete": True})
 
 
 class _RecordingStream:
@@ -145,20 +254,17 @@ class _RecordingStream:
     def start(self) -> None:
         self._inner.start()
 
-    def subscribe(self, subs: Collection[Sub]) -> None:
+    async def subscribe(self, subs: Collection[Sub]) -> None:
+        await self._inner.subscribe(subs)
         self._note("+", subs)
-        self._inner.subscribe(subs)
 
-    def unsubscribe(self, subs: Collection[Sub]) -> None:
+    async def unsubscribe(self, subs: Collection[Sub]) -> None:
+        await self._inner.unsubscribe(subs)
         self._note("-", subs)
-        self._inner.unsubscribe(subs)
 
     def _note(self, kind: str, subs: Collection[Sub]) -> None:
-        at = to_micros(self._broker.now())
+        at = to_micros(self._broker.data_time())
         self._writer.put(STREAM, {"k": kind, "t": at, "subs": [encode_sub(s) for s in subs]})
-
-    async def synced(self) -> None:
-        await self._inner.synced()
 
     def status(self) -> StreamStatus:
         return self._inner.status()
@@ -173,8 +279,18 @@ class RecordingBroker:
     def __init__(self, inner: Broker, directory: Path, *, queue_size: int = QUEUE_SIZE) -> None:
         self._inner = inner
         self.directory = directory
-        self._writer = RecordingWriter(directory, queue_size=queue_size)
-        self._started = inner.now()
+        started = inner.data_time()
+        self._writer = RecordingWriter(
+            directory,
+            {
+                "name": directory.name,
+                "source": inner.source().kind,
+                "started_at": started.isoformat(),
+                "recorded_on": started.astimezone(_NY).date().isoformat(),
+                "s3t_version": __version__,
+            },
+            queue_size=queue_size,
+        )
         self._closed = False
 
     @property
@@ -182,7 +298,7 @@ class RecordingBroker:
         return self._writer.lost
 
     async def _read(self, call: str, *args: Any) -> Any:
-        at = self._inner.now().isoformat()
+        at = self._inner.data_time().isoformat()
         line: dict[str, Any] = {"at": at, "call": call, "args": list(args)}
         try:
             result = await getattr(self._inner, call)(*args)
@@ -229,22 +345,13 @@ class RecordingBroker:
     def source(self) -> DataSource:
         return self._inner.source()
 
-    def now(self) -> datetime:
-        return self._inner.now()
+    def data_time(self) -> datetime:
+        return self._inner.data_time()
 
     async def aclose(self) -> None:
         if self._closed:
             return
         self._closed = True
-        ended = self._inner.now()
+        ended = self._inner.data_time()
         await self._inner.aclose()
-        self._writer.close(
-            {
-                "name": self.directory.name,
-                "source": self._inner.source().kind,
-                "started_at": self._started.isoformat(),
-                "ended_at": ended.isoformat(),
-                "recorded_on": self._started.astimezone(_NY).date().isoformat(),
-                "s3t_version": __version__,
-            }
-        )
+        self._writer.close({"ended_at": ended.isoformat()})

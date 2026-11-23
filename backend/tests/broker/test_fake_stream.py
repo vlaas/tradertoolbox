@@ -1,5 +1,6 @@
 """The synthetic stream events and the fake DXLink server's scenarios (plan 3.2 and 3.3)."""
 
+import math
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -11,13 +12,14 @@ from s3t.broker.fake.ticks import (
     REMOVE_EVENT,
     SNAPSHOT_BEGIN,
     SNAPSHOT_END,
+    SNAPSHOT_SNIP,
     Ticks,
     market_instant,
     parse_candle_symbol,
     smile_vol,
     svi_params,
 )
-from s3t.broker.interface import EventType, Sub
+from s3t.broker.interface import CandlePeriod, EventType, Sub
 from s3t.pricing import black_iv, tau_cal
 
 from .conftest import ASOF, StreamRig
@@ -109,6 +111,21 @@ def test_option_quotes_lie_on_the_fixed_smile(market: SyntheticMarket, ticks: Ti
     assert all(r[1]["theta"] < 0 for r, close in zip(rows, near, strict=True) if close)
 
 
+def test_an_option_is_priced_until_it_expires(market: SyntheticMarket, ticks: Ticks) -> None:
+    # After the close of its expiration day a 0DTE option still has 15 minutes to live. The
+    # raw smile has no value there; the events must come all the same (found 2026-11-23).
+    chain = market.option_chain("SPY")
+    assert chain is not None
+    first = chain["items"][0]["expirations"][0]
+    expiry = datetime.fromisoformat(first["expiration-date"]).replace(hour=21, tzinfo=UTC)
+    symbols = [s[side] for s in first["strikes"] for side in ("call-streamer-symbol",)]
+    for event in ("Quote", "Greeks", "Trade", "Summary"):
+        docs = ticks.events(event, symbols, expiry + timedelta(minutes=5))
+        assert len(docs) == len(symbols), event
+    values = ticks.option_values(symbols, expiry + timedelta(minutes=5))
+    assert all(v["volatility"] > 0 and v["price"] >= 0 for v in values.values())
+
+
 def test_candles_of_all_periods_are_cut_from_one_path(ticks: Ticks) -> None:
     day = datetime(2026, 11, 18, tzinfo=UTC)
     after = day + timedelta(days=1, hours=23)
@@ -147,8 +164,12 @@ def test_candle_history_newest_first_with_snapshot_flags_and_depth(ticks: Ticks)
     assert history[0]["eventFlags"] == SNAPSHOT_BEGIN
     assert {b["eventFlags"] for b in history[1:]} == {0}
     assert all(datetime.fromtimestamp(t / 1000, UTC).weekday() < 5 for t in times)
-    minutes = ticks.candles("SPY{=m}", datetime(2020, 1, 1, tzinfo=UTC), AT)
-    assert len(minutes) == 8000 + 1
+    # A history cut at the depth of 8,000 bars ends with the snip marker: a midnight at or
+    # before its oldest bar, no prices (the streamer dumps, note B, addendum of 2026-11-24).
+    *minutes, snip = ticks.candles("SPY{=m}", datetime(2020, 1, 1, tzinfo=UTC), AT)
+    assert len(minutes) == 8000
+    assert snip["eventFlags"] == SNAPSHOT_SNIP | REMOVE_EVENT and snip["close"] == "NaN"
+    assert snip["time"] % 86_400_000 == 0 and 0 < minutes[-1]["time"] - snip["time"] < 86_400_000
     index = ticks.candles("SPX{=d}", ASOF - timedelta(days=5), AT)
     assert index[0]["volume"] == "NaN" and index[0]["close"] > 0
 
@@ -197,22 +218,15 @@ async def test_quote_scenarios(rig: StreamRig) -> None:
     rig.dxlink.no_bid = {"SPY"}
     rig.dxlink.no_ask = {"AAPL"}
     rig.dxlink.index_without_quote = True
-    session = rig.session()
-    session.start()
-    session.subscribe(
-        [
-            Sub(s, e)
-            for s in ("SPY", "AAPL", "SPX")
-            for e in EventType
-            if e.value in ("Quote", "Trade")
-        ]
-    )
-    await rig.synced()
-    quotes = {r["eventSymbol"]: r for r in rig.rows(EventType.QUOTE)}
+    session = await rig.open()
+    wanted = (EventType.QUOTE, EventType.TRADE)
+    await session.subscribe([Sub(s, e) for s in ("SPY", "AAPL", "SPX") for e in wanted])
+    await rig.clock.settle()
+    quotes = {r.symbol: r for r in rig.rows(EventType.QUOTE)}
     assert set(quotes) == {"SPY", "AAPL"}  # the index sends no quote
-    assert quotes["SPY"]["bidPrice"] == "NaN" and quotes["SPY"]["askPrice"] > 0
-    assert quotes["AAPL"]["askPrice"] == "NaN" and quotes["AAPL"]["bidPrice"] > 0
-    assert {r["eventSymbol"] for r in rig.rows(EventType.TRADE)} == {"SPY", "AAPL", "SPX"}
+    assert math.isnan(quotes["SPY"].bid) and quotes["SPY"].ask > 0
+    assert math.isnan(quotes["AAPL"].ask) and quotes["AAPL"].bid > 0
+    assert {r.symbol for r in rig.rows(EventType.TRADE)} == {"SPY", "AAPL", "SPX"}
 
 
 async def test_candle_scenarios(rig: StreamRig) -> None:
@@ -220,25 +234,25 @@ async def test_candle_scenarios(rig: StreamRig) -> None:
     suspect = datetime(2026, 11, 13, tzinfo=UTC)
     rig.dxlink.candle_gaps["SPY"] = gap
     rig.dxlink.candle_suspects["SPY"] = suspect
-    session = rig.session()
-    session.start()
+    session = await rig.open()
     start = datetime(2026, 11, 9, tzinfo=UTC)
-    session.subscribe([Sub("SPY{=d}", EventType.CANDLE, from_time=start)])
-    await rig.synced()
-    bars = [b for b in rig.rows(EventType.CANDLE) if not b["eventFlags"] & REMOVE_EVENT]
-    days = [datetime.fromtimestamp(b["time"] / 1000, UTC).day for b in bars]
-    assert days == [20, 19, 16, 13, 12, 11, 10, 9]  # the 17th and the 18th are missing
-    odd = next(b for b in bars if b["time"] == suspect.timestamp() * 1000)
-    assert odd["high"] > 5 * odd["close"]
-    assert all(b["high"] < 1.1 * b["close"] for b in bars if b is not odd)
+    await session.subscribe([Sub("SPY", EventType.CANDLE, CandlePeriod(1, "day"), start)])
+    await rig.clock.settle()
+    bars = [b for b in rig.rows(EventType.CANDLE) if not b.removed]
+    assert [b.time.day for b in bars] == [20, 19, 16, 13, 12, 11, 10, 9]  # no 17th, no 18th
+    odd = next(b for b in bars if b.time == suspect)
+    assert odd.high > 5 * odd.close
+    assert all(b.high < 1.1 * b.close for b in bars if b is not odd)
 
 
 async def test_summary_and_profile_come_once(rig: StreamRig) -> None:
-    session = rig.session()
-    session.start()
-    session.subscribe([Sub("AAPL", EventType.SUMMARY), Sub("AAPL", EventType.PROFILE)])
+    session = await rig.open()
+    await session.subscribe([Sub("AAPL", EventType.SUMMARY), Sub("AAPL", EventType.PROFILE)])
     rig.tick_every_second()
     await rig.clock.advance(5)
     assert len(rig.rows(EventType.SUMMARY)) == 1 and len(rig.rows(EventType.PROFILE)) == 1
     profile = rig.rows(EventType.PROFILE)[0]
-    assert profile["exDividendAmount"] == 0.26 and "synthetic" in profile["description"]
+    assert "synthetic" in profile.description and profile.trading_status == "active"
+    assert profile.halt_start is None and profile.low_52w < profile.high_52w
+    summary = rig.rows(EventType.SUMMARY)[0]
+    assert summary.prev_close > 0 and summary.open_interest == 0.0

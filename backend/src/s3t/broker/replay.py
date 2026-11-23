@@ -4,7 +4,7 @@ It reads a recording made by ``s3t.broker.recording``. It is for work outside ma
 and for performance runs on real data. Its data source says ``replay`` with the date of the
 recording, and the app marks every screen "REPLAY <date>" (GEN-11).
 
-How it behaves, proposed 2026-11-23 (WP-0.4):
+How it behaves (decided 2026-11-23):
 
 - **REST reads** return the recorded document of the same call and arguments, the latest if
   it was read more than once. A call that was not recorded raises :class:`NotFound`.
@@ -12,29 +12,40 @@ How it behaves, proposed 2026-11-23 (WP-0.4):
   recorded receipt times. Of a batch it keeps the events of the pairs that are subscribed
   now. Recorded states, gaps and notices pass through, so a recorded drop is replayed as a
   drop.
-- **Time.** :meth:`ReplayBroker.now` is the recorded time at the replay position, so time to
-  expiry and the age of a quote come out as they were. With ``speed`` 1.0 the items come at
-  the recorded pace, with 10.0 ten times faster, with ``None`` as fast as the reader takes
-  them.
+- **It follows the session's contract.** A subscribe or unsubscribe call is refused while
+  the replayed session is not ``connected``. After a recorded reconnect the stream holds
+  nothing, and the subscription manager fills it again, as it does live. There is no hard
+  cap on a replay; the status shows 0 for it.
+- **Time.** :meth:`ReplayBroker.data_time` is the recorded time at the replay position, so
+  time to expiry and the age of a quote come out as they were. With ``speed`` 1.0 the items
+  come at the recorded pace, with 10.0 ten times faster, with ``None`` as fast as the event
+  loop runs.
 - **A pair subscribed late** gets its last recorded event at once, as a live stream sends
   the current value on subscription. For a candle that is its last bar, not the history.
+- **Paused start.** With ``paused=True`` the replay stops after the first ``connected``
+  until :meth:`ReplayBroker.resume`. A run at full speed sets its demand in that pause;
+  without it the events before the first subscription are reduced to the last per pair.
 - **At the end** the stream says ``disconnected`` with the reason "end of the recording" and
   stays there. Looping is not built.
+- **A recording that was cut off** is read up to the writer's last flush.
 """
 
 import asyncio
-import gzip
 import json
+import math
 from collections.abc import Collection, Iterator, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from backports import zstd
 from pydantic import SecretStr
 
 from s3t.broker.interface import (
+    FIELDS,
     BrokerError,
     BrokerProtocolError,
+    CandlePeriod,
     DataSource,
     EventBatch,
     EventType,
@@ -46,34 +57,81 @@ from s3t.broker.interface import (
     StreamItem,
     StreamNotice,
     StreamPhase,
+    StreamRefused,
     StreamSink,
     StreamState,
     StreamStatus,
     Sub,
 )
 from s3t.broker.limits import Sleep
-from s3t.broker.recording import FORMAT, META, REST, STREAM
+from s3t.broker.recording import FORMAT, KINDS, META, REST, STREAM, ColumnKind
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 YIELD_EVERY = 200
+READ_BYTES = 1 << 20
+_ABSENT: dict[ColumnKind, Any] = {
+    "text": "",
+    "number": math.nan,
+    "time": None,
+    "period": None,
+    "mark": False,
+}
+
+type _Key = tuple[EventType, str, CandlePeriod | None]
 
 
 def from_micros(micros: int) -> datetime:
     return _EPOCH + timedelta(microseconds=micros)
 
 
+def decode_column(kind: ColumnKind, column: Sequence[Any]) -> list[Any]:
+    if kind == "number":
+        return [math.nan if x is None else float(x) for x in column]
+    if kind == "time":
+        return [None if x is None else from_micros(x) for x in column]
+    if kind == "period":
+        return [CandlePeriod.parse(x) for x in column]
+    return list(column)
+
+
+def read_lines(path: Path) -> Iterator[dict[str, Any]]:
+    """The lines of a stream file, read as a stream. A file that was cut off ends without
+    an error at the last whole line that can be decompressed, which is at or after the
+    writer's last flush."""
+    decompressor = zstd.ZstdDecompressor()
+    pending = b""
+    with path.open("rb") as f:
+        data = f.read(READ_BYTES)
+        while data:
+            try:
+                pending += decompressor.decompress(data)
+            except zstd.ZstdError:
+                return
+            *lines, pending = pending.split(b"\n")
+            for text in lines:
+                if text:
+                    yield json.loads(text)
+            data = b""
+            if decompressor.eof:  # a file may hold more than one frame
+                data = decompressor.unused_data
+                decompressor = zstd.ZstdDecompressor()
+            data = data or f.read(READ_BYTES)
+
+
 class ReplayStream:
     def __init__(self, broker: "ReplayBroker", sink: StreamSink) -> None:
         self._broker, self._sink = broker, sink
-        self._subs: set[tuple[str, str]] = set()
-        self._fields: dict[EventType, tuple[str, ...]] = {}
-        self._last: dict[tuple[str, str], list[Any]] = {}
+        self._subs: set[_Key] = set()
+        self._names: dict[EventType, tuple[str, ...]] = {}
+        self._last: dict[_Key, tuple[Any, ...]] = {}
         self._seq = 0
+        self._last_batch_seq = 0
         self._phase: StreamPhase = "idle"
         self._since: datetime | None = None
         self._reason: str | None = None
         self._last_data_at: datetime | None = None
         self._last_gap: Gap | None = None
+        self._reconnects = -1
         self._task: asyncio.Task[None] | None = None
         self.emitted = 0
 
@@ -88,32 +146,40 @@ class ReplayStream:
     def _state(self, phase: StreamPhase, at: datetime, reason: str | None = None) -> None:
         self._phase, self._since = phase, at
         self._reason = reason if reason is not None else self._reason
+        if phase == "connecting":
+            self._subs.clear()  # a new session holds nothing
+        elif phase == "connected":
+            self._reconnects += 1
         self._emit(StreamState(self._next(), phase, at, reason))
 
     def start(self) -> None:
         if self._task is None and self._phase != "closed":
             self._task = asyncio.create_task(self._run(), name="replay-stream")
 
-    def subscribe(self, subs: Collection[Sub]) -> None:
-        late: dict[EventType, list[Any]] = {}
+    def _must_be_connected(self) -> None:
+        if self._phase != "connected":
+            raise StreamRefused(
+                f"the replayed session is {self._phase}, not connected", reason="not_connected"
+            )
+
+    async def subscribe(self, subs: Collection[Sub]) -> None:
+        self._must_be_connected()
+        late: dict[EventType, list[tuple[Any, ...]]] = {}
         for sub in subs:
-            key = (sub.event.value, sub.symbol)
+            key = (sub.event, sub.symbol, sub.period)
             if key in self._subs:
                 continue
             self._subs.add(key)
             row = self._last.get(key)
             if row is not None:
-                late.setdefault(sub.event, []).extend(row)
-        for event, values in late.items():
-            at = self._broker.now()
-            self._emit(EventBatch(self._next(), event, self._fields[event], values, at))
+                late.setdefault(sub.event, []).append(row)
+        for event, rows in late.items():
+            self._batch_out(event, rows, self._broker.data_time())
 
-    def unsubscribe(self, subs: Collection[Sub]) -> None:
+    async def unsubscribe(self, subs: Collection[Sub]) -> None:
+        self._must_be_connected()
         for sub in subs:
-            self._subs.discard((sub.event.value, sub.symbol))
-
-    async def synced(self) -> None:
-        return None
+            self._subs.discard((sub.event, sub.symbol, sub.period))
 
     def status(self) -> StreamStatus:
         return StreamStatus(
@@ -122,14 +188,13 @@ class ReplayStream:
             reason=self._reason,
             connected_at=self._broker.started_at,
             last_data_at=self._last_data_at,
-            reconnects=0,
+            reconnects=max(self._reconnects, 0),
             stalls=0,
             last_gap=self._last_gap,
-            held=len(self._subs),
-            pending=0,
-            changes_last_minute=0,
-            change_limit=0,
-            rate_errors=0,
+            subscribed=len(self._subs),
+            candles=sum(1 for key in self._subs if key[0] is EventType.CANDLE),
+            limit=0,
+            candle_limit=0,
             aggregation_period=None,
         )
 
@@ -139,7 +204,7 @@ class ReplayStream:
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
         if self._phase != "closed":
-            self._state("closed", self._broker.now())
+            self._state("closed", self._broker.data_time())
 
     async def _run(self) -> None:
         broker = self._broker
@@ -148,7 +213,7 @@ class ReplayStream:
         for n, line in enumerate(broker.stream_lines()):
             kind = line.get("k")
             if kind == "f":
-                self._fields[EventType(line["e"])] = tuple(line["f"])
+                self._names[EventType(line["e"])] = tuple(line["f"])
                 continue
             micros = line.get("t")
             if not isinstance(micros, int):
@@ -161,34 +226,50 @@ class ReplayStream:
             at = from_micros(micros)
             broker.position = at
             if kind == "b":
-                self._batch(EventType(line["e"]), line["v"], at)
+                self._batch(EventType(line["e"]), line["c"], at)
             elif kind == "s":
                 if line["p"] not in ("idle", "closed"):
                     self._state(line["p"], at, line.get("r"))
+                    if line["p"] == "connected":
+                        await broker.resumed.wait()
             elif kind == "g":
-                gap = Gap(self._next(), self._seq - 1, from_micros(line["since"]), at, line["r"])
+                since = from_micros(line["since"])
+                gap = Gap(self._next(), self._last_batch_seq, since, at, line["r"])
                 self._last_gap = gap
                 self._emit(gap)
             elif kind == "n":
-                self._emit(StreamNotice(self._next(), at, line["kind"], line["m"]))
-        self._state("disconnected", broker.now(), "end of the recording")
+                event = None if line.get("e") is None else EventType(line["e"])
+                self._emit(StreamNotice(self._next(), at, line["kind"], line["m"], event))
+        self._state("disconnected", broker.data_time(), "end of the recording")
 
-    def _batch(self, event: EventType, values: list[Any], at: datetime) -> None:
-        fields = self._fields.get(event)
-        if not fields or len(values) % len(fields):
+    def _batch(self, event: EventType, recorded: list[list[Any]], at: datetime) -> None:
+        names = self._names.get(event)
+        if names is None or len(names) != len(recorded):
             return
-        n, name = len(fields), event.value
-        symbol_at = fields.index("eventSymbol")
-        kept: list[Any] = []
-        for i in range(0, len(values), n):
-            row = values[i : i + n]
-            key = (name, row[symbol_at])
+        by_name = dict(zip(names, recorded, strict=True))
+        count = len(recorded[0]) if recorded else 0
+        kinds = KINDS[event]
+        columns = [
+            decode_column(kinds[name], by_name[name])
+            if name in by_name
+            else [_ABSENT[kinds[name]]] * count
+            for name in FIELDS[event]
+        ]
+        period_at = FIELDS[event].index("period") if event is EventType.CANDLE else None
+        kept: list[tuple[Any, ...]] = []
+        for row in zip(*columns, strict=True):
+            key = (event, row[0], None if period_at is None else row[period_at])
             self._last[key] = row
             if key in self._subs:
-                kept.extend(row)
+                kept.append(row)
         if kept:
-            self._last_data_at = at
-            self._emit(EventBatch(self._next(), event, fields, kept, at))
+            self._batch_out(event, kept, at)
+
+    def _batch_out(self, event: EventType, rows: list[tuple[Any, ...]], at: datetime) -> None:
+        columns = tuple(list(column) for column in zip(*rows, strict=True))
+        self._last_data_at = at
+        self._last_batch_seq = self._next()
+        self._emit(EventBatch(self._last_batch_seq, event, at, columns))
 
 
 class ReplayBroker:
@@ -200,11 +281,16 @@ class ReplayBroker:
         *,
         speed: float | None = 1.0,
         sleep: Sleep = asyncio.sleep,
+        paused: bool = False,
     ) -> None:
         if speed is not None and speed <= 0:
             raise ValueError("speed must be positive, or None for no waiting")
         self.directory = directory
         self.speed, self.sleep = speed, sleep
+        self.resumed = asyncio.Event()
+        """Clear while a paused replay waits after its first ``connected``."""
+        if not paused:
+            self.resumed.set()
         try:
             meta = json.loads((directory / META).read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -231,9 +317,11 @@ class ReplayBroker:
         return f"ReplayBroker({self.directory.name!r})"
 
     def stream_lines(self) -> Iterator[dict[str, Any]]:
-        with gzip.open(self.directory / STREAM, "rt", encoding="utf-8") as f:
-            for text in f:
-                yield json.loads(text)
+        return read_lines(self.directory / STREAM)
+
+    def resume(self) -> None:
+        """Let a paused replay go on."""
+        self.resumed.set()
 
     def _read(self, call: str, *args: Any) -> Any:
         line = self._rest.get((call, json.dumps(list(args))))
@@ -242,7 +330,7 @@ class ReplayBroker:
         return line["result"]
 
     async def quote_token(self) -> QuoteToken:
-        at = self.now()
+        at = self.data_time()
         return QuoteToken("replay:", SecretStr("replay"), "replay", at, at + timedelta(days=1))
 
     async def equity(self, symbol: str) -> JsonObject:
@@ -290,7 +378,7 @@ class ReplayBroker:
     def source(self) -> DataSource:
         return DataSource("replay", self._recorded_on)
 
-    def now(self) -> datetime:
+    def data_time(self) -> datetime:
         return self.position
 
     async def aclose(self) -> None:
