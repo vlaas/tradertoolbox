@@ -237,6 +237,12 @@ the real broker in regular hours. Each has a checklist and a named point in the 
 - *Closes:* MKT-01 to MKT-03, MKT-07, GEN-10. MKT-03 and MKT-07 are closed here for the data
   and the wire message (`QuoteRows`); WP-0.7 sends it. GEN-10 is closed for the backend and
   the wire; the stores are WP-0.6.
+- *Review of MKT-01 (R), 2026-11-24, by Claude:* each item of its list has its place in the
+  model. Per-expiry underlying, exercise style, settlement type, multiplier and tick rules are
+  fields of `Expiration`; the settlement instant is `settles_at`. Two limits: an equity chain
+  states no exercise style (`Instruments.exercise` reads it), and the style that the broker
+  states for /ES weeklies looks wrong (section 8). Seen on the documents of /ES only for
+  futures.
 - *Done 2026-11-24:* the instrument model (`s3t.broker.instruments`) and the reading of the six
   documents, so that the broker interface returns typed records except for the metrics; the
   market state and the flush (`s3t.market.state`); the registry and the settlement rule; the
