@@ -5,7 +5,7 @@ profiles. It asks for nothing: the views state their demand to the feed and read
 here. Candles are not here. Their history arrives newest first and ends in a marker, so the
 latest one received is not the latest bar; the candle module (R2) reads them.
 
-What the rest of the application may rely on (proposed 2026-11-24, WP-0.5):
+What the rest of the application may rely on (decided 2026-11-24, WP-0.5):
 
 - **The latest value is the last one received,** per symbol and event type, with the receipt
   time of its batch. An event is a whole record and replaces the one before it: a bid that

@@ -7,9 +7,9 @@ How a document is read:
 
 - A key the model needs and the document lacks, or a value of the wrong form, is a
   :class:`BrokerProtocolError` that names the key and never the value.
-- One expiration of a chain that cannot be read is left out and logged, so that one odd
-  expiration does not take the chain away. A chain with expirations of which none can be read
-  is an error.
+- One expiration of a chain that cannot be read is left out, so that one odd expiration does
+  not take the chain away. It is logged and named in the chain (``left_out``). A chain with
+  expirations of which none can be read is an error.
 - Numbers come as text (``"0.05"``) and become floats. A missing number is None.
 - The broker's lists are not in order (the live futures list was not, note B, addendum
   "WP-0.3"). Strikes, expirations and futures are sorted here.
@@ -23,10 +23,9 @@ Facts the mapping rests on (note B, addendum "WP-0.5"):
 - A futures option's dollars per point are ``notional-value / display-factor``: 50 on /ES, as its
   future says (live, 2026-11-23). Other products were not looked at. ``strike-factor`` is not
   understood: an expiration where it is not 1 is left out. On /ES it is 1 everywhere.
-- A futures option read alone has a ``settlement-type`` that is neither AM nor PM (live,
-  2026-11-23; the value itself was not looked at). Whether it settles in the morning is read
-  from ``future-option-product.is-am-settled``, a key the live document has. In the chain the
-  ``settlement-type`` is AM or PM.
+- A futures option read alone has the ``settlement-type`` Future (live, 2026-11-24). Whether it
+  settles in the morning is read from ``future-option-product.is-am-settled``; false was seen
+  for a weekly, true was not seen. In the chain the ``settlement-type`` is AM or PM.
 """
 
 import logging
@@ -41,6 +40,7 @@ from s3t.broker.instruments import (
     Family,
     Future,
     FutureListing,
+    LeftOut,
     OptionChain,
     OptionContract,
     Right,
@@ -311,40 +311,53 @@ def _cash_settled(deliverables: Any) -> bool | None:
 
 
 def _expirations(
-    what: str, docs: Sequence[_Doc], root_key: str | None, read: Callable[[_Doc], Expiration]
-) -> list[Expiration]:
-    """The expirations that can be read. The others are logged and left out."""
+    what: str,
+    docs: Sequence[_Doc],
+    root_of: Callable[[_Doc], str | None],
+    read: Callable[[_Doc], Expiration],
+) -> tuple[list[Expiration], list[LeftOut]]:
+    """The expirations that can be read, and the others."""
     found: list[Expiration] = []
+    left_out: list[LeftOut] = []
     for doc in docs:
         try:
             found.append(read(doc))
         except BrokerProtocolError as e:
-            root = doc.get(root_key) if root_key else None
+            try:
+                day = _date(doc, "expiration-date")
+            except BrokerProtocolError:
+                day = None
+            one = LeftOut(root_of(doc), day, str(e))
+            left_out.append(one)
             LOG.warning(
-                "%s: the expiration %s%s is left out: %s",
+                "%s: the expiration %s of %s is left out: %s",
                 what,
-                doc.get("expiration-date"),
-                f" of {root}" if root else "",
-                e,
+                one.expiration_date,
+                one.root,
+                one.reason,
             )
-    return found
+    return found, left_out
 
 
 def _chain(
-    what: str, underlying: str, futures: list[FutureListing], found: list[Expiration], listed: int
+    what: str,
+    underlying: str,
+    futures: list[FutureListing],
+    found: list[Expiration],
+    left_out: list[LeftOut],
 ) -> OptionChain:
-    if listed and not found:
+    if left_out and not found:
         raise BrokerProtocolError(f"{what}: none of its expirations can be read")
     futures.sort(key=lambda f: f.expiration_date)
     found.sort(key=lambda e: (e.expiration_date, e.settlement, e.root))
-    return OptionChain(underlying, tuple(futures), tuple(found))
+    return OptionChain(underlying, tuple(futures), tuple(found), tuple(left_out))
 
 
 def parse_option_chain(doc: _Doc, underlying: str) -> OptionChain:
     """The nested chain of a stock, an ETF or an index: every root, also the adjusted ones."""
     what = f"option chain {underlying}"
     found: list[Expiration] = []
-    listed = 0
+    left_out: list[LeftOut] = []
     for item in _reading(what, lambda: _docs(doc, "items")):
 
         def read(e: _Doc, item: _Doc = item) -> Expiration:
@@ -366,9 +379,11 @@ def parse_option_chain(doc: _Doc, underlying: str) -> OptionChain:
             )
 
         docs = _reading(what, lambda item=item: _docs(item, "expirations"))
-        listed += len(docs)
-        found += _expirations(what, docs, None, read)
-    return _chain(what, underlying, [], found, listed)
+        root = _optional_text(item, "root-symbol")
+        read_now, not_read = _expirations(what, docs, lambda _, root=root: root, read)
+        found += read_now
+        left_out += not_read
+    return _chain(what, underlying, [], found, left_out)
 
 
 def parse_futures_option_chain(doc: _Doc, root: str) -> OptionChain:
@@ -388,7 +403,7 @@ def parse_futures_option_chain(doc: _Doc, root: str) -> OptionChain:
 
     futures = _reading(what, lambda: [listing(f) for f in _docs(doc, "futures")])
     found: list[Expiration] = []
-    listed = 0
+    left_out: list[LeftOut] = []
     for item in _reading(what, lambda: _docs(doc, "option-chains")):
 
         def read(e: _Doc, item: _Doc = item) -> Expiration:
@@ -411,6 +426,9 @@ def parse_futures_option_chain(doc: _Doc, root: str) -> OptionChain:
             )
 
         docs = _reading(what, lambda item=item: _docs(item, "expirations"))
-        listed += len(docs)
-        found += _expirations(what, docs, "option-root-symbol", read)
-    return _chain(what, root, futures, found, listed)
+        read_now, not_read = _expirations(
+            what, docs, lambda e: _optional_text(e, "option-root-symbol"), read
+        )
+        found += read_now
+        left_out += not_read
+    return _chain(what, root, futures, found, left_out)

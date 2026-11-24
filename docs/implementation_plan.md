@@ -242,9 +242,10 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   market state and the flush (`s3t.market.state`); the registry and the settlement rule; the
   missing-bid rule from the broker's wire to `proto/s3t/wire/v1/market.proto`, checked in both
   languages. SPY, SPX (three roots) and all 54 expirations of the /ES options parsed from the
-  live documents (one read-only run, note B, addendum "WP-0.5, live"). One reading fault was
-  found there and fixed offline: see section 8. The decisions are proposals (requirements,
-  section 3) and wait for the owner.
+  live documents (two read-only runs, note B, addendum "WP-0.5, live"). One reading fault was
+  found in the first, fixed offline, and confirmed fixed in the second. The proposals of the
+  package were confirmed on 2026-11-24, with two changes: the settlement rule for a date
+  without a session, and a chain that names what it leaves out (requirements, section 3).
 
 **WP-0.6 Storage, configuration, reference data** (M)
 - *Read first:* architecture note, section 4; requirements 4.5 and 4.9.
@@ -447,7 +448,7 @@ Found but not planned into a package yet.
   - Upgrade Playwright together with the chart prototype and the backtester viewer.
   - In TypeScript, int64 fields arrive as `bigint`. `protobuf-es` 2.17 cannot turn that off: it
     knows `JS_STRING` only (read in its source, 2026-11-24). So product messages use no int64;
-    an instant is a `double` of microseconds (WP-0.5, proposal). WP-0.7 follows it.
+    an instant is a `double` of microseconds (decided 2026-11-24, WP-0.5). WP-0.7 follows it.
   - The OpenAPI schema is generated offline and not served. WP-0.7 decides whether an
     authenticated copy is served.
   - There is no CI. QA-04's "before a change is merged" means `make check` before a commit.
@@ -458,8 +459,8 @@ Found but not planned into a package yet.
   - The proposals under the pricing core (requirements 4.6) and the CC0-1.0 allowance that
     numpy needs (QA-07) were decided with the owner on 2026-11-22.
   - REF-05 is closed for the clock. Which instant a contract settles at is a rule in
-    `s3t.market.settlement` since WP-0.5 (a proposal: the broker's `expires-at` is not that
-    instant for stocks and ETFs). WP-0.6 gives it the calendar (`SessionTimes`).
+    `s3t.market.settlement` since WP-0.5 (the broker's `expires-at` is not that instant for
+    stocks and ETFs; product definition, 11.1). WP-0.6 gives it the calendar (`SessionTimes`).
   - The FRED download and the as-of selection of published rates (`volcalc` `build_rates`,
     `rates_asof`) go to WP-0.6. `pricing` has the conversion and the curve only.
   - The quoting tick per contract, which widens the IV gate, is to come from the broker's chain
@@ -601,22 +602,25 @@ Found but not planned into a package yet.
   - An untracked `package-lock.json` lies in the repository root. It is not from a package
     of this plan. The owner decides whether it goes.
 - From WP-0.5 (2026-11-24):
-  - **The proposals of the package wait for the owner** (requirements, section 3, "The market
-    package"). The one that touches an earlier decision: the settlement instant, product
-    definition 11.1. Nothing uses it before WP-1.1.
+  - The proposals of the package were confirmed by the owner on 2026-11-24 (requirements,
+    section 3, "The market package"). The settlement instant changes the product definition
+    11.1. Nothing uses it before WP-1.1.
   - **To be seen live, a few requests (WP-0.9, or earlier if the owner wants):**
-    - The value of `settlement-type` in the document of one future option. It is neither AM
-      nor PM, and the parser refused it in the live run. It now reads
-      `future-option-product.is-am-settled`, whose presence was seen and whose value was not.
-      Nothing uses the call yet: the chain has its own AM and PM.
-    - The exercise style of ES weeklies. The chain states one style, American, for all 54
-      expirations of /ES. Weekly E-mini options are European as far as is known outside the
-      API, so the chain may be wrong there; a contract read alone would show it.
+    - One future option read alone was refused in the run of 2026-11-23 and parses since the
+      second run of 2026-11-24 (note B): `settlement-type` is `Future`, and AM or PM comes from
+      `future-option-product.is-am-settled`. Seen with false only; an AM-settled quarterly was
+      not read alone. Nothing uses the call yet: the chain has its own AM and PM.
     - Whether all contracts of one equity root have one exercise style (assumed by
       `Instruments.exercise`).
     - Dollars per point and strike factor of products other than /ES.
-  - **For WP-0.6:** implement `SessionTimes` (open and close of a date's regular session, in
-    UTC, None without one) on the calendar, and use it in `settles_at`.
+  - **For WP-0.6:** implement `SessionTimes` on the calendar (`covers` a date; the open and close
+    of its regular session in UTC, None without one).
+    - State the end of the calendar. `exchange-calendars` ends one year ahead by default
+      (4.13.2, checked 2026-11-24: 2027-11-24), and the `tt` captures list SPY to 2027-12-17.
+      An expiration beyond the end has no time to expiry. The calendar was asked to 2032 and
+      answered. Holidays that far ahead are rules, not announcements.
+    - A closure declared later is known only to a newer release of the package. Until then the
+      date counts as a session. Decide whether a configured list of closures is wanted.
   - **For WP-0.7:**
     - It builds `MarketState(feed, now=broker.data_time, period=config.stream.aggregation_period)`
       before `feed.start()`, starts it with the feed and closes it before the feed. It
@@ -630,9 +634,20 @@ Found but not planned into a package yet.
     - The market state does not know the demand of a view: the topic states it to the feed.
   - **For WP-1.1:** the synthetic market prices SPY options to 16:15, the broker's
     `expires-at`, and the settlement rule says 16:00. A fit on the synthetic market does not
-    recover the smile to the last digit for short expirations. Change the fake's clock or the
-    test's when the rule is confirmed. AM-settled options are priced to 09:30 in both.
+    recover the smile to the last digit for short expirations. The rule is confirmed
+    (2026-11-24): change the fake's clock. AM-settled options are priced to 09:30 in both.
+  - **Before the assignment flag (PRB-06):** correct the exercise style of /ES options per root.
+    The broker states American for all of them, in the chain and in the document of one weekly
+    (E2C). CME and CFTC documents have the weeklies and the end-of-month options as European
+    and the quarterlies as American (note B; search excerpts, the current rulebook was not
+    read). A further broker call cannot settle it.
+  - **For WP-0.9:** watch `MarketStatus.lost`. After a loss no value counts as live until its
+    next event, and only a reconnect subscribes again. If losses are seen, the feed subscribes
+    again after one (decided 2026-11-24).
   - **For WP-1.2:**
+    - No IV after the settlement instant. `tau_cal` stops at one minute, so a quote after the
+      close of an expiring option would give a meaningless one.
+    - The chain view says which expirations are left out (`OptionChain.left_out`).
     - Of 2.9 million real quotes 29.7% changed sizes only. IV need not be computed for those.
     - The first event after a subscription is the broker's current value, which can be hours
       old, with a fresh receipt time. The age of a value (MKT-06) is not the age of its

@@ -16,7 +16,7 @@ from hypothesis import strategies as st
 
 from s3t.broker import instruments
 from s3t.broker.fake.market import SyntheticMarket, third_friday
-from s3t.broker.instruments import OptionChain, TickRule
+from s3t.broker.instruments import LeftOut, OptionChain, TickRule
 from s3t.broker.interface import BrokerProtocolError
 from s3t.broker.recording import RESULTS, decode_result, encode_result
 from s3t.broker.tastytrade.instruments import (
@@ -195,14 +195,22 @@ def test_a_side_that_is_not_listed_is_missing(spx: dict[str, Any]) -> None:
         ("strikes", [{"strike-price": "-5"}], "strike-price is unreadable"),
     ],
 )
-def test_an_expiration_that_cannot_be_read_is_left_out_and_logged(
+def test_an_expiration_that_cannot_be_read_is_left_out_and_named(
     spx: dict[str, Any], caplog: pytest.LogCaptureFixture, key: str, value: Any, problem: str
 ) -> None:
+    """The chain says what it lacks, so that a view can: a log line alone would let an
+    expiration vanish without a word (owner, 2026-11-24)."""
     whole = parse_option_chain(copy.deepcopy(spx), "SPX")
-    spx["items"][0]["expirations"][1][key] = value
+    assert whole.left_out == ()
+    item = spx["items"][0]
+    day = date.fromisoformat(item["expirations"][1]["expiration-date"])
+    item["expirations"][1][key] = value
     with caplog.at_level(logging.WARNING):
         chain = parse_option_chain(spx, "SPX")
     assert len(chain.expirations) == len(whole.expirations) - 1
+    assert chain.left_out == (
+        LeftOut(item["root-symbol"], None if key == "expiration-date" else day, problem),
+    )
     assert "left out" in caplog.text and problem in caplog.text
 
 
@@ -221,8 +229,28 @@ def test_a_strike_factor_that_is_not_understood(es: dict[str, Any]) -> None:
     """Better no expiration than one with wrong strikes."""
     expirations = es["option-chains"][0]["expirations"]
     expirations[0]["strike-factor"] = "0.01"
+    odd = (
+        expirations[0]["option-root-symbol"],
+        date.fromisoformat(expirations[0]["expiration-date"]),
+    )
     chain = parse_futures_option_chain(es, "/ES")
     assert len(chain.expirations) == len(expirations) - 1
+    (left_out,) = chain.left_out
+    assert (left_out.root, left_out.expiration_date) == odd
+    assert "strike-factor" in left_out.reason and "0.01" not in left_out.reason
+
+
+def test_what_a_chain_leaves_out_survives_a_recording(spx: dict[str, Any]) -> None:
+    del spx["items"][0]["expirations"][0]["settlement-type"]
+    del spx["items"][1]["expirations"][0]["expiration-date"]
+    chain = parse_option_chain(spx, "SPX")
+    assert len(chain.left_out) == 2
+    again = decode_result("option_chain", encode_result("option_chain", chain))
+    assert again == chain and isinstance(again.left_out[0], LeftOut)
+    # A recording made before the chain named them has no such field.
+    encoded = encode_result("option_chain", chain)
+    del encoded["left_out"]
+    assert decode_result("option_chain", encoded).left_out == ()
 
 
 @pytest.mark.parametrize(
@@ -305,7 +333,8 @@ def test_every_instant_of_a_record_is_named_as_one() -> None:
             if field.endswith("_at"):
                 assert datetime in (hint, *getattr(hint, "__args__", ())), field
             if field.endswith("_date"):
-                assert hint is date, field
+                assert date in (hint, *getattr(hint, "__args__", ())), field
+                assert datetime not in (hint, *getattr(hint, "__args__", ())), field
 
 
 def test_records_survive_a_recording(market: SyntheticMarket, es: dict[str, Any]) -> None:

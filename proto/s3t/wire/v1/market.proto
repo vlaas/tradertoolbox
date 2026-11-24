@@ -1,6 +1,6 @@
 // Rows of market values for the browser (MKT-03, MKT-07, GEN-10; WP-0.5).
 //
-// The rules for every message with columns, here and in the topics that follow (proposed
+// The rules for every message with columns, here and in the topics that follow (decided
 // 2026-11-24, requirements section 3):
 //
 // - Rows travel as columns. Every column of a message has one entry per row, so all columns

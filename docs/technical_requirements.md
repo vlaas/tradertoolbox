@@ -366,8 +366,8 @@ The event records and the feed, as built (WP-0.4, rework and part 2). **Decided 
 
 Nothing of WP-0.4 is left as a proposal.
 
-The market package (WP-0.5). **Proposed 2026-11-24, not confirmed by the owner yet.** The
-facts behind it are in note B, addenda "WP-0.5" and "WP-0.5, live". The signatures are in
+The market package (WP-0.5). **Decided 2026-11-24 (owner, WP-0.5 review).** The facts behind it
+are in note B, addenda "WP-0.5" and "WP-0.5, live". The signatures are in
 `s3t.broker.instruments`, `s3t.market` and `s3t.api.rows`.
 
 - **The instrument model** (MKT-01, GEN-09) is part of the broker interface, like the event
@@ -375,19 +375,25 @@ facts behind it are in note B, addenda "WP-0.5" and "WP-0.5, live". The signatur
   and never NaN. An expiration date is a calendar date and not an instant.
 - **The broker interface returns the records** for instruments and chains. A key that is
   missing or unreadable is a `BrokerProtocolError` that names the key and not the value. One
-  expiration that cannot be read is left out and logged; a chain of which none can be read is
-  an error.
+  expiration that cannot be read is left out, logged, and named in the chain with the reason
+  (`left_out`), so that a view says what is missing. A chain of which none can be read is an
+  error.
 - **An option chain has one form** for equities and futures: one `Expiration` per root and
   date, sorted by date, AM before PM, then root. Strikes are parallel tuples, with no object
   per contract. Each expiration names its own underlying.
 - **The exercise style** of an equity or index root is not in the chain. It is read from one
-  contract per root and cached. It is not derived from the kind of the underlying.
+  contract per root and cached. It is not derived from the kind of the underlying. For a
+  futures option it is what the broker states, which looks wrong for the weeklies and
+  end-of-month options of /ES (note B). It is corrected per root before the assignment flag
+  (PRB-06) uses it. Until then it has little effect: prices use the European formula.
 - **Dollars per point of a futures option** are `notional-value / display-factor`. An
-  expiration whose `strike-factor` is not 1 is left out and logged.
+  expiration whose `strike-factor` is not 1 is left out, as one that cannot be read.
 - **The settlement instant** (REF-05, MKT-01): PM-settled equity and index options settle at
   the close of the regular session on the expiration date, AM-settled ones at its open, from
-  the calendar (WP-0.6). Futures options settle at the broker's `expires_at`. This changes the
-  decision of the product definition 11.1; the proposal stands beside it there.
+  the calendar (WP-0.6). A date without a session settles with the session before it, at most
+  four days back. A date that the calendar does not cover has no instant; the calendar must
+  reach the last listed expiration. Futures options settle at the broker's `expires_at`. No IV
+  is computed after the settlement instant (WP-1.2). This changes the product definition 11.1.
 - **The latest value** (MKT-02) is the last one received, per pair, with its receipt time. An
   event replaces the whole value: a bid that has gone missing is missing.
 - **What changed** (MKT-03): a pair counts as changed when an event arrived for it or its value
@@ -395,9 +401,13 @@ facts behind it are in note B, addenda "WP-0.5" and "WP-0.5, live". The signatur
 - **The flush** comes at the feed's aggregation period, and not at all when nothing changed.
   Each taker has its own sets of changed pairs. A late taker gets the union in one flush.
 - **A pair that is no longer granted** has its value dropped at the next flush after the grant
-  changed, and the pair counts as changed. The feed interface has `granted()` for it.
+  changed, and the pair counts as changed. The feed interface has `granted()` for it. A row that
+  scrolls out of a view and back is blank until its first event; the grace period of SUB-04
+  softens that.
 - **After a reconnect, and after lost batches, the values stay.** `live_since` says from which
-  receipt time on a value is confirmed.
+  receipt time on a value is confirmed. After a loss a quiet contract is not confirmed until
+  its next event, because only a reconnect subscribes again. If WP-0.9 sees losses, the feed
+  subscribes again after one.
 - **The market state does not read candles.** Their history arrives newest first. The candle
   module (R2) is their reader.
 - **A missing bid or ask** (MKT-07): dxFeed sends it as a price of 0 with a size of NaN. The

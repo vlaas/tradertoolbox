@@ -1,7 +1,7 @@
 """The instrument model (MKT-01, GEN-09): stocks, ETFs, indexes, futures and their options.
 
 These records are part of the broker interface, like the event records of the stream. A broker
-module builds them from its own documents, and no document key leaves it. Proposed 2026-11-24
+module builds them from its own documents, and no document key leaves it. Decided 2026-11-24
 (WP-0.5); the requirements, section 3, hold the reasons.
 
 Rules for every record:
@@ -207,6 +207,18 @@ class Expiration:
 
 
 @dataclass(frozen=True, slots=True)
+class LeftOut:
+    """An expiration that the broker lists and the model does not hold, because its document
+    could not be read. A view of the chain says that it is missing."""
+
+    root: str | None
+    """None, like the date, when that could not be read either."""
+    expiration_date: date | None
+    reason: str
+    """For people, in the words of the broker module. It holds no value of the document."""
+
+
+@dataclass(frozen=True, slots=True)
 class OptionChain:
     """The expirations of every option root on one underlying or futures product."""
 
@@ -215,6 +227,8 @@ class OptionChain:
     """In a futures chain, by expiration date; empty otherwise."""
     expirations: tuple[Expiration, ...]
     """By date, AM-settled before PM-settled, then by root."""
+    left_out: tuple[LeftOut, ...] = ()
+    """What the chain does not hold though the broker lists it, in the broker's order."""
 
     def roots(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(e.root for e in self.expirations))

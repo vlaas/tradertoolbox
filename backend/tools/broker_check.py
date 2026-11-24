@@ -120,6 +120,8 @@ def ny(instant: datetime | None) -> str:
 
 def describe_chain(chain: OptionChain) -> None:
     """What the model read: roots, types, counts. No prices, no strikes."""
+    for one in chain.left_out:
+        print(f"  model: left out {one.root} {one.expiration_date}: {one.reason}")
     for root in chain.roots():
         listed = chain.of_root(root)
         first = listed[0]
@@ -241,6 +243,12 @@ async def run(client: TastytradeRest, market: SyntheticMarket) -> int:
                 if doc is not None:
                     compare("future option", doc, _fake_future_option(market))
                     print(f"  option symbols live: {chosen.symbol!r} {chosen.stream_symbol!r}")
+                    product = doc.get("future-option-product") or {}
+                    print(
+                        f"  in the document: settlement-type {doc.get('settlement-type')!r}, "
+                        f"is-am-settled {product.get('is-am-settled')!r}, exercise-style "
+                        f"{doc.get('exercise-style')!r}"
+                    )
                     option = await parsed("future option", lambda: parse.parse_future_option(doc))
                     if option is not None:
                         describe_contract(option)

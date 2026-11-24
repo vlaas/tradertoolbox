@@ -53,7 +53,7 @@ extend-exclude = ["src/s3t/wire", "tests/pricing/_iv_reference.py"]
 # ASYNC (blocking calls and other mistakes in async code): decided 2026-11-22. Bandit's S and
 # the style families were measured and left out (requirements, section 3). The four DTZ rules
 # guard GEN-10: no utcnow, now, fromtimestamp or today that depends on the machine's time zone
-# (proposed 2026-11-24, WP-0.5).
+# (decided 2026-11-24, WP-0.5).
 select = [
     "E", "F", "I", "UP", "B", "ASYNC",
     "DTZ003", "DTZ005", "DTZ006", "DTZ011",

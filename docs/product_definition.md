@@ -432,6 +432,8 @@ while most of the account is at another broker. Chart: the 24-hour feed with ses
 time-zone choice, daily anchors at the open, the resolution list and the bar-building rule
 (6.1).
 
+Decided on 2026-11-24: the settlement instant of an option (11.1).
+
 ### 11.1 Pricing conventions (decided 2026-11-20)
 
 `volcalc`'s methods are the default.
@@ -439,7 +441,7 @@ time-zone choice, daily anchors at the open, the resolution list and the bar-bui
 | Topic | Default |
 |---|---|
 | Year length | 365 days (525,600 minutes) |
-| Time to expiry | Calendar time to the contract's settlement instant, taken from the broker's `expires-at` and settlement type. A trading-time clock can be added later as an option |
+| Time to expiry | Calendar time to the contract's settlement instant (changed 2026-11-24, below the table). A trading-time clock can be added later as an option |
 | Rates | Continuous curve built from SOFR and Treasury yields (keyless FRED download); a flat configured rate as fallback |
 | Dividends | Discrete cash dividends for stocks and ETFs: the broker's next ex-date and amount, later ones projected from the payment frequency. Indexes use the forward implied from put-call parity |
 | Exercise style | European formula on the out-of-the-money side plus an assignment-risk rule. An American pricer comes later, so in-the-money put values of stocks and ETFs are slightly understated until then |
@@ -448,16 +450,23 @@ time-zone choice, daily anchors at the open, the resolution list and the bar-bui
 | Surface | SVI per expiry as the main surface; free-gamma SSVI as the fallback for thin expiries. Added from `bt_dataset`: an interpolating ATM-variance curve between expiries, wing freeze with quality gates, optional smoothing in time |
 | Platform mode | A separate, labelled set used only for the Tastytrade POP, P50 and CVaR replicas: flat 2.93% drift, calendar days over 365, expiry at 16:00 ET, expiry IV for POP, IV index for the simulation |
 
-**Proposed 2026-11-24 (WP-0.5), not confirmed: the time to expiry.** The row "Time to expiry"
-takes the settlement instant from the broker's `expires-at`. That is not the instant for stock
-and ETF options. For every one of them in the `tt` captures (133 files) `expires-at` is 15
-minutes after the close (16:15 New York, 13:15 on an early close), and `tt` found by
-measurement that the platform counts to 16:00.
-For index options, SPXW and XSP, it is the close, and for an AM-settled SPX option it was 09:30,
-the open (seen live 2026-11-23). Proposed instead: the settlement instant is the close of the
-regular session on the expiration date for PM settlement and its open for AM settlement, from
-the exchange calendar (WP-0.6), as `volcalc` does; for futures options it is the broker's
-`expires-at`. At 16:15 a 0DTE option has 15 minutes more time than at 16:00.
+**Changed 2026-11-24 (owner, WP-0.5 review): the settlement instant.** Until then the row "Time to
+expiry" took it from the broker's `expires-at`. That is not the instant for stock and ETF options.
+For every one of them in the `tt` captures (133 files) `expires-at` is 15 minutes after the close
+(16:15 New York, 13:15 on an early close), and `tt` found by measurement on SPY that the platform
+counts to 16:00. For index options, SPXW and XSP, it is the close, and for an AM-settled SPX option
+it was 09:30, the open (seen live 2026-11-23). Now:
+
+- Stock, ETF and index options settle at the close of the regular session on the expiration date
+  when PM-settled and at its open when AM-settled, from the exchange calendar.
+- A date without a session settles with the session before it, as in `volcalc` (2025-01-09 was one).
+- Futures options settle at the broker's `expires-at`.
+- No IV is computed after the settlement instant. Options that are still quoted then, as ETF options
+  may be until 16:15, show their quotes without an IV.
+
+Effect (computed): counted to 16:15, the same price gives an IV 10.6% lower one hour before the
+close, 0.5% lower one day before and 0.07% lower seven days before. The platform mode has the same
+instant; it stays a separate set for its other conventions.
 
 ### 11.2 Studies on historical data (to do)
 

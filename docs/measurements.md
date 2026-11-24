@@ -40,9 +40,11 @@ been valid. The fake-broker tests run on a fake clock and measure nothing.
 
 WP-0.5 has no performance requirement and took no timings. The reading of the chains and the
 ingest of events were not timed. The counts of quotes it used are in note B, addendum
-"WP-0.5" (counts, not timings). The live check of the instrument model was a capability check:
-13 requests on 2026-11-23, 18:03 New York, with load averages 1.85, 1.93 and 8.45 before and
-1.74, 1.90 and 8.32 after. The market tests run on a virtual clock and measure nothing.
+"WP-0.5" (counts, not timings). The two live checks of the instrument model were capability
+checks of 13 requests each: 2026-11-23, 18:03 New York, with load averages 1.85, 1.93 and 8.45
+before and 1.74, 1.90 and 8.32 after; and 2026-11-24, 05:48 New York, with 2.12, 1.62 and 1.63
+before and 2.25, 1.67 and 1.64 after. The market tests run on a virtual clock and measure
+nothing.
 
 WP-0.4 has no performance requirement. The three live rows above are single observations
 from the live check, not a performance run. The stream and feed tests run on a virtual clock

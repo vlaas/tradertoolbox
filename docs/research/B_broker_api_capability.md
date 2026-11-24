@@ -369,12 +369,31 @@ one run. Load average 1.85, 1.93, 8.45 before and 1.74, 1.90, 8.32 after. No 429
 - Ticks of /ES options have four steps: 0.05 below 5, 0.1 below 20, 0.25 below 100, 0.5 above.
 - **One document was refused by the parser:** a future option read alone has a `settlement-type`
   that is neither AM nor PM. The value was not looked at. The document has
-  `future-option-product.is-am-settled`. The parser reads that key since then; this was not seen
-  live.
+  `future-option-product.is-am-settled`. The parser reads that key since then; a second run
+  confirmed it, below.
 - `active` is false for SPX and true for SPY, as in the captures.
 - Keys only in the live documents, beyond the list of the WP-0.3 addendum: `roll-target-symbol`
   on /ESZ6. The WP-0.3 check had read /ESM7, which lacks it, so the key is optional. Nothing
   reads it.
 
-Not tested: the fix above; other products than ES; a contract whose exercise style differs inside a
-root; the SPX chain timed.
+Not tested: other products than ES; a contract whose exercise style differs inside a root; the SPX
+chain timed.
+
+**Second run, Tuesday 2026-11-24,** 05:48 New York (10:48 UTC), before the open. Again 13 requests at
+one per second, one token renewal, no 429 and no failed read. Load average 2.12, 1.62, 1.63 before
+and 2.25, 1.67, 1.64 after.
+
+- **The future option read alone now parses.** One contract of the root E2C, a Wednesday weekly
+  expiring 2026-12-09: `settlement-type` is `Future`, `is-am-settled` is false. The record equals the
+  one of the chain in every field.
+- **Its own document says `American` too.** So the broker states American for a weekly both in the
+  chain and in the contract. **Documents of the exchange say otherwise:** the weeklies and the
+  end-of-month options on E-mini S&P 500 futures are European, the ES quarterlies American, and
+  there are European quarterlies with PM settlement (code EYC). Sources, web search of 2026-11-24,
+  excerpts only, the current rulebook was not read: CME rulebook chapter 358A; CFTC filings of CME
+  from 2016 and 2022 (files `ptc091016cmedcm004`, `ptc041122cmedcm001`, `ptc122122cmedcm001`).
+- The counts follow the calendar: SPY 31 expirations (12,538 contracts), SPXW 38 (22,546), SPXO 2
+  (862), SPX 19 (9,392), /ES 53, all parsed. `strike-factor` is 1.0 for all 53.
+- In the documents compared, the fake has no key that the live one lacks.
+
+Not tested in either run: a future option with `is-am-settled` true (the quarterly), read alone.

@@ -626,8 +626,7 @@ class SyntheticMarket:
                 "is-confirmed": True,
                 "notional-value": "0.5",
                 "display-factor": "0.01",
-                # Live, 2026-11-23: neither AM nor PM. This value is from the published
-                # documentation and was not seen.
+                # As seen live, 2026-11-24: neither AM nor PM.
                 "settlement-type": "Future",
                 "strike-factor": "1.0",
                 "maturity-date": e["date"].isoformat(),
