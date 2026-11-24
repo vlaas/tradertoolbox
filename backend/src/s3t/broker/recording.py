@@ -6,14 +6,17 @@ through the same interface. A recording is market data: it goes to the git-ignor
 directory named by the configuration and never into the repository (GEN-07). ``make check``
 records only the fake broker, into a temporary directory.
 
-The format, version 1 (decided 2026-11-23). A directory with three files:
+The format, version 2. A directory with three files (decided 2026-11-23). Version 2 writes
+the typed records of the instruments and chains where version 1 wrote the broker's documents
+(2026-11-24, WP-0.5); no recording of version 1 existed. The files:
 
 - ``meta.json``: the format version, the name, the kind of broker recorded, the start in
   UTC and the New York date of the start (for the "REPLAY" mark, GEN-11). It is written at
   the start with ``complete`` false. Closing the recording adds the end and the number of
-  items written and lost, and sets ``complete``.
+  items written and lost, and sets ``complete``, unless the writer had failed.
 - ``rest.jsonl``: one line per REST read: ``at``, ``call``, ``args`` and ``result``, or
-  ``error`` with the name of the error.
+  ``error`` with the name of the error. The result is the record as JSON (:data:`RESULTS`);
+  the market metrics are the broker's documents until they are typed.
 - ``stream.jsonl.zst``: one line per stream item, in order, compressed with zstd. ``k`` says
   what the line is:
 
@@ -38,7 +41,9 @@ saw, the application's own records, whichever broker gave them. The streaming to
 never written. The account is not in any of these documents.
 
 Writing never holds up the stream. Items go to a bounded queue and a thread encodes and
-writes them. A full queue loses the item, counts it and says so in the file.
+writes them. A full queue loses the item, counts it and says so in the file. An item that
+cannot be encoded is logged and counted the same way and does not end the thread. An error of
+the file itself ends it; the recording then stays marked as not complete.
 """
 
 import json
@@ -55,8 +60,10 @@ from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
 from backports import zstd
+from pydantic import TypeAdapter
 
 from s3t import __version__
+from s3t.broker.instruments import Future, OptionChain, OptionContract, Security
 from s3t.broker.interface import (
     FIELDS,
     RECORDS,
@@ -78,7 +85,7 @@ from s3t.broker.interface import (
     Sub,
 )
 
-FORMAT = 1
+FORMAT = 2
 META, REST, STREAM = "meta.json", "rest.jsonl", "stream.jsonl.zst"
 QUEUE_SIZE = 50_000
 FLUSH_SECONDS = 3.0
@@ -106,6 +113,28 @@ KINDS: dict[EventType, dict[str, ColumnKind]] = {
     event: {f.name: _kind(f.type) for f in fields(record)} for event, record in RECORDS.items()
 }
 """How each field of a record is written: by the type the record gives it."""
+
+
+RESULTS: dict[str, TypeAdapter[Any]] = {
+    "equity": TypeAdapter(Security),
+    "equity_option": TypeAdapter(OptionContract),
+    "option_chain": TypeAdapter(OptionChain),
+    "future": TypeAdapter(Future),
+    "future_option": TypeAdapter(OptionContract),
+    "futures_option_chain": TypeAdapter(OptionChain),
+}
+"""How the result of a typed REST read is written and read back. A call that is not here has
+a result that is JSON already."""
+
+
+def encode_result(call: str, result: Any) -> Any:
+    adapter = RESULTS.get(call)
+    return result if adapter is None else adapter.dump_python(result, mode="json")
+
+
+def decode_result(call: str, value: Any) -> Any:
+    adapter = RESULTS.get(call)
+    return value if adapter is None else adapter.validate_python(value)
 
 
 def to_micros(instant: datetime) -> int:
@@ -144,6 +173,10 @@ def encode_item(item: StreamItem) -> dict[str, Any]:
     return {"k": "n", "t": to_micros(item.at), "kind": item.kind, "m": item.message, "e": event}
 
 
+def _line(line: dict[str, Any]) -> bytes:
+    return json.dumps(line, separators=(",", ":")).encode() + b"\n"
+
+
 class RecordingWriter:
     """Writes the lines of one recording on its own thread."""
 
@@ -160,7 +193,12 @@ class RecordingWriter:
             raise FileExistsError(f"a recording exists already in {directory.name}")
         self.directory = directory
         self.written = 0
-        self.lost = 0
+        self._dropped = 0
+        """Items a full queue refused. Counted by the caller's thread."""
+        self._failed = 0
+        """Items that could not be encoded. Counted by the writer's thread."""
+        self.broken = False
+        """The writer's thread ended by an error; nothing after it was written."""
         self._meta = {**(meta or {}), "format": FORMAT}
         self._write_meta({"complete": False})
         self._flush_seconds = flush_seconds
@@ -173,14 +211,19 @@ class RecordingWriter:
         text = json.dumps({**self._meta, **more}, indent=2) + "\n"
         (self.directory / META).write_text(text, encoding="utf-8")
 
+    @property
+    def lost(self) -> int:
+        """Items that are not in the recording."""
+        return self._dropped + self._failed
+
     def put(self, file: str, line: Any) -> None:
         """Queue a line for a file, or a stream item. Never waits: a full queue loses it
         and counts it."""
         try:
             self._queue.put_nowait((file, line))
         except queue.Full:
-            self.lost += 1
-            if self.lost == 1:
+            self._dropped += 1
+            if self._dropped == 1:
                 LOG.warning("recording: the writer cannot keep up; items are being lost")
 
     def item(self, item: StreamItem) -> None:
@@ -199,6 +242,13 @@ class RecordingWriter:
         return lines
 
     def _run(self) -> None:
+        try:
+            self._write_all()
+        except Exception:
+            self.broken = True
+            LOG.exception("recording: the writer failed; nothing more is written")
+
+    def _write_all(self) -> None:
         reported = 0
         dirty = False
         ended = time.monotonic()
@@ -206,9 +256,6 @@ class RecordingWriter:
             (self.directory / REST).open("w", encoding="utf-8") as rest,
             zstd.ZstdFile(self.directory / STREAM, "w") as stream,
         ):
-
-            def write(line: dict[str, Any]) -> None:
-                stream.write(json.dumps(line, separators=(",", ":")).encode() + b"\n")
 
             def flush() -> None:
                 stream.flush(stream.FLUSH_BLOCK)
@@ -225,26 +272,47 @@ class RecordingWriter:
                 if entry is None:
                     break
                 file, content = entry
+                try:
+                    texts = self._encode(file, content)
+                except Exception:  # the item is lost, the recording goes on
+                    self._failed += 1
+                    if self._failed == 1:
+                        LOG.exception("recording: an item could not be encoded and is lost")
+                    continue
                 if self.lost > reported:
-                    write({"k": "x", "lost": self.lost - reported})
+                    stream.write(_line({"k": "x", "lost": self.lost - reported}))
                     reported = self.lost
-                if file == REST:
-                    rest.write(json.dumps(content, separators=(",", ":")) + "\n")
-                else:
-                    for line in self._lines(content):
-                        write(line)
+                for text in texts:
+                    if file == REST:
+                        rest.write(text.decode())
+                    else:
+                        stream.write(text)
                 self.written += 1
                 dirty = True
                 if time.monotonic() - ended >= self._flush_seconds:
                     flush()
                     dirty, ended = False, time.monotonic()
 
+    def _encode(self, file: str, content: Any) -> list[bytes]:
+        """The lines of one queued entry as they are written. Runs on the writer's thread."""
+        if file == REST:
+            if "result" in content:
+                result = encode_result(content["call"], content["result"])
+                content = {**content, "result": result}
+            return [_line(content)]
+        return [_line(line) for line in self._lines(content)]
+
     def close(self, meta: dict[str, Any]) -> None:
         """Write what is queued, then the description of the recording."""
-        self._queue.put(None)
+        while self._thread.is_alive():
+            try:
+                self._queue.put(None, timeout=0.5)
+                break
+            except queue.Full:  # the thread may have ended with the queue full
+                continue
         self._thread.join()
         self._meta.update(meta)
-        self._write_meta({"items": self.written, "lost": self.lost, "complete": True})
+        self._write_meta({"items": self.written, "lost": self.lost, "complete": not self.broken})
 
 
 class _RecordingStream:
@@ -311,22 +379,22 @@ class RecordingBroker:
     async def quote_token(self) -> QuoteToken:
         return await self._inner.quote_token()  # a secret: never recorded
 
-    async def equity(self, symbol: str) -> JsonObject:
+    async def equity(self, symbol: str) -> Security:
         return await self._read("equity", symbol)
 
-    async def equity_option(self, symbol: str) -> JsonObject:
+    async def equity_option(self, symbol: str) -> OptionContract:
         return await self._read("equity_option", symbol)
 
-    async def option_chain(self, underlying: str) -> JsonObject:
+    async def option_chain(self, underlying: str) -> OptionChain:
         return await self._read("option_chain", underlying)
 
-    async def future(self, symbol: str) -> JsonObject:
+    async def future(self, symbol: str) -> Future:
         return await self._read("future", symbol)
 
-    async def future_option(self, symbol: str) -> JsonObject:
+    async def future_option(self, symbol: str) -> OptionContract:
         return await self._read("future_option", symbol)
 
-    async def futures_option_chain(self, root: str) -> JsonObject:
+    async def futures_option_chain(self, root: str) -> OptionChain:
         return await self._read("futures_option_chain", root)
 
     async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:

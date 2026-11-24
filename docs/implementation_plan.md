@@ -46,7 +46,7 @@ names its split point.
 | WP-0.2 | Pricing core: extraction | M | done 2026-11-22 |
 | WP-0.3 | Broker interface and REST client | M | done 2026-11-22 |
 | WP-0.4 | Stream, feed interface, subscriptions | L | done 2026-11-23 |
-| WP-0.5 | Market state and instruments | M | not started |
+| WP-0.5 | Market state and instruments | M | done 2026-11-24 |
 | WP-0.6 | Storage, configuration, reference data | M | not started |
 | WP-0.7 | API shell, login, WebSocket | M | not started |
 | WP-0.8 | Frontend shell | M | not started |
@@ -234,7 +234,17 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   for a missing bid or ask through to the wire format.
 - *Done when:* instruments of SPY, SPX and one futures option root parse into the model, and
   a flush sends only changed rows.
-- *Closes:* MKT-01 to MKT-03, MKT-07, GEN-10.
+- *Closes:* MKT-01 to MKT-03, MKT-07, GEN-10. MKT-03 and MKT-07 are closed here for the data
+  and the wire message (`QuoteRows`); WP-0.7 sends it. GEN-10 is closed for the backend and
+  the wire; the stores are WP-0.6.
+- *Done 2026-11-24:* the instrument model (`s3t.broker.instruments`) and the reading of the six
+  documents, so that the broker interface returns typed records except for the metrics; the
+  market state and the flush (`s3t.market.state`); the registry and the settlement rule; the
+  missing-bid rule from the broker's wire to `proto/s3t/wire/v1/market.proto`, checked in both
+  languages. SPY, SPX (three roots) and all 54 expirations of the /ES options parsed from the
+  live documents (one read-only run, note B, addendum "WP-0.5, live"). One reading fault was
+  found there and fixed offline: see section 8. The decisions are proposals (requirements,
+  section 3) and wait for the owner.
 
 **WP-0.6 Storage, configuration, reference data** (M)
 - *Read first:* architecture note, section 4; requirements 4.5 and 4.9.
@@ -435,9 +445,9 @@ Found but not planned into a package yet.
     their licence only in a LICENSE file then fail, and each needs a named exception.
   - Move to TypeScript 7 when svelte-check and openapi-typescript support it.
   - Upgrade Playwright together with the chart prototype and the backtester viewer.
-  - In TypeScript, int64 fields arrive as `bigint`. Choose per field, when the wire messages
-    are designed (WP-0.5, WP-0.7), whether to keep `bigint` or to mark the field as a JS
-    number.
+  - In TypeScript, int64 fields arrive as `bigint`. `protobuf-es` 2.17 cannot turn that off: it
+    knows `JS_STRING` only (read in its source, 2026-11-24). So product messages use no int64;
+    an instant is a `double` of microseconds (WP-0.5, proposal). WP-0.7 follows it.
   - The OpenAPI schema is generated offline and not served. WP-0.7 decides whether an
     authenticated copy is served.
   - There is no CI. QA-04's "before a change is merged" means `make check` before a commit.
@@ -447,9 +457,9 @@ Found but not planned into a package yet.
 - From WP-0.2 (2026-11-22):
   - The proposals under the pricing core (requirements 4.6) and the CC0-1.0 allowance that
     numpy needs (QA-07) were decided with the owner on 2026-11-22.
-  - REF-05 is closed for the clock. Which instant a contract settles at (PM or AM settlement,
-    early closes) is still to be taken from the broker's `expires-at` and settlement type and
-    the calendar: WP-0.5 with WP-0.6.
+  - REF-05 is closed for the clock. Which instant a contract settles at is a rule in
+    `s3t.market.settlement` since WP-0.5 (a proposal: the broker's `expires-at` is not that
+    instant for stocks and ETFs). WP-0.6 gives it the calendar (`SessionTimes`).
   - The FRED download and the as-of selection of published rates (`volcalc` `build_rates`,
     `rates_asof`) go to WP-0.6. `pricing` has the conversion and the curve only.
   - The quoting tick per contract, which widens the IV gate, is to come from the broker's chain
@@ -473,8 +483,9 @@ Found but not planned into a package yet.
       token since WP-0.4. It is to be extended to the routes in WP-0.7 and the MCP results
       in R4.
     - GEN-03: the nickname in the browser comes with WP-0.7 and WP-0.8.
-    - GEN-09: reviewed for the stream at WP-0.4. To be reviewed again when WP-0.5 has typed
-      the instruments.
+    - GEN-09: reviewed for the stream at WP-0.4 and for the instruments at WP-0.5. A test
+      (`tests/test_repo.py`) holds the keys of the instrument documents inside the broker
+      module. The metrics are still broker JSON (WP-1.1, WP-1.2).
   - uvicorn's loggers do not propagate to the root logger. WP-0.7 calls
     `s3t.secrets.install_redaction` on their handlers.
   - The broker's REST limits are not known. The defaults (2 requests per second, burst 4) are
@@ -483,16 +494,15 @@ Found but not planned into a package yet.
   - Whether the quote-token response states an expiry: it does (`expires-at`, seen
     2026-11-23 at WP-0.4). The client reads it. Closed.
   - The expiry instant of a contract (`expires-at`) comes only from the per-contract
-    instrument call. A chain has many contracts. If WP-0.5 or WP-1.2 needs it per contract,
-    the bulk instrument call (`/instruments/equity-options?symbol[]=`) has to go on the
-    allow-list, by review.
+    instrument call. It is not needed per contract (WP-0.5): the settlement rule does not use it
+    for equity options, and the exercise style is read from one contract per root. The
+    allow-list did not grow.
   - The fake broker:
     - has no holidays (WP-0.6 brings the calendar);
     - has ES weeklies on Fridays only (live has other weekdays too);
     - carries fewer keys than the live documents. A package that parses more keys adds them
-      to the fake (WP-0.5).
+      to the fake. The keys that WP-0.5 reads are in it.
   - For the packages that type the broker's documents (note B, addendum "WP-0.3"):
-    - The live futures list is not in date order (WP-0.5).
     - The IV index rank can be above 1, and an entry of the IV list per expiration can lack
       its value (WP-1.1, WP-1.2).
     - SPY's dividend fields in the metrics were 0.0. The dividend schedule of an ETF may need
@@ -510,14 +520,11 @@ Found but not planned into a package yet.
   - The proposals of the package were confirmed by the owner on 2026-11-24 (requirements,
     section 3). The stream file of a recording is one zstd frame with a block flush every
     3 s since then.
-  - **For WP-0.5, the first reader of the feed:**
-    - The market state reads everything through `feed.reader(...)`. It gets columns, not
-      rows (`EventBatch.columns`).
-    - A reader's queue holds 2,000 batches by default. Whether that suits the real rates is
-      judged with the measurements of WP-0.9.
-    - The quotes of SPXW options carried no bid or ask time in the streamer dumps (note B,
-      addendum of 2026-11-24), so `bid_time` and `ask_time` are `None` there. The age of
-      such a quote (MKT-06) can only come from the receipt time.
+  - A reader's queue holds 2,000 batches by default, also the market state's. Whether that
+    suits the real rates is judged with the measurements of WP-0.9.
+  - For MKT-06 (WP-1.2): the quotes of SPXW options carried no bid or ask time in the
+    streamer dumps (note B, addendum of 2026-11-24), so `bid_time` and `ask_time` are `None`
+    there. The age of such a quote can only come from the receipt time.
   - **For WP-0.7, which wires and publishes:**
     - It builds `LocalFeed(broker, config.subscriptions)` and publishes `feed.status()`
       (`FeedStatus`: the session's state, `resubscribing`, the use per class and consumer).
@@ -588,13 +595,54 @@ Found but not planned into a package yet.
   - GEN-02 and SEC-05: the canary test covers the stream token and the recording
     (`tests/broker/test_canary.py`, `test_replay.py`). GEN-09 was reviewed for the stream:
     no dxFeed name crosses the interface, and a test reads a recording for it.
-  - `s3t.broker.tastytrade.chain` is a stop-gap that reads stream symbols from the chain
-    document for the tools. It goes when WP-0.5 types the chain.
   - `tools/stream_check.py` talks to the session without the feed and reaches into it to
     close its own socket. That is the only way to force a drop from outside, and it stays
     inside the tool. The rule test names the tool as an exception.
   - An untracked `package-lock.json` lies in the repository root. It is not from a package
     of this plan. The owner decides whether it goes.
+- From WP-0.5 (2026-11-24):
+  - **The proposals of the package wait for the owner** (requirements, section 3, "The market
+    package"). The one that touches an earlier decision: the settlement instant, product
+    definition 11.1. Nothing uses it before WP-1.1.
+  - **To be seen live, a few requests (WP-0.9, or earlier if the owner wants):**
+    - The value of `settlement-type` in the document of one future option. It is neither AM
+      nor PM, and the parser refused it in the live run. It now reads
+      `future-option-product.is-am-settled`, whose presence was seen and whose value was not.
+      Nothing uses the call yet: the chain has its own AM and PM.
+    - The exercise style of ES weeklies. The chain states one style, American, for all 54
+      expirations of /ES. Weekly E-mini options are European as far as is known outside the
+      API, so the chain may be wrong there; a contract read alone would show it.
+    - Whether all contracts of one equity root have one exercise style (assumed by
+      `Instruments.exercise`).
+    - Dollars per point and strike factor of products other than /ES.
+  - **For WP-0.6:** implement `SessionTimes` (open and close of a date's regular session, in
+    UTC, None without one) on the calendar, and use it in `settles_at`.
+  - **For WP-0.7:**
+    - It builds `MarketState(feed, now=broker.data_time, period=config.stream.aggregation_period)`
+      before `feed.start()`, starts it with the feed and closes it before the feed. It
+      publishes `MarketState.status()` in the health route.
+    - The `quotes` topic takes a `changes()` handle per connection, reads the state for the
+      snapshot, and sends `quote_rows(state, changed_symbols(flush, symbols))`.
+      `s3t.api.rows` maps the application's symbols to stream symbols, which stay in the
+      backend.
+    - A row of `QuoteRows` has no mark for a value that is not live. `live_since` against the
+      receipt time gives it (UI-05). Decide with the topic whether the row carries it.
+    - The market state does not know the demand of a view: the topic states it to the feed.
+  - **For WP-1.1:** the synthetic market prices SPY options to 16:15, the broker's
+    `expires-at`, and the settlement rule says 16:00. A fit on the synthetic market does not
+    recover the smile to the last digit for short expirations. Change the fake's clock or the
+    test's when the rule is confirmed. AM-settled options are priced to 09:30 in both.
+  - **For WP-1.2:**
+    - Of 2.9 million real quotes 29.7% changed sizes only. IV need not be computed for those.
+    - The first event after a subscription is the broker's current value, which can be hours
+      old, with a fresh receipt time. The age of a value (MKT-06) is not the age of its
+      receipt.
+    - A price with a size of NaN occurs (10,371 bids and 30,269 asks of 2.9 million). What it
+      means was not looked at. The conversion keeps the price.
+  - A value that arrives for a pair already released lives until the next sweep (5 s at most).
+  - The reading of chains (12,478 and 33,358 contracts live) runs on the event loop and was
+    not timed. Judge it at WP-0.9 against the 50 ms of PRF-05.
+  - The fake's futures-option ticks have two steps and the live /ES chain four. Left as it is.
 
 ## 9. Starting a package in a fresh session
 

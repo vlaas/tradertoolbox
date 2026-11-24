@@ -1,34 +1,44 @@
-"""Live read-only check of the broker client against Tastytrade (BRK-07; WP-0.3).
+"""Live read-only check of the broker client against Tastytrade (BRK-07; WP-0.3, WP-0.5).
 
     uv run python tools/broker_check.py [--config PATH]
 
 It reads the configuration and the environment file named there, and calls each
 allow-listed read about once, at one request per second. The reads are: the token renewal,
-the quote token, SPY and SPX, the SPY chain, one SPY option, the /ES futures chain, one
-future, one future option, and the metrics of SPY and SPX. That is about ten requests.
+the quote token, SPY and SPX, the SPY and SPX chains, one option of SPY and one of each SPX root
+but SPXW (whose terms are known), the /ES futures chain, one future, one future option, and
+the metrics of SPY and SPX. That is 13 requests.
 
 It prints:
 
 - the granted scopes, with the account masked;
 - per read, the key paths found only in the live document or only in the fake's (keys, not
   values);
+- what the instrument model reads out of the live document, and the facts its rules rest on:
+  the roots, the expiration and settlement types, the exercise style, the instants of expiry
+  and the dollars per point of a futures option;
 - the symbol formats, live beside fake;
 - the SPY metrics whose units matter (fraction or percent).
 
-Nothing is written to disk. Logging goes through the redaction filter. The tool places no
-order and changes nothing: the client can only send what the allow-list holds (GEN-01).
+No price is printed and nothing is written to disk. Logging goes through the redaction filter.
+The tool places no order and changes nothing: the client can only send what the allow-list
+holds (GEN-01). It reads the documents as the broker sent them, with the client's own
+``_read``, because it compares their keys; the parsing is then the client's.
 """
 
 import argparse
 import asyncio
 import logging
 import sys
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from s3t.broker.fake.market import SyntheticMarket
-from s3t.broker.interface import BrokerError, JsonObject
+from s3t.broker.instruments import Expiration, OptionChain, OptionContract
+from s3t.broker.interface import BrokerError
+from s3t.broker.tastytrade import instruments as parse
 from s3t.broker.tastytrade.rest import TastytradeRest
 from s3t.config import load_config
 from s3t.secrets import install_redaction, load_broker_secrets, redact
@@ -73,13 +83,24 @@ def compare(name: str, live: Any, fake: Any) -> None:
         print(f"  only fake: {path}")
 
 
-def first_strike(chain: JsonObject, item_key: str = "items") -> tuple[JsonObject, JsonObject]:
-    """An expiration about a month out and its middle strike."""
-    item = chain[item_key][0]
-    expirations = item["expirations"]
-    exp = min(expirations, key=lambda e: abs(int(e.get("days-to-expiration", 0)) - 30))
-    strikes = exp["strikes"]
-    return exp, strikes[len(strikes) // 2]
+def _fake_option(market: SyntheticMarket) -> str:
+    """Any listed SPY option of the synthetic market: its symbol."""
+    doc = market.option_chain("SPY")
+    assert doc is not None
+    return doc["items"][0]["expirations"][0]["strikes"][0]["call"]
+
+
+def _first_future(market: SyntheticMarket) -> Any:
+    doc = market.futures_option_chain("ES")
+    assert doc is not None
+    return market.future(doc["futures"][0]["symbol"])
+
+
+def _fake_future_option(market: SyntheticMarket) -> Any:
+    doc = market.futures_option_chain("ES")
+    assert doc is not None
+    strike = doc["option-chains"][0]["expirations"][0]["strikes"][0]
+    return market.future_option(strike["call"])
 
 
 async def call(label: str, fn: Callable[[], Awaitable[Any]]) -> Any:
@@ -90,73 +111,141 @@ async def call(label: str, fn: Callable[[], Awaitable[Any]]) -> Any:
         return None
 
 
+NY = ZoneInfo("America/New_York")
+
+
+def ny(instant: datetime | None) -> str:
+    return "none" if instant is None else f"{instant.astimezone(NY):%Y-%m-%d %H:%M} New York"
+
+
+def describe_chain(chain: OptionChain) -> None:
+    """What the model read: roots, types, counts. No prices, no strikes."""
+    for root in chain.roots():
+        listed = chain.of_root(root)
+        first = listed[0]
+        kinds = Counter(f"{e.kind}/{e.settlement}" for e in listed)
+        contracts = sum(sum(c is not None for c in (*e.calls, *e.puts)) for e in listed)
+        print(
+            f"  model: root {root}, {len(listed)} expirations, {contracts} contracts, "
+            f"{dict(kinds)}, multiplier {first.multiplier:g}, standard {first.standard}, "
+            f"cash settled {first.cash_settled}, exercise {first.exercise}, ticks "
+            f"{first.ticks.steps if first.ticks else None}"
+        )
+
+
+def describe_contract(option: OptionContract) -> None:
+    print(
+        f"  model: {option.root} {option.expiration_date} {option.settlement}, "
+        f"{option.exercise}, multiplier {option.multiplier:g}; expires-at "
+        f"{ny(option.expires_at)}, stops-trading-at {ny(option.stops_trading_at)}"
+    )
+
+
+def middle(e: Expiration) -> OptionContract | None:
+    return e.contract(len(e.strikes) // 2, "call") if e.strikes else None
+
+
 async def run(client: TastytradeRest, market: SyntheticMarket) -> int:
     failures = 0
+
+    async def raw(name: str, label: str, symbol: str) -> Any:
+        nonlocal failures
+        doc = await call(label, lambda: client._read(name, symbol=symbol))
+        failures += doc is None
+        return doc
+
+    async def parsed(label: str, fn: Callable[[], Any]) -> Any:
+        nonlocal failures
+
+        async def go() -> Any:
+            return fn()
+
+        record = await call(f"{label}, parsing", go)
+        failures += record is None
+        return record
+
     token = await call("quote token", client.quote_token)
     print(f"granted scopes: {' '.join(client.granted_scopes or ('(not a JWT)',))}")
     if token is not None:
         print(f"quote token: level {token.level}, address host {token.url.split('/')[2]}")
 
     for symbol in ("SPY", "SPX"):
-        live = await call(f"equity {symbol}", lambda s=symbol: client.equity(s))
-        failures += live is None
+        live = await raw("equity", f"equity {symbol}", symbol=symbol)
         if live is not None:
             compare(f"equity {symbol}", live, market.equity(symbol))
+            security = await parsed(f"equity {symbol}", lambda doc=live: parse.parse_security(doc))
+            if security is not None:
+                print(f"  model: {security.kind}, active in the document: {live.get('active')}")
 
-    chain = await call("option chain SPY", lambda: client.option_chain("SPY"))
-    failures += chain is None
-    if chain is not None:
-        compare("option chain SPY", chain, market.option_chain("SPY"))
-        exp, strike = first_strike(chain)
-        fake_chain = market.option_chain("SPY")
-        assert fake_chain is not None
-        _, fake_strike = first_strike(fake_chain)
-        print(f"  symbols live: {strike['call']!r} {strike['call-streamer-symbol']!r}")
-        print(f"  symbols fake: {fake_strike['call']!r} {fake_strike['call-streamer-symbol']!r}")
-        print(
-            f"  settlement and type live: {exp.get('settlement-type')} {exp.get('expiration-type')}"
+    for symbol in ("SPY", "SPX"):
+        live = await raw("option_chain", f"option chain {symbol}", symbol=symbol)
+        if live is None:
+            continue
+        compare(f"option chain {symbol}", live, market.option_chain(symbol))
+        chain = await parsed(
+            f"option chain {symbol}", lambda doc=live, s=symbol: parse.parse_option_chain(doc, s)
         )
-        option = await call("equity option", lambda: client.equity_option(strike["call"]))
-        failures += option is None
-        if option is not None:
-            compare("equity option", option, market.equity_option(fake_strike["call"]))
-            print(f"  expires-at live: {option.get('expires-at')}")
+        if chain is None:
+            continue
+        describe_chain(chain)
+        for root in chain.roots():
+            if root == "SPXW":
+                continue
+            listed = chain.of_root(root)
+            chosen = middle(listed[min(len(listed) - 1, 5)])
+            if chosen is None:
+                continue
+            doc = await raw("equity_option", f"option of {root}", symbol=chosen.symbol)
+            if doc is None:
+                continue
+            if root == "SPY":
+                compare("equity option", doc, market.equity_option(_fake_option(market)))
+                print(f"  symbols live: {doc.get('symbol')!r} {doc.get('streamer-symbol')!r}")
+            option = await parsed(f"option of {root}", lambda d=doc: parse.parse_equity_option(d))
+            if option is not None:
+                describe_contract(option)
 
-    fchain = await call("futures chain /ES", lambda: client.futures_option_chain("/ES"))
-    if fchain is None:
-        fchain = await call(
-            "futures chain /ES, encoded slash",
-            lambda: client._read("futures_option_chain", symbol="/ES"),  # pyright: ignore[reportPrivateUsage]
-        )
-    failures += fchain is None
+    fchain = await raw("futures_option_chain", "futures chain /ES", symbol="ES")
     if fchain is not None:
         compare("futures chain /ES", fchain, market.futures_option_chain("ES"))
-        future_symbol = fchain["futures"][0]["symbol"]
-        future = await call("future", lambda: client.future(future_symbol))
-        if future is None:
-            future = await call(
-                "future, encoded slash",
-                lambda: client._read("future", symbol=future_symbol),  # pyright: ignore[reportPrivateUsage]
-            )
-        failures += future is None
-        fake_future = market.future(market.futures_option_chain("ES")["futures"][0]["symbol"])  # type: ignore[index]
-        if future is not None:
-            compare("future", future, fake_future)
-            print(f"  symbols live: {future.get('symbol')!r} {future.get('streamer-symbol')!r}")
-        exp, strike = first_strike(fchain, "option-chains")
-        fake_fchain = market.futures_option_chain("ES")
-        assert fake_fchain is not None
-        _, fake_strike = first_strike(fake_fchain, "option-chains")
-        print(f"  option symbols live: {strike['call']!r} {strike['call-streamer-symbol']!r}")
-        fake_call, fake_streamer = fake_strike["call"], fake_strike["call-streamer-symbol"]
-        print(f"  option symbols fake: {fake_call!r} {fake_streamer!r}")
-        print(
-            f"  settlement and type live: {exp.get('settlement-type')} {exp.get('expiration-type')}"
+        chain = await parsed(
+            "futures chain /ES", lambda: parse.parse_futures_option_chain(fchain, "/ES")
         )
-        option = await call("future option", lambda: client.future_option(strike["call"]))
-        failures += option is None
-        if option is not None:
-            compare("future option", option, market.future_option(fake_strike["call"]))
+        listed = sum(len(i.get("expirations", [])) for i in fchain.get("option-chains", []))
+        factors = Counter(
+            str(e.get("strike-factor"))
+            for i in fchain.get("option-chains", [])
+            for e in i.get("expirations", [])
+        )
+        print(f"  strike factors in the document: {dict(factors)}")
+        styles = [i.get("exercise-style") for i in fchain.get("option-chains", [])]
+        print(f"  exercise style per option-chains item: {styles}")
+        if chain is not None:
+            print(f"  model: {len(chain.expirations)} of {listed} expirations, futures in order")
+            describe_chain(chain)
+            future_doc = await raw(
+                "future", "future", symbol=chain.futures[0].symbol.removeprefix("/")
+            )
+            if future_doc is not None:
+                compare("future", future_doc, _first_future(market))
+                future = await parsed("future", lambda: parse.parse_future(future_doc))
+                if future is not None:
+                    print(
+                        f"  model: {future.root}, dollars per point {future.multiplier:g} (future)"
+                        f" against {chain.expirations[0].multiplier:g} (its options)"
+                    )
+                    print(f"  symbols live: {future.symbol!r} {future.stream_symbol!r}")
+            chosen = middle(chain.expirations[min(len(chain.expirations) - 1, 10)])
+            if chosen is not None:
+                doc = await raw("future_option", "future option", symbol=chosen.symbol)
+                if doc is not None:
+                    compare("future option", doc, _fake_future_option(market))
+                    print(f"  option symbols live: {chosen.symbol!r} {chosen.stream_symbol!r}")
+                    option = await parsed("future option", lambda: parse.parse_future_option(doc))
+                    if option is not None:
+                        describe_contract(option)
+                        same = option == chosen
+                        print(f"  the contract read alone equals the one of the chain: {same}")
 
     metrics = await call("market metrics", lambda: client.market_metrics(["SPY", "SPX"]))
     failures += metrics is None

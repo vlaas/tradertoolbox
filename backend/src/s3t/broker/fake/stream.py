@@ -23,7 +23,8 @@ Scenarios (implementation plan 3.3), each an attribute or a method:
   **Invented:** the live server's answer is not known.
 - ``change_limit``: more than N subscription changes in W seconds are refused with the
   message `tt` saw live, "Your subscription rate is too high".
-- ``no_bid`` and ``no_ask``: symbols whose quote lacks that side. ``index_without_quote``:
+- ``no_bid`` and ``no_ask``: symbols whose quote lacks that side: a price of 0 with the size
+  ``"NaN"``, as dxFeed sends it (note B, addendum "WP-0.5"). ``index_without_quote``:
   an index sends trades only.
 - ``candle_gaps`` and ``candle_suspects``: history with a hole, and with a bar whose high is
   ten times too large. A clock change needs no switch: bars are stamped in UTC, so the
@@ -412,9 +413,9 @@ class FakeDxLink:
         if event == "Quote":
             for doc in docs:
                 if doc["eventSymbol"] in self.no_bid:
-                    doc["bidPrice"], doc["bidSize"] = NAN, 0
+                    doc["bidPrice"], doc["bidSize"] = 0.0, NAN
                 if doc["eventSymbol"] in self.no_ask:
-                    doc["askPrice"], doc["askSize"] = NAN, 0
+                    doc["askPrice"], doc["askSize"] = 0.0, NAN
         return docs
 
     def candle_history(self, symbol: str, start_ms: int, at: datetime) -> list[dict[str, Any]]:

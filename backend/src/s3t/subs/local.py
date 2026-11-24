@@ -235,6 +235,9 @@ class LocalFeed:
         self._readers.add(reader)
         return reader
 
+    def granted(self) -> Sequence[Sub]:
+        return self._grant.subs
+
     async def settled(self) -> None:
         await self._settled.wait()
 

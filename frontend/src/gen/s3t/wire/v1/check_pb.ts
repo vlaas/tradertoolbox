@@ -23,7 +23,8 @@ export const file_s3t_wire_v1_check: GenFile = /*@__PURE__*/
  */
 export type WireCheck = Message<"s3t.wire.v1.WireCheck"> & {
   /**
-   * A UTC instant in microseconds since the epoch, the form of GEN-10.
+   * An integer beyond 2^53, which TypeScript holds as bigint. Product messages avoid int64:
+   * an instant travels as a double (market.proto).
    *
    * @generated from field: int64 time_us = 1;
    */

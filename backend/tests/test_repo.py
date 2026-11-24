@@ -1,6 +1,7 @@
 """Repository guards: no market data or credentials (GEN-07), no machine-specific values in
-code and configuration (GEN-08), and the subscription manager as the only caller of
-subscribe and unsubscribe (SUB-02).
+code and configuration (GEN-08), the subscription manager as the only caller of subscribe
+and unsubscribe (SUB-02), and the keys of the broker's instrument documents inside the broker
+module only (GEN-09).
 
 The files examined are those git would commit: tracked files plus untracked files that are
 not ignored. Documents are covered by review, not by this scan.
@@ -104,3 +105,30 @@ def test_only_the_subscription_manager_calls_subscribe() -> None:
             ):
                 callers.add(f)
     assert callers == set(SUBSCRIBE_CALLERS)
+
+
+KEY = re.compile(r"[a-z0-9]+(-[a-z0-9]+)+")
+
+
+def _keys(path: Path) -> set[str]:
+    """The string constants of a file that look like a key of a broker document."""
+    tree = ast.parse(path.read_text())
+    constants = (n.value for n in ast.walk(tree) if isinstance(n, ast.Constant))
+    return {value for value in constants if isinstance(value, str) and KEY.fullmatch(value)}
+
+
+def test_broker_document_keys_stay_in_the_broker_module() -> None:
+    """GEN-09, for the documents that are typed (WP-0.5): instruments and chains. The market
+    metrics are still the broker's documents, so their keys are not in the list. The words
+    without a hyphen (``symbol``, ``strikes``) are ordinary words and are left to review."""
+    src = REPO / "backend" / "src" / "s3t"
+    keys = _keys(src / "broker" / "tastytrade" / "instruments.py")
+    assert {"streamer-symbol", "strike-price", "option-chains", "expires-at"} <= keys
+    inside = (src / "broker" / "tastytrade", src / "broker" / "fake")
+    leaks = {
+        str(path.relative_to(src)): sorted(found)
+        for path in src.rglob("*.py")
+        if not path.is_relative_to(inside[0]) and not path.is_relative_to(inside[1])
+        if (found := _keys(path) & keys)
+    }
+    assert leaks == {}

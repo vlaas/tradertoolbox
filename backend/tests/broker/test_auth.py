@@ -70,8 +70,7 @@ async def test_token_expiry_during_a_session_is_recovered(
 ) -> None:
     await client.equity("SPY")
     fake.expire_tokens()
-    doc = await client.equity("AAPL")
-    assert doc["symbol"] == "AAPL"
+    assert (await client.equity("AAPL")).symbol == "AAPL"
     assert fake.issued == 2
     assert [r.status for r in fake.requests] == [200, 200, 401, 200, 200]
 

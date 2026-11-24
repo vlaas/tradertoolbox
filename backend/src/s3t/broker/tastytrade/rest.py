@@ -22,6 +22,8 @@ Changed in the port (2026-11-22, WP-0.3):
   its token is dropped unused (BRK-07, GEN-01; decided 2026-11-22).
 - ``rest_status()`` gives the token state, the configured limit, the requests of the last
   minute and a hold after a 429, for the status bar (BRK-09).
+- The instrument and chain documents are returned as records of the instrument model
+  (``instruments.py``, WP-0.5). The market metrics are still the broker's JSON.
 - Bodies are never logged. `tt`'s ``--wire`` mode, the dry-run and the account reads are not
   ported.
 """
@@ -44,6 +46,7 @@ import httpx
 from pydantic import SecretStr
 
 from s3t import __version__
+from s3t.broker.instruments import Future, OptionChain, OptionContract, Security
 from s3t.broker.interface import (
     AuthError,
     BrokerError,
@@ -58,6 +61,14 @@ from s3t.broker.interface import (
 )
 from s3t.broker.limits import Backoff, Clock, Sleep, TokenBucket, parse_retry_after
 from s3t.broker.tastytrade.endpoints import BY_NAME, Endpoint, match
+from s3t.broker.tastytrade.instruments import (
+    parse_equity_option,
+    parse_future,
+    parse_future_option,
+    parse_futures_option_chain,
+    parse_option_chain,
+    parse_security,
+)
 from s3t.secrets import REDACTOR, BrokerSecrets, redact
 
 API_URL = "https://api.tastyworks.com"
@@ -156,23 +167,25 @@ class TastytradeRest:
         expires = _parse_instant(data.get("expires-at")) or issued + QUOTE_TOKEN_LIFETIME
         return QuoteToken(url, SecretStr(token), str(level), issued, expires)
 
-    async def equity(self, symbol: str) -> JsonObject:
-        return await self._read("equity", symbol=symbol)
+    async def equity(self, symbol: str) -> Security:
+        return parse_security(await self._read("equity", symbol=symbol))
 
-    async def equity_option(self, symbol: str) -> JsonObject:
-        return await self._read("equity_option", symbol=symbol)
+    async def equity_option(self, symbol: str) -> OptionContract:
+        return parse_equity_option(await self._read("equity_option", symbol=symbol))
 
-    async def option_chain(self, underlying: str) -> JsonObject:
-        return await self._read("option_chain", symbol=underlying)
+    async def option_chain(self, underlying: str) -> OptionChain:
+        return parse_option_chain(await self._read("option_chain", symbol=underlying), underlying)
 
-    async def future(self, symbol: str) -> JsonObject:
-        return await self._read("future", symbol=symbol.removeprefix("/"))
+    async def future(self, symbol: str) -> Future:
+        return parse_future(await self._read("future", symbol=symbol.removeprefix("/")))
 
-    async def future_option(self, symbol: str) -> JsonObject:
-        return await self._read("future_option", symbol=symbol)
+    async def future_option(self, symbol: str) -> OptionContract:
+        return parse_future_option(await self._read("future_option", symbol=symbol))
 
-    async def futures_option_chain(self, root: str) -> JsonObject:
-        return await self._read("futures_option_chain", symbol=root.removeprefix("/"))
+    async def futures_option_chain(self, root: str) -> OptionChain:
+        product = root.removeprefix("/")
+        doc = await self._read("futures_option_chain", symbol=product)
+        return parse_futures_option_chain(doc, f"/{product}")
 
     async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:
         wanted = list(dict.fromkeys(symbols))

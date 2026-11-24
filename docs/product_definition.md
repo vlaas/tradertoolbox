@@ -448,6 +448,17 @@ time-zone choice, daily anchors at the open, the resolution list and the bar-bui
 | Surface | SVI per expiry as the main surface; free-gamma SSVI as the fallback for thin expiries. Added from `bt_dataset`: an interpolating ATM-variance curve between expiries, wing freeze with quality gates, optional smoothing in time |
 | Platform mode | A separate, labelled set used only for the Tastytrade POP, P50 and CVaR replicas: flat 2.93% drift, calendar days over 365, expiry at 16:00 ET, expiry IV for POP, IV index for the simulation |
 
+**Proposed 2026-11-24 (WP-0.5), not confirmed: the time to expiry.** The row "Time to expiry"
+takes the settlement instant from the broker's `expires-at`. That is not the instant for stock
+and ETF options. For every one of them in the `tt` captures (133 files) `expires-at` is 15
+minutes after the close (16:15 New York, 13:15 on an early close), and `tt` found by
+measurement that the platform counts to 16:00.
+For index options, SPXW and XSP, it is the close, and for an AM-settled SPX option it was 09:30,
+the open (seen live 2026-11-23). Proposed instead: the settlement instant is the close of the
+regular session on the expiration date for PM settlement and its open for AM settlement, from
+the exchange calendar (WP-0.6), as `volcalc` does; for futures options it is the broker's
+`expires-at`. At 16:15 a 0DTE option has 15 minutes more time than at 16:00.
+
 ### 11.2 Studies on historical data (to do)
 
 These decide later defaults. Each runs on the T3 store or the `volcalc` lake.

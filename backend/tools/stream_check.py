@@ -42,7 +42,6 @@ from s3t.broker.interface import (
     Sub,
 )
 from s3t.broker.tastytrade.broker import from_config
-from s3t.broker.tastytrade.chain import near_the_money
 from s3t.broker.tastytrade.convert import EVENT_FIELDS
 from s3t.config import load_config
 from s3t.secrets import install_redaction
@@ -96,7 +95,8 @@ async def run(config_path: str | None) -> int:
         spot = trades[-1].price if trades else quotes[-1].bid if quotes else math.nan
         option = None
         if math.isfinite(spot):
-            found = near_the_money(chain, spot, expirations=1, strikes=1, min_days=7)
+            week = broker.data_time().date() + timedelta(days=7)
+            found = chain.near_the_money(spot, expirations=1, strikes=1, not_before=week)
             option = found[0] if found else None
         if option:
             more = [Sub(option, EventType.QUOTE), Sub(option, EventType.GREEKS)]

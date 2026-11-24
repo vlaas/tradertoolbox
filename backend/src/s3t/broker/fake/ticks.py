@@ -30,7 +30,8 @@ The price model:
   (:func:`svi_params`), on the forward ``F = S exp(r tau)`` with a flat rate of 4% and no
   dividends. Prices and Greeks come from ``s3t.pricing.black76``. The quote is the model
   price rounded to the tick with a spread of one tick or 2% of the price. An option whose
-  bid would be below one tick has no bid: ``"NaN"``, as dxFeed sends a missing number.
+  bid would be below one tick has no bid, which dxFeed sends as a price of 0 with the size
+  ``"NaN"`` (note B, addendum "WP-0.5").
 - **Greeks units**, assumed and not compared with the live feed (WP-1.9 compares them):
   delta and gamma against the spot, theta per calendar day, vega and rho per percentage
   point.
@@ -602,9 +603,9 @@ class Ticks:
                 "bidExchangeCode": "C",
                 "askTime": 0,
                 "askExchangeCode": "C",
-                "bidPrice": NAN if no_bid else round(bid, 4),
+                "bidPrice": 0.0 if no_bid else round(bid, 4),
                 "askPrice": round(ask, 4),
-                "bidSize": 0 if no_bid else bid_size,
+                "bidSize": NAN if no_bid else bid_size,
                 "askSize": ask_size,
             }
         if event == "Greeks":

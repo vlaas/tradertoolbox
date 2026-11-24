@@ -97,8 +97,8 @@ async def test_text_and_missing_numbers_become_floats(rig: StreamRig) -> None:
     await session.subscribe([SPY_QUOTE, Sub("SPX", EventType.QUOTE), Sub("SPX", EventType.TRADE)])
     await rig.clock.settle()
     spy, spx = rig.rows(EventType.QUOTE, "SPY")[0], rig.rows(EventType.QUOTE, "SPX")[0]
-    # A missing bid is NaN, never zero (MKT-07); its size is the number the server sent.
-    assert math.isnan(spy.bid) and spy.ask > 0 and spy.bid_size == 0.0
+    # A missing bid is a price of 0 without a size on the wire, and NaN here (MKT-07).
+    assert math.isnan(spy.bid) and spy.ask > 0 and math.isnan(spy.bid_size)
     # An index quote has its sizes as the text "NaN" on the wire.
     assert math.isnan(spx.bid_size) and math.isnan(spx.ask_size) and spx.bid > 0
     trade = rig.rows(EventType.TRADE, "SPX")[0]

@@ -16,8 +16,13 @@ for one such order and turns the flat values into the columns of an
 Conversions:
 
 - A number becomes a float. dxFeed sends a missing number as the text ``NaN`` and the
-  sizes of an index quote as text; both become floats, and anything that is not a number
-  becomes NaN.
+  sizes of an index quote as text; both become floats, and anything that is not a finite
+  number becomes NaN.
+- **A missing bid or ask becomes NaN, never zero** (MKT-07). dxFeed sends it as a price of 0
+  with a size of NaN, not as a price of NaN: 133,773 of 2.9 million SPXW quotes of one day,
+  and no price of 0 came with a size (the owner's streamer dumps, read 2026-11-24; note B,
+  addendum "WP-0.5"). So a price of 0 without a size is missing. A price of 0 with a size is
+  kept, and so is any other price without a size: an index never has one.
 - A time arrives as milliseconds since 1970 and becomes a UTC instant. 0 means "no time"
   and becomes None.
 - The trading status becomes ``active``, ``halted`` or ``unknown``.
@@ -205,9 +210,10 @@ def wire_symbol(sub: Sub) -> str:
 
 def _number(value: Any) -> float:
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return math.nan
+    return number if number - number == 0.0 else math.nan  # an infinity is no number either
 
 
 def _time(value: Any) -> datetime | None:
@@ -264,6 +270,18 @@ _ABSENT: dict[Kind, Any] = {
 }
 
 
+def _drop_missing_prices(prices: list[Any], sizes: list[Any]) -> None:
+    """A price of 0 without a size is no price (MKT-07). In place."""
+    if 0.0 not in prices:
+        return
+    for i, price in enumerate(prices):
+        if price == 0.0 and not sizes[i] > 0.0:  # NaN compares false
+            prices[i] = math.nan
+
+
+_QUOTE_AT = {name: i for i, name in enumerate(FIELDS[EventType.QUOTE])}
+
+
 class Decoder:
     """Turns the flat values of one event type, in one wire field order, into columns."""
 
@@ -296,6 +314,9 @@ class Decoder:
                 columns.append(list(map(_number, values[index::width])))
             else:
                 columns.append(list(map(_CONVERT[kind], values[index::width])))
+        if self.event is EventType.QUOTE:
+            _drop_missing_prices(columns[_QUOTE_AT["bid"]], columns[_QUOTE_AT["bid_size"]])
+            _drop_missing_prices(columns[_QUOTE_AT["ask"]], columns[_QUOTE_AT["ask_size"]])
         if self.event is EventType.CANDLE and (None in columns[0] or None in columns[2]):
             keep = [
                 i

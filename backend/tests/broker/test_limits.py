@@ -193,7 +193,7 @@ async def test_server_errors_exhausted(client: TastytradeRest, fake: FakeTastytr
 async def test_network_errors_are_retried(client: TastytradeRest, fake: FakeTastytrade) -> None:
     await client.equity("SPY")
     fake.disconnect(2)
-    assert (await client.equity("SPY"))["symbol"] == "SPY"
+    assert (await client.equity("SPY")).symbol == "SPY"
 
 
 async def test_network_errors_exhausted(client: TastytradeRest, fake: FakeTastytrade) -> None:

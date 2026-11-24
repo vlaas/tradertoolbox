@@ -309,3 +309,72 @@ either flag. The fake sends the snip marker when it cuts a history at 8,000 bars
 Not looked at: the order of the fields on the wire (the dumps are not wire data); whether
 the time of the "snapshot end" marker is the start asked for; other symbols than SPX and
 SPXW.
+
+## Addendum 2026-11-24 (WP-0.5): what the owner's captures and dumps show about instruments and quotes
+
+Read on 2026-11-24, counts and value types only. Two sources, both the owner's:
+`tt` captures of 2026-11-11 to 2026-11-19 (133 of them hold the documents; stocks, ETFs, SPX, XSP)
+and the streamer dump of 2026-11-23 (the first three million lines, 2,895,906 quotes of SPXW
+options).
+
+**Quotes.**
+
+- **A missing bid arrives as price 0 with size `NaN`:** 133,773 times. A bid of 0 never came with
+  a numeric size. No price of `NaN` came, and no infinity. No ask came as 0. (MKT-07)
+- A price with a size of `NaN` occurs: 10,371 bids and 30,269 asks. What it means is not known.
+- **Consecutive quotes of a symbol are never identical** (0.00% of 2,893,802). In 29.7% the bid and
+  the ask are the same and only sizes moved.
+
+**Instruments and chains.**
+
+- **`expires-at` is not the settlement instant of a stock or ETF option.** For AAPL, AMD, GLD,
+  NVDA, QQQ, SPY and TSLA it is 16:15 New York and equals `stops-trading-at` (13:15 on an early
+  close: GLD and SPY). For SPXW and XSP both are 16:00. The streamer dump shows 13:00 for SPXW on
+  2026-11-27. `tt` measured that the platform counts to 16:00 for SPY (its ticket notes of
+  2026-11-16).
+- The nested chain states no exercise style and no instant of expiry. A contract read alone does:
+  `exercise-style` American for stocks and ETFs, European for SPXW and XSP.
+- `active` is false for SPX and XSP.
+- The deliverable of an index option is of the type `Cash`, amount `0.0`, without symbol and
+  without instrument type. `market-time-instrument-collection` is "Cash Settled Equity Option"
+  for stock options too.
+- `option-tick-sizes` of AAPL, AMD, GLD, NVDA and TSLA: 0.01 below 3 and 0.05 above. SPY and QQQ:
+  0.01. `tick-sizes` is absent for the indexes.
+- SPX lists three roots in the chain: SPXW, SPXO, SPX, in this order. `expiration-type` seen in the
+  streamer's instrument lines: Weekly, End-Of-Month, and Regular and Quarterly in the captures.
+
+Not looked at: whether a price without a size is usable; AM-settled contracts (seen in the run
+below); prices of any kind.
+
+## Addendum 2026-11-24 (WP-0.5, live): the documents against the instrument model
+
+One run of `backend/tools/broker_check.py` on Monday 2026-11-23, 18:03 New York (23:03 UTC), after the
+close. Production API, one request per second, 13 requests, one token renewal. All measured, on
+one run. Load average 1.85, 1.93, 8.45 before and 1.74, 1.90, 8.32 after. No 429.
+
+- **SPY, SPX and /ES parsed into the model:** 31 expirations of SPY (12,478 contracts); SPXW 39
+  (23,104), SPXO 2 (862) and SPX 19 (9,392); all 54 of the /ES options, each with its own future.
+- **SPXO is AM-settled and weekly,** European, cash settled, multiplier 100. Two expirations.
+  **SPX is AM-settled and monthly** (19 expirations, all `Regular`).
+- **An AM-settled option:** `expires-at` is 09:30 New York on the expiration date, and
+  `stops-trading-at` is the afternoon before: 16:15 for SPX, 16:00 for SPXO.
+- SPXW has no `Regular` expirations: 31 Weekly, 4 End-Of-Month, 4 Quarterly. SPY has Regular,
+  Weekly and Quarterly.
+- **Dollars per point of /ES: 50,** from the future and from its options
+  (notional-value / display-factor). `strike-factor` is 1.0 for all 54 expirations.
+- The /ES chain has one option-chains item, with the style American for all 54. Weekly E-mini
+  options are European as far as is known outside the API; no weekly contract was read alone,
+  so the chain's style is not confirmed for them. The quarterly is `Regular` and
+  AM-settled, the weeklies `Weekly`, EW `End-Of-Month`.
+- Ticks of /ES options have four steps: 0.05 below 5, 0.1 below 20, 0.25 below 100, 0.5 above.
+- **One document was refused by the parser:** a future option read alone has a `settlement-type`
+  that is neither AM nor PM. The value was not looked at. The document has
+  `future-option-product.is-am-settled`. The parser reads that key since then; this was not seen
+  live.
+- `active` is false for SPX and true for SPY, as in the captures.
+- Keys only in the live documents, beyond the list of the WP-0.3 addendum: `roll-target-symbol`
+  on /ESZ6. The WP-0.3 check had read /ESM7, which lacks it, so the key is optional. Nothing
+  reads it.
+
+Not tested: the fix above; other products than ES; a contract whose exercise style differs inside a
+root; the SPX chain timed.

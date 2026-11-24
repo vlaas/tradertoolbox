@@ -13,15 +13,16 @@ Contents, decided 2026-11-22 (WP-0.3). The tickers are real and the values inven
 app marks every screen as synthetic when it runs on this market (GEN-11):
 
 - SPY: an ETF. PM-settled options with `expires-at` at 16:15 ET, as `tt` saw it live.
-- SPX: an index. SPX AM-settled monthlies, and SPXW PM-settled dailies, weeklies and
-  monthlies, all European.
+- SPX: an index. SPXW PM-settled dailies, weeklies and monthlies, SPX AM-settled monthlies,
+  and SPXO AM-settled weeklies (one expiration here, two live on 2026-11-23), all European.
 - AAPL: a stock with an earnings date and a dividend. Its numbers are synthetic, like
   everything here.
 - /ES: three quarterly futures with standard (AM) and weekly (PM) options.
 
 Expiration rules: every weekday up to 14 days ahead, every Friday up to 63 days, the third
 Friday of each month up to a year, and the December third Friday two years ahead (a LEAPS).
-SPX AM has the third Fridays only; AAPL has no dailies. The fake has no holiday calendar:
+SPX AM has the third Fridays only; AAPL has no dailies. The last weekday of a month is an
+end-of-month expiration where it is listed. The fake has no holiday calendar:
 that comes at WP-0.6. Quotes, Greeks, candles and the seeded paths are in ``ticks.py``, and
 the stream that serves them in ``stream.py`` (WP-0.4).
 """
@@ -51,6 +52,8 @@ class Root:
     dailies: bool
     weeklies: bool
     monthlies_only: bool = False
+    only_first: bool = False
+    """The root lists its first expiration only."""
 
 
 @dataclass(frozen=True)
@@ -63,7 +66,9 @@ class Underlying:
     near_step: float
     far_step: float
     atm_vol: float
-    pm_close: time = time(16, 0)
+    pm_close: time = time(16, 15)
+    """When the broker says a PM-settled option expires. Live it is 16:15 for every stock and
+    ETF option and 16:00 for index options (note B, addendum "WP-0.5")."""
     tick_sizes: tuple[Doc, ...] = ({"value": "0.01"},)
     dividend: float = 0.0
     """Annual dividend per share."""
@@ -82,7 +87,6 @@ UNDERLYINGS: dict[str, Underlying] = {
             near_step=1.0,
             far_step=5.0,
             atm_vol=0.14,
-            pm_close=time(16, 15),
             dividend=7.0,
         ),
         Underlying(
@@ -92,11 +96,13 @@ UNDERLYINGS: dict[str, Underlying] = {
             6000.0,
             (
                 Root("SPXW", "PM", dailies=True, weeklies=True),
+                Root("SPXO", "AM", dailies=False, weeklies=True, only_first=True),
                 Root("SPX", "AM", dailies=False, weeklies=False, monthlies_only=True),
             ),
             near_step=5.0,
             far_step=25.0,
             atm_vol=0.135,
+            pm_close=time(16, 0),
             tick_sizes=({"value": "0.05", "threshold": "3.0"}, {"value": "0.1"}),
         ),
         Underlying(
@@ -108,6 +114,7 @@ UNDERLYINGS: dict[str, Underlying] = {
             near_step=2.5,
             far_step=10.0,
             atm_vol=0.26,
+            tick_sizes=({"threshold": "3.0", "value": "0.01"}, {"value": "0.05"}),
             dividend=1.04,
             earnings_in_days=9,
         ),
@@ -123,6 +130,11 @@ FUTURE_QUARTERS = 3
 def third_friday(year: int, month: int) -> date:
     d = date(year, month, 15)
     return d + timedelta(days=(4 - d.weekday()) % 7)
+
+
+def last_weekday(year: int, month: int) -> date:
+    d = date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
+    return d - timedelta(days=max(0, d.weekday() - 4))
 
 
 def strike_text(strike: float) -> str:
@@ -193,6 +205,13 @@ class SyntheticMarket:
     def _list_expirations(self, root: Root) -> list[tuple[date, str]]:
         found: dict[date, str] = {}
         d = self.today
+        month_ends = {
+            last_weekday(
+                self.today.year + (self.today.month - 1 + n) // 12,
+                (self.today.month - 1 + n) % 12 + 1,
+            )
+            for n in range(4)
+        }
         end = date(self.today.year + 2, 12, 31)
         while d <= end:
             days = (d - self.today).days
@@ -204,9 +223,10 @@ class SyntheticMarket:
                 if (root.dailies and days <= 14) or (
                     root.weeklies and d.weekday() == 4 and days <= 63
                 ):
-                    found[d] = "Weekly"
+                    found[d] = "End-Of-Month" if d in month_ends else "Weekly"
             d += timedelta(days=1)
-        return sorted(found.items())
+        listed = sorted(found.items())
+        return listed[:1] if root.only_first else listed
 
     def strikes(self, u: Underlying, expiration: date) -> list[float]:
         spot, near, far = u.spot, u.near_step, u.far_step
@@ -230,6 +250,16 @@ class SyntheticMarket:
         at = time(9, 30) if root.settlement == "AM" else u.pm_close
         return datetime.combine(expiration, at, NY)
 
+    def _stops_trading_at(self, u: Underlying, root: Root, expiration: date) -> datetime:
+        """An AM-settled option trades until the afternoon before (live, 2026-11-23: 16:15 for
+        SPX)."""
+        if root.settlement == "PM":
+            return self._expires_at(u, root, expiration)
+        before = expiration - timedelta(days=1)
+        while before.weekday() >= 5:
+            before -= timedelta(days=1)
+        return datetime.combine(before, time(16, 15), NY)
+
     def atm_vol(self, base: float, expiration: date) -> float:
         """The fixed term structure: rising from the base by up to two points."""
         days = max((expiration - self.today).days, 0)
@@ -252,12 +282,11 @@ class SyntheticMarket:
             "listed-market": "INDX" if u.kind == "index" else "ARCX",
             "lendability": "Easy To Borrow",
             "borrow-rate": "0.0",
-            "market-time-instrument-collection": "Cash Settled Equity Index"
-            if u.kind == "index"
-            else "Equity",
+            "market-time-instrument-collection": "Equity Index" if u.kind == "index" else "Equity",
+            "instrument-sub-type": {"index": "INDEX", "etf": "ETF"}.get(u.kind),
             "is-closing-only": False,
             "is-options-closing-only": False,
-            "active": True,
+            "active": u.kind != "index",  # live: SPX and XSP are inactive
             "is-fractional-quantity-eligible": u.kind != "index",
             "is-illiquid": False,
             "streamer-symbol": u.symbol,
@@ -308,13 +337,20 @@ class SyntheticMarket:
                         {
                             "id": 1,
                             "root-symbol": root.symbol,
-                            "deliverable-type": "Shares" if u.kind != "index" else "Cash",
-                            "description": f"100 shares of {u.symbol}"
-                            if u.kind != "index"
-                            else "Cash",
+                            "deliverable-type": "Shares",
+                            "description": f"100 shares of {u.symbol}",
                             "amount": "100.0",
                             "symbol": u.symbol,
-                            "instrument-type": "Equity" if u.kind != "index" else "Index",
+                            "instrument-type": "Equity",
+                            "percent": "100",
+                        }
+                        if u.kind != "index"
+                        else {
+                            "id": 1,
+                            "root-symbol": root.symbol,
+                            "deliverable-type": "Cash",
+                            "description": "0.0 cash",
+                            "amount": "0.0",
                             "percent": "100",
                         }
                     ],
@@ -350,10 +386,8 @@ class SyntheticMarket:
                     "option-chain-type": "Standard",
                     "expiration-type": types[exp],
                     "settlement-type": root.settlement,
-                    "stops-trading-at": _iso(expires),
-                    "market-time-instrument-collection": "Cash Settled Equity Option"
-                    if u.kind == "index"
-                    else "Equity Option",
+                    "stops-trading-at": _iso(self._stops_trading_at(u, root, exp)),
+                    "market-time-instrument-collection": "Cash Settled Equity Option",
                     "days-to-expiration": (exp - self.today).days,
                     "expires-at": _iso(expires),
                     "is-closing-only": False,
@@ -444,7 +478,7 @@ class SyntheticMarket:
                 days = (d - self.today).days
                 if d == last:
                     root, contract, settlement, at = "ES", f"ES{fut_month}", "AM", time(8, 30)
-                    exp_type = "Quarterly"
+                    exp_type = "Regular"
                 elif d.weekday() == 4 and days <= 63:
                     week = (d.day - 1) // 7 + 1
                     month = f"{MONTH_CODES[d.month - 1]}{d.year % 10}"
@@ -546,7 +580,7 @@ class SyntheticMarket:
             for e in self._future_option_expirations()
         ]
         return {
-            "futures": futures,
+            "futures": futures[::-1],  # live, 2026-11-22: not in date order
             "option-chains": [
                 {
                     "underlying-symbol": f"/{FUTURE_PRODUCT}",
@@ -592,7 +626,9 @@ class SyntheticMarket:
                 "is-confirmed": True,
                 "notional-value": "0.5",
                 "display-factor": "0.01",
-                "settlement-type": e["settlement"],
+                # Live, 2026-11-23: neither AM nor PM. This value is from the published
+                # documentation and was not seen.
+                "settlement-type": "Future",
                 "strike-factor": "1.0",
                 "maturity-date": e["date"].isoformat(),
                 "is-exercisable-weekly": True,
@@ -608,6 +644,7 @@ class SyntheticMarket:
                     "settlement-delay-days": 0,
                     "market-sector": "Equity Index",
                     "clearing-price-multiplier": "1.0",
+                    "is-am-settled": e["settlement"] == "AM",
                     "is-rollover": False,
                 },
             }

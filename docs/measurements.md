@@ -38,6 +38,12 @@ machine was not idle at the time. The load averages (1, 5 and 15 minutes) were 7
 and 36.12 just before the run, and 66.88, 70.82 and 52.68 just after it. No timing would have
 been valid. The fake-broker tests run on a fake clock and measure nothing.
 
+WP-0.5 has no performance requirement and took no timings. The reading of the chains and the
+ingest of events were not timed. The counts of quotes it used are in note B, addendum
+"WP-0.5" (counts, not timings). The live check of the instrument model was a capability check:
+13 requests on 2026-11-23, 18:03 New York, with load averages 1.85, 1.93 and 8.45 before and
+1.74, 1.90 and 8.32 after. The market tests run on a virtual clock and measure nothing.
+
 WP-0.4 has no performance requirement. The three live rows above are single observations
 from the live check, not a performance run. The stream and feed tests run on a virtual clock
 and measure nothing. The throughput of the reader is measured live at WP-0.9 (plan,

@@ -183,6 +183,11 @@ class Feed(Protocol):
         batches the queue holds."""
         ...
 
+    def granted(self) -> Sequence[Sub]:
+        """The pairs granted now, to any consumer. A value of a pair that is not among them
+        is not live: it was released, or cut by the budget."""
+        ...
+
     async def settled(self) -> None:
         """Wait until every change asked so far has been sent on an open session."""
         ...

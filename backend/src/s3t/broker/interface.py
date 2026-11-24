@@ -5,6 +5,8 @@ can be judged against this list. The list grows with the packages that need it:
 
 - WP-0.3, here: the REST reads of market data. Instruments, option chains (equity and
   futures), market metrics and the streaming token. All are read-only (GEN-01, BRK-08).
+  Instruments and chains are records of the instrument model since WP-0.5
+  (``s3t.broker.instruments``).
 - WP-0.4, here: the stream session. Subscribe, unsubscribe, events as plain batches of the
   application's own records, the connection state. Candles come over the stream. Also
   ``source()`` and ``data_time()``, which say what kind of data the broker serves and which
@@ -14,14 +16,13 @@ can be judged against this list. The list grows with the packages that need it:
 Nothing in the interface places, changes or cancels an order or changes account state, and
 nothing may be added that does (GEN-01).
 
-Instruments, chains and metrics are returned as the broker's JSON documents (read-only
-mappings) until the package that first uses each one gives it a type. That is WP-0.5 for
-instruments and chains (the instrument model), and WP-1.1 and WP-1.2 for the metrics.
-Decided 2026-11-22, with a rule: once a document is typed, this interface returns only the
-typed record and the broker's JSON stays inside ``s3t.broker.tastytrade``. Until then,
-nothing outside ``s3t.broker`` reads broker keys, except the package typing the document.
+Once a document is typed, this interface returns only the typed record and the broker's JSON
+stays inside ``s3t.broker.tastytrade`` (decided 2026-11-22). Only the market metrics are still
+the broker's JSON documents (read-only mappings). WP-1.1 and WP-1.2 type them; until then,
+nothing outside ``s3t.broker`` reads their keys, except the package typing them. A test of the
+repository holds the rule for the keys of the instruments and chains.
 
-The stream is typed already (decided 2026-11-23): no field name of the broker's feed and no
+The stream is typed too (decided 2026-11-23): no field name of the broker's feed and no
 value "as received" crosses this interface. The broker module converts every event into the
 records below.
 """
@@ -34,6 +35,8 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol
 
 from pydantic import SecretStr
+
+from s3t.broker.instruments import Future, OptionChain, OptionContract, Security
 
 type JsonObject = Mapping[str, Any]
 """A JSON object as the broker sent it. Treat it as read-only."""
@@ -501,29 +504,28 @@ class Broker(Protocol):
         """The token and address for the streaming session."""
         ...
 
-    async def equity(self, symbol: str) -> JsonObject:
+    async def equity(self, symbol: str) -> Security:
         """A stock, an ETF or an index."""
         ...
 
-    async def equity_option(self, symbol: str) -> JsonObject:
-        """One equity or index option by its OCC symbol, with exercise style, the expiry
-        instant and the settlement type."""
+    async def equity_option(self, symbol: str) -> OptionContract:
+        """One option on a stock, an ETF or an index by its symbol, with exercise style and
+        the instants the broker states."""
         ...
 
-    async def option_chain(self, underlying: str) -> JsonObject:
-        """All option roots, expirations and strikes of an underlying, with the OCC and
-        streamer symbols and the tick sizes."""
+    async def option_chain(self, underlying: str) -> OptionChain:
+        """All option roots, expirations and strikes of an underlying."""
         ...
 
-    async def future(self, symbol: str) -> JsonObject:
+    async def future(self, symbol: str) -> Future:
         """One futures contract, for example ``/ESZ6``."""
         ...
 
-    async def future_option(self, symbol: str) -> JsonObject:
-        """One futures option by its broker symbol."""
+    async def future_option(self, symbol: str) -> OptionContract:
+        """One futures option by its symbol."""
         ...
 
-    async def futures_option_chain(self, root: str) -> JsonObject:
+    async def futures_option_chain(self, root: str) -> OptionChain:
         """The futures of a product and their option expirations and strikes, for example
         ``/ES``."""
         ...

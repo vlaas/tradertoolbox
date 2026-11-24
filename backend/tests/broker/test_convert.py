@@ -68,6 +68,39 @@ def test_the_values_of_a_quote_in_any_field_order() -> None:
         assert spx.ask_time.tzinfo is UTC and spx.ask_time.microsecond == 1000
 
 
+def test_a_missing_bid_or_ask_is_nan_and_never_zero() -> None:
+    """MKT-07. dxFeed sends a missing side as a price of 0 with the size NaN: 133,773 times in
+    2.9 million SPXW quotes of one day (note B, addendum "WP-0.5")."""
+    events: tuple[dict[str, object], ...] = (
+        {"eventSymbol": "no bid", "bidPrice": 0.0, "bidSize": "NaN", "askPrice": 0.05,
+         "askSize": 9},
+        {"eventSymbol": "no ask", "bidPrice": 1.2, "bidSize": 4, "askPrice": 0, "askSize": "NaN"},
+        {"eventSymbol": "size 0", "bidPrice": 0, "bidSize": 0, "askPrice": 0.1, "askSize": 1},
+        # A price of 0 with a size is a real price, and a price without a size stays one: an
+        # index never has a size.
+        {"eventSymbol": "zero", "bidPrice": 0.0, "bidSize": 5, "askPrice": 0.0, "askSize": 2},
+        {"eventSymbol": "index", "bidPrice": 5990, "bidSize": "NaN", "askPrice": 6010,
+         "askSize": "NaN"},
+        {"eventSymbol": "text", "bidPrice": "NaN", "bidSize": 3, "askPrice": "Infinity",
+         "askSize": 3},
+        {"eventSymbol": "minus", "bidPrice": -1.5, "bidSize": "NaN", "askPrice": -1.0,
+         "askSize": 1},
+    )  # fmt: skip
+    order = EVENT_FIELDS[EventType.QUOTE]
+    for wire_order in (order, tuple(reversed(order))):
+        columns = Decoder(EventType.QUOTE, wire_order)(flat(EventType.QUOTE, wire_order, *events))
+        assert columns is not None
+        rows = {r.symbol: r for r in EventBatch(1, EventType.QUOTE, AT, columns).rows()}
+        assert all(isinstance(r, Quote) for r in rows.values())
+        prices = {name: (r.bid, r.ask) for name, r in rows.items() if isinstance(r, Quote)}
+        assert math.isnan(prices["no bid"][0]) and prices["no bid"][1] == 0.05
+        assert prices["no ask"][0] == 1.2 and math.isnan(prices["no ask"][1])
+        assert math.isnan(prices["size 0"][0]) and prices["size 0"][1] == 0.1
+        assert prices["zero"] == (0.0, 0.0) and prices["index"] == (5990.0, 6010.0)
+        assert all(math.isnan(x) for x in prices["text"])
+        assert prices["minus"] == (-1.5, -1.0)
+
+
 def test_values_that_are_not_whole_events_are_refused() -> None:
     decoder = Decoder(EventType.TRADE, EVENT_FIELDS[EventType.TRADE])
     assert decoder(["SPY", 0, MS]) is None

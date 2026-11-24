@@ -34,7 +34,6 @@ from s3t.broker.fake.market import UNDERLYINGS
 from s3t.broker.interface import CandlePeriod, EventType, Sub
 from s3t.broker.recording import FLUSH_SECONDS, STREAM, RecordingBroker
 from s3t.broker.replay import read_lines
-from s3t.broker.tastytrade.chain import near_the_money
 from s3t.subs.feed import Priority
 from s3t.subs.local import LocalFeed
 
@@ -51,7 +50,7 @@ async def record(directory: Path, minutes: float, strikes: int) -> int:
     broker = RecordingBroker(fake, directory)
     feed = LocalFeed(broker, clock=clock.monotonic, sleep=clock.sleep)
     chain = await broker.option_chain("SPY")
-    near = near_the_money(chain, UNDERLYINGS["SPY"].spot, expirations=2, strikes=strikes)
+    near = chain.near_the_money(UNDERLYINGS["SPY"].spot, expirations=2, strikes=strikes)
     wanted = [Sub(s, e) for s in ("SPY", "SPX", "AAPL") for e in UNDERLYING_EVENTS]
     wanted += [Sub(o, e) for o in near for e in OPTION_EVENTS]
     wanted.append(Sub("SPY", EventType.CANDLE, CandlePeriod(1, "minute"), START - timedelta(1)))

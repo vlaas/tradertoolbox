@@ -123,7 +123,7 @@ async def recorded(tmp_path: Path) -> Recorded:
 async def test_the_recording_holds_no_secret_and_no_broker_key(recorded: Recorded) -> None:
     directory, seen, _ = recorded
     meta = json.loads((directory / META).read_text())
-    assert meta["format"] == 1 and meta["source"] == "fake" and meta["lost"] == 0
+    assert meta["format"] == 2 and meta["source"] == "fake" and meta["lost"] == 0
     assert meta["recorded_on"] == "2026-11-20" and meta["name"] == "fake-session"
     assert meta["items"] > len(seen) and meta["complete"] is True
     assert (directory / STREAM).name == "stream.jsonl.zst"
@@ -132,6 +132,10 @@ async def test_the_recording_holds_no_secret_and_no_broker_key(recorded: Recorde
     text = (directory / META).read_text() + (directory / REST).read_text() + stream_text
     assert "fake-dxlink-token" not in text and "fake-refresh-token" not in text
     assert "quote_token" not in text and "Bearer" not in text
+    # The instruments and chains are the application's records too (GEN-09).
+    rest = (directory / REST).read_text()
+    for word in ("streamer-symbol", "strike-price", "is-etf", "shares-per-contract"):
+        assert word not in rest, word
     # The stream file holds the application's records: no dxFeed name, no NaN as text.
     for word in ("eventSymbol", "bidPrice", "eventFlags", "NaN", "{=m}", '"Quote"'):
         assert word not in stream_text, word
@@ -317,7 +321,7 @@ def test_the_writer_flushes_while_it_runs(tmp_path: Path) -> None:
     # Readable before it is closed, as after a process that was killed.
     assert [line["t"] for line in lines] == [0, 1, 2]
     meta = json.loads((tmp_path / "live" / META).read_text())
-    assert meta == {"name": "live", "format": 1, "complete": False}
+    assert meta == {"name": "live", "format": 2, "complete": False}
     time.sleep(0.2)  # idle: no flush without new lines
     writer.put(STREAM, {"k": "n", "t": 3, "kind": "error", "m": "x", "e": None})
     writer.close({"ended_at": "later"})
@@ -326,6 +330,35 @@ def test_the_writer_flushes_while_it_runs(tmp_path: Path) -> None:
     assert zstd.get_frame_size(data) == len(data)  # flushed blocks, still one frame
     meta = json.loads((tmp_path / "live" / META).read_text())
     assert meta["complete"] is True and meta["items"] == 4 and meta["ended_at"] == "later"
+
+
+def test_an_item_that_cannot_be_written_does_not_end_the_recording(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    writer = RecordingWriter(tmp_path / "odd", flush_seconds=0.05)
+    good = {"k": "n", "t": 1, "kind": "error", "m": "x", "e": None}
+    writer.put(STREAM, {"k": "n", "t": object()})
+    writer.put(REST, {"call": "equity", "args": ["SPY"], "result": object()})
+    writer.put(STREAM, good)
+    writer.close({})
+    assert list(read_lines(tmp_path / "odd" / STREAM)) == [{"k": "x", "lost": 2}, good]
+    assert (tmp_path / "odd" / REST).read_text() == ""
+    meta = json.loads((tmp_path / "odd" / META).read_text())
+    assert (meta["items"], meta["lost"], meta["complete"]) == (1, 2, True)
+    assert "could not be encoded" in caplog.text
+
+
+def test_a_writer_that_failed_does_not_say_complete(tmp_path: Path) -> None:
+    class Broken(RecordingWriter):
+        def _write_all(self) -> None:
+            raise OSError("no space left on device")
+
+    writer = Broken(tmp_path / "broken", queue_size=2)
+    for n in range(5):
+        writer.put(STREAM, {"k": "n", "t": n, "kind": "error", "m": "x"})
+    writer.close({})  # returns although the queue is full and nothing empties it
+    assert writer.broken
+    assert json.loads((tmp_path / "broken" / META).read_text())["complete"] is False
 
 
 def test_a_full_writer_queue_loses_items_and_never_waits(tmp_path: Path) -> None:

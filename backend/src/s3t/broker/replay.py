@@ -6,7 +6,7 @@ recording, and the app marks every screen "REPLAY <date>" (GEN-11).
 
 How it behaves (decided 2026-11-23):
 
-- **REST reads** return the recorded document of the same call and arguments, the latest if
+- **REST reads** return the recorded result of the same call and arguments, the latest if
   it was read more than once. A call that was not recorded raises :class:`NotFound`.
 - **The stream** emits the recorded items in their order, with new sequence numbers and the
   recorded receipt times. Of a batch it keeps the events of the pairs that are subscribed
@@ -41,6 +41,7 @@ from typing import Any
 from backports import zstd
 from pydantic import SecretStr
 
+from s3t.broker.instruments import Future, OptionChain, OptionContract, Security
 from s3t.broker.interface import (
     FIELDS,
     BrokerError,
@@ -64,7 +65,15 @@ from s3t.broker.interface import (
     Sub,
 )
 from s3t.broker.limits import Sleep
-from s3t.broker.recording import FORMAT, KINDS, META, REST, STREAM, ColumnKind
+from s3t.broker.recording import (
+    FORMAT,
+    KINDS,
+    META,
+    REST,
+    STREAM,
+    ColumnKind,
+    decode_result,
+)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 YIELD_EVERY = 200
@@ -327,28 +336,28 @@ class ReplayBroker:
         line = self._rest.get((call, json.dumps(list(args))))
         if line is None or "result" not in line:
             raise NotFound(f"{call}: not in the recording {self.directory.name}", status=404)
-        return line["result"]
+        return decode_result(call, line["result"])
 
     async def quote_token(self) -> QuoteToken:
         at = self.data_time()
         return QuoteToken("replay:", SecretStr("replay"), "replay", at, at + timedelta(days=1))
 
-    async def equity(self, symbol: str) -> JsonObject:
+    async def equity(self, symbol: str) -> Security:
         return self._read("equity", symbol)
 
-    async def equity_option(self, symbol: str) -> JsonObject:
+    async def equity_option(self, symbol: str) -> OptionContract:
         return self._read("equity_option", symbol)
 
-    async def option_chain(self, underlying: str) -> JsonObject:
+    async def option_chain(self, underlying: str) -> OptionChain:
         return self._read("option_chain", underlying)
 
-    async def future(self, symbol: str) -> JsonObject:
+    async def future(self, symbol: str) -> Future:
         return self._read("future", symbol)
 
-    async def future_option(self, symbol: str) -> JsonObject:
+    async def future_option(self, symbol: str) -> OptionContract:
         return self._read("future_option", symbol)
 
-    async def futures_option_chain(self, root: str) -> JsonObject:
+    async def futures_option_chain(self, root: str) -> OptionChain:
         return self._read("futures_option_chain", root)
 
     async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:

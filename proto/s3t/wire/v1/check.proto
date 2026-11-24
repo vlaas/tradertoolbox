@@ -15,7 +15,8 @@ enum CheckKind {
 }
 
 message WireCheck {
-  // A UTC instant in microseconds since the epoch, the form of GEN-10.
+  // An integer beyond 2^53, which TypeScript holds as bigint. Product messages avoid int64:
+  // an instant travels as a double (market.proto).
   int64 time_us = 1;
   double value = 2;
   // Explicit presence: unset differs from zero, as a missing bid or ask must.

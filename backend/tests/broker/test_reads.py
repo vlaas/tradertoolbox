@@ -1,6 +1,7 @@
 """The market reads of the client against the fake broker (BRK-08, market part)."""
 
 import json
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -29,29 +30,37 @@ async def test_quote_token(client: TastytradeRest, clock: FakeClock) -> None:
 
 async def test_equities_and_indexes(client: TastytradeRest) -> None:
     spy, spx = await client.equity("SPY"), await client.equity("SPX")
-    assert (spy["is-etf"], spy["is-index"]) == (True, False)
-    assert spx["is-index"] is True
-    assert spy["streamer-symbol"] == "SPY"
+    assert (spy.kind, spx.kind) == ("etf", "index")
+    assert spy.stream_symbol == "SPY"
 
 
 async def test_option_chain_and_one_contract(client: TastytradeRest) -> None:
     chain = await client.option_chain("SPX")
-    roots = {item["root-symbol"]: item for item in chain["items"]}
-    assert set(roots) == {"SPXW", "SPX"}
-    assert {e["settlement-type"] for e in roots["SPX"]["expirations"]} == {"AM"}
-    strike = roots["SPXW"]["expirations"][3]["strikes"][100]
-    contract = await client.equity_option(strike["put"])
-    assert contract["streamer-symbol"] == strike["put-streamer-symbol"]
-    assert contract["exercise-style"] == "European"
+    assert set(chain.roots()) == {"SPXW", "SPXO", "SPX"}
+    assert {e.settlement for e in chain.of_root("SPX")} == {"am"}
+    listed = chain.of_root("SPXW")[3].contract(100, "put")
+    assert listed is not None and listed.exercise is None and listed.expires_at is None
+    contract = await client.equity_option(listed.symbol)
+    assert contract.exercise == "european" and contract.expires_at is not None
+    # Except for what only the contract states, the chain says the same.
+    assert (
+        replace(
+            listed,
+            exercise=contract.exercise,
+            expires_at=contract.expires_at,
+            stops_trading_at=contract.stops_trading_at,
+        )
+        == contract
+    )
 
 
 async def test_futures(client: TastytradeRest, fake: FakeTastytrade) -> None:
     chain = await client.futures_option_chain("/ES")
-    assert [f["symbol"] for f in chain["futures"]] == ["/ESZ6", "/ESH7", "/ESM7"]
+    assert [f.symbol for f in chain.futures] == ["/ESZ6", "/ESH7", "/ESM7"]  # in date order
     assert (await client.future("/ESZ6")) == (await client.future("ESZ6"))
-    strike = chain["option-chains"][0]["expirations"][0]["strikes"][10]
-    option = await client.future_option(strike["call"])
-    assert option["streamer-symbol"] == strike["call-streamer-symbol"]
+    listed = chain.expirations[0].contract(10, "call")
+    assert listed is not None
+    assert await client.future_option(listed.symbol) == listed
     paths = [r.raw_path for r in fake.requests]
     assert "/futures-option-chains/ES/nested" in paths
     assert "/instruments/futures/ESZ6" in paths
@@ -127,6 +136,6 @@ async def test_from_config(tmp_path: Path, fake: FakeTastytrade) -> None:
     client = from_config(load_config(config_file), transport=fake.transport)
     try:
         assert client._bucket.rate == 1.5 and client._bucket.burst == 3
-        assert (await client.equity("SPY"))["symbol"] == "SPY"
+        assert (await client.equity("SPY")).symbol == "SPY"
     finally:
         await client.aclose()

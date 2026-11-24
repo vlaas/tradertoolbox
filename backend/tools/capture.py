@@ -25,7 +25,6 @@ from s3t.broker.fake.broker import FakeBroker
 from s3t.broker.interface import Broker, BrokerError, EventBatch, EventType, Sub, Trade
 from s3t.broker.recording import RecordingBroker
 from s3t.broker.tastytrade.broker import from_config
-from s3t.broker.tastytrade.chain import near_the_money
 from s3t.config import load_config
 from s3t.secrets import install_redaction
 from s3t.subs.feed import Priority, Reduction
@@ -84,8 +83,8 @@ async def run(args: argparse.Namespace) -> int:
             if symbol not in prices:
                 print(f"no trade price for {symbol}: its options are left out")
                 continue
-            near = near_the_money(
-                chains[symbol], prices[symbol], expirations=args.expirations, strikes=args.strikes
+            near = chains[symbol].near_the_money(
+                prices[symbol], expirations=args.expirations, strikes=args.strikes
             )
             wanted += [Sub(o, e) for o in near for e in OPTION_EVENTS]
         if len(wanted) > MAX_SUBSCRIPTIONS and not args.fake:

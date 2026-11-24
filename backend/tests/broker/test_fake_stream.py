@@ -76,8 +76,8 @@ def test_option_quotes_lie_on_the_fixed_smile(market: SyntheticMarket, ticks: Ti
     for symbol, quote in quotes.items():
         inst = ticks.instrument(symbol)
         assert inst is not None and inst.expires is not None
-        if quote["bidPrice"] == "NaN":
-            assert quote["askPrice"] <= 0.1 and quote["bidSize"] == 0
+        if quote["bidPrice"] == 0:  # no bid, as dxFeed sends it: a price of 0, no size
+            assert quote["askPrice"] <= 0.1 and quote["bidSize"] == "NaN"
             continue
         assert 0 < quote["bidPrice"] < quote["askPrice"]
         tau = tau_cal(AT, inst.expires)

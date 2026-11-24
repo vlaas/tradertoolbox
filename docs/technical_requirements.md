@@ -322,7 +322,8 @@ The event records and the feed, as built (WP-0.4, rework and part 2). **Decided 
   already costs nothing and counts for the class that got it first.
 - **The order of sending:** removals first, then additions, the highest class first, per
   event type in chunks of 100.
-- **The lines of a recording** (format 1). A batch line holds the columns. NaN is `null`, an
+- **The lines of a recording** (format 1; the stream lines are the same in format 2, below). A
+  batch line holds the columns. NaN is `null`, an
   instant is microseconds since 1970, a candle period is text. The line with the field
   names of an event type stays, so a field added later leaves older files readable.
 - **The replay broker follows the session's contract.** It refuses a call while it is not
@@ -364,6 +365,57 @@ The event records and the feed, as built (WP-0.4, rework and part 2). **Decided 
   tests.
 
 Nothing of WP-0.4 is left as a proposal.
+
+The market package (WP-0.5). **Proposed 2026-11-24, not confirmed by the owner yet.** The
+facts behind it are in note B, addenda "WP-0.5" and "WP-0.5, live". The signatures are in
+`s3t.broker.instruments`, `s3t.market` and `s3t.api.rows`.
+
+- **The instrument model** (MKT-01, GEN-09) is part of the broker interface, like the event
+  records: `s3t.broker.instruments`. Records are frozen. A missing value is None, never zero
+  and never NaN. An expiration date is a calendar date and not an instant.
+- **The broker interface returns the records** for instruments and chains. A key that is
+  missing or unreadable is a `BrokerProtocolError` that names the key and not the value. One
+  expiration that cannot be read is left out and logged; a chain of which none can be read is
+  an error.
+- **An option chain has one form** for equities and futures: one `Expiration` per root and
+  date, sorted by date, AM before PM, then root. Strikes are parallel tuples, with no object
+  per contract. Each expiration names its own underlying.
+- **The exercise style** of an equity or index root is not in the chain. It is read from one
+  contract per root and cached. It is not derived from the kind of the underlying.
+- **Dollars per point of a futures option** are `notional-value / display-factor`. An
+  expiration whose `strike-factor` is not 1 is left out and logged.
+- **The settlement instant** (REF-05, MKT-01): PM-settled equity and index options settle at
+  the close of the regular session on the expiration date, AM-settled ones at its open, from
+  the calendar (WP-0.6). Futures options settle at the broker's `expires_at`. This changes the
+  decision of the product definition 11.1; the proposal stands beside it there.
+- **The latest value** (MKT-02) is the last one received, per pair, with its receipt time. An
+  event replaces the whole value: a bid that has gone missing is missing.
+- **What changed** (MKT-03): a pair counts as changed when an event arrived for it or its value
+  was dropped. Values are not compared.
+- **The flush** comes at the feed's aggregation period, and not at all when nothing changed.
+  Each taker has its own sets of changed pairs. A late taker gets the union in one flush.
+- **A pair that is no longer granted** has its value dropped at the next flush after the grant
+  changed, and the pair counts as changed. The feed interface has `granted()` for it.
+- **After a reconnect, and after lost batches, the values stay.** `live_since` says from which
+  receipt time on a value is confirmed.
+- **The market state does not read candles.** Their history arrives newest first. The candle
+  module (R2) is their reader.
+- **A missing bid or ask** (MKT-07): dxFeed sends it as a price of 0 with a size of NaN. The
+  broker module makes it NaN. A price of 0 with a size is kept, and so is a price without a
+  size. A number that is not finite is missing.
+- **The wire** (MKT-07, GEN-10). Numbers in columns are packed `double`; a missing one is NaN,
+  and zero is a value. All columns of a message have one length. An instant is a `double` of
+  microseconds since 1970 in UTC, exact until 2255, and NaN when missing. No int64 in product
+  messages: `protobuf-es` gives `bigint` for it and cannot be told otherwise. Symbols on the
+  wire are the application's.
+- **One wire message now,** `QuoteRows`. The envelope and the topics are WP-0.7.
+- **The recording format is version 2:** results of REST reads are the typed records. Version 1
+  recordings cannot be read; none existed. An item that cannot be encoded is counted as lost
+  and does not end the writer. A writer that failed does not mark the recording complete.
+- **Linting:** four ruff rules on time zones are added to the families above: DTZ003, DTZ005,
+  DTZ006, DTZ011 (GEN-10).
+- **The generator** writes the fixtures in a process of its own. One process holds one version
+  of a `.proto` file, and the application may have loaded the committed one.
 
 ## 4. Requirements
 
