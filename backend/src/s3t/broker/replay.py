@@ -34,7 +34,7 @@ import asyncio
 import json
 import math
 from collections.abc import Collection, Iterator, Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -74,8 +74,8 @@ from s3t.broker.recording import (
     ColumnKind,
     decode_result,
 )
+from s3t.instants import from_micros
 
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 YIELD_EVERY = 200
 READ_BYTES = 1 << 20
 _ABSENT: dict[ColumnKind, Any] = {
@@ -87,10 +87,6 @@ _ABSENT: dict[ColumnKind, Any] = {
 }
 
 type _Key = tuple[EventType, str, CandlePeriod | None]
-
-
-def from_micros(micros: int) -> datetime:
-    return _EPOCH + timedelta(microseconds=micros)
 
 
 def decode_column(kind: ColumnKind, column: Sequence[Any]) -> list[Any]:

@@ -1,17 +1,20 @@
 """Configuration loading (GEN-08)."""
 
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from s3t.config import (
     DEFAULT_PATH,
     ENV_VAR,
     BrokerConfig,
+    CalendarConfig,
+    Config,
     ConfigError,
-    PathsConfig,
-    ServerConfig,
+    RatesConfig,
     find_config,
     load_config,
 )
@@ -44,13 +47,27 @@ def test_example_file_loads() -> None:
     assert config.paths.t3_root is None
 
 
-@pytest.mark.parametrize("section", [ServerConfig, PathsConfig, BrokerConfig])
-def test_example_documents_every_key(
-    section: type[ServerConfig] | type[PathsConfig] | type[BrokerConfig],
-) -> None:
-    text = EXAMPLE.read_text()
-    for key in section.model_fields:
+@pytest.mark.parametrize("section", sorted(set(Config.model_fields) - {"source"}))
+def test_example_documents_every_key(section: str) -> None:
+    """Every section, so that one added later is covered too. Keys are looked for below their
+    own heading."""
+    blocks = re.split(r"^\[(\w+)\]$", EXAMPLE.read_text(), flags=re.MULTILINE)
+    text = dict(zip(blocks[1::2], blocks[2::2], strict=True))[section]
+    model = Config.model_fields[section].annotation
+    assert isinstance(model, type) and issubclass(model, BaseModel)
+    for key in model.model_fields:
         assert re.search(rf"^#?\s*{key}\s*=", text, re.MULTILINE), f"{key} not in the example"
+
+
+def test_the_examples_commented_keys_are_the_defaults(tmp_path: Path) -> None:
+    """The optional sections with every comment mark removed from the keys still load, and a
+    key that the example shows with its default has that default."""
+    text = re.sub(r"^# (\w+ = )", r"\1", EXAMPLE.read_text(), flags=re.MULTILINE)
+    shown, plain = load_config(write(tmp_path, text)), load_config(EXAMPLE)
+    for section in ("broker", "stream", "subscriptions", "rates"):
+        assert getattr(shown, section) == getattr(plain, section), section
+    assert shown.calendar.closures == [date(2025, 1, 9)] and plain.calendar.closures == []
+    assert shown.paths.backups.name == plain.paths.backups.name == "backups"
 
 
 def test_search_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -191,3 +208,39 @@ def test_stream_and_subscription_sections(tmp_path: Path) -> None:
         file.write_text(base + section)
         with pytest.raises(ConfigError):
             load_config(file)
+
+
+def test_calendar_and_rates_sections(tmp_path: Path) -> None:
+    base = VALID.format(address="127.0.0.1")
+    config = load_config(write(tmp_path, base))
+    assert config.calendar == CalendarConfig() and config.rates == RatesConfig()
+    assert config.paths.rates_dir == tmp_path / "data" / "rates"
+    assert config.paths.backups == Path("/abs/backups")
+
+    more = (
+        "[calendar]\nclosures = [2027-01-09, 2027-03-01]\n"
+        "[rates]\ndownload = false\nrefresh_hours = 24\nflat_rate = 0.035\n"
+    )
+    config = load_config(write(tmp_path, base + more))
+    assert config.calendar.closures == [date(2027, 1, 9), date(2027, 3, 1)]
+    assert (config.rates.download, config.rates.refresh_hours) == (False, 24.0)
+    assert config.rates.flat_rate == 0.035
+
+    with_dir = base.replace("[paths]", '[paths]\nbackup_dir = "copies"')
+    assert load_config(write(tmp_path, with_dir)).paths.backups == tmp_path / "copies"
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        '[calendar]\nclosures = ["2027-01-09"]',
+        "[calendar]\nclosures = [2027-01-09T00:00:00Z]",
+        "[calendar]\nclosed = [2027-01-09]",
+        "[rates]\nflat_rate = 4.0",  # a percentage where a fraction belongs
+        "[rates]\nrefresh_hours = 0.1",
+        '[rates]\ndownload = "no"',
+    ],
+)
+def test_calendar_and_rates_sections_refused(tmp_path: Path, lines: str) -> None:
+    with pytest.raises(ConfigError, match=r"calendar|rates"):
+        load_config(write(tmp_path, VALID.format(address="127.0.0.1") + lines + "\n"))

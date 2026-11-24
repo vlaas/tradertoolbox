@@ -397,3 +397,31 @@ and 2.25, 1.67, 1.64 after.
 - In the documents compared, the fake has no key that the live one lacks.
 
 Not tested in either run: a future option with `is-am-settled` true (the quarterly), read alone.
+
+## Addendum 2026-11-25 (WP-0.6): sessions in the broker's candles, and the FRED check
+
+**The sessions,** read from the chart prototype's local candles of SPY (git-ignored, downloaded
+2026-11-22): 6,122 bars of 15 minutes and 3,071 of 30 minutes from 2026-08-23 to 2026-11-20, and 8,000
+of 5 minutes from 2026-10-13. Counts only. All measured, on these files.
+
+- The calendar of the application places all 17,193 bars in a session. None lies outside.
+- Each of the 64 trading days has bars in all four sessions and in every hour of its 24. The 15-minute
+  file has 1,664 bars in the regular session, which is 26 for each day. (The 5-minute file begins
+  inside a day.)
+- The week runs from Sunday 20:00 to Friday 20:00, New York time. The last bar of every Friday starts
+  before 20:00, and the first bar of every Sunday at or after it.
+- **A holiday has no overnight session before it.** Labor Day, Monday 2026-09-07: no bar from Friday
+  2026-09-04 20:00 to Monday 20:00. So the overnight session belongs to the trading day after it. One
+  holiday was in the range, and no early close.
+
+Not seen: an early close (the next are 2026-11-27 and 2026-12-24); futures; anything after the
+exchanges start their overnight sessions on 2026-12-06.
+
+**FRED,** one run of `backend/tools/rates_check.py`, 2026-11-24, 17:40 New York. Public, without a key;
+no broker call. All six series answered (SOFR, DTB3, DGS1MO, DGS3MO, DGS6MO, DGS1), 2,158 to 2,223
+values each. The latest value of every series was of the day before, 2026-11-23. The history begins
+2018-01-02, and 2018-04-03 for SOFR. One more request some ten minutes later, for DGS1 through the same
+client, was answered in 0.1 s: the first column is `observation_date`, 97 days are blank and none has a
+dot. Between the two, two requests of `curl` for DGS1 from another start date failed: an HTTP/2 stream
+error, and a timeout of 30 s over HTTP/1.1. Whether the client or the start date made the difference
+was not looked at. Not tested: a refusal with a status code, and repeated complete downloads.

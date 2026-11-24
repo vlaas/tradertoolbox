@@ -47,7 +47,7 @@ names its split point.
 | WP-0.3 | Broker interface and REST client | M | done 2026-11-22 |
 | WP-0.4 | Stream, feed interface, subscriptions | L | done 2026-11-23 |
 | WP-0.5 | Market state and instruments | M | done 2026-11-24 |
-| WP-0.6 | Storage, configuration, reference data | M | not started |
+| WP-0.6 | Storage, configuration, reference data | M | done 2026-11-25 |
 | WP-0.7 | API shell, login, WebSocket | M | not started |
 | WP-0.8 | Frontend shell | M | not started |
 | WP-0.9 | R0 live measurements and acceptance | S | not started |
@@ -260,7 +260,19 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   class; the FRED download with cache and the flat-rate fallback.
 - *Done when:* migrations apply from empty and from the previous version; the calendar
   answers session questions for a holiday week and both clock changes.
-- *Closes:* STO-01, STO-02, STO-07, REF-01, REF-04.
+- *Closes:* STO-01, STO-02, STO-07, REF-01, REF-04. STO-01 is closed for the file and its rule; the
+  tables come with their packages. REF-01 and REF-04 are closed for the data; WP-0.7 publishes it
+  and WP-0.8 shows it. GEN-10 is closed for the stores.
+- *Done 2026-11-25:* the state store with its migrations, its backup and the settings (`s3t.store`);
+  the exchange calendar (`s3t.refdata.calendar`), which also is the `SessionTimes` of the settlement
+  rule; the rates with download, cache, selection and fallback (`s3t.refdata.rates`); holidays and
+  early closes in the fake broker; `[calendar]`, `[rates]` and `paths.backup_dir`. Both "done when"
+  sentences are tests: `tests/store/test_migrate.py`, `tests/refdata/test_calendar.py`. "From the
+  previous version" is shown on a list of the test's own, because there is one real migration, and
+  a standing test covers each real one that is added. The calendar placed all 17,193 real SPY bars
+  of the chart prototype in a session, and FRED answered one live check (note B, addendum
+  "WP-0.6"). The proposals of the package were confirmed on 2026-11-25 (requirements, section 3,
+  and the wording of STO-07 in 4.9).
 
 **WP-0.7 API shell, login, WebSocket** (M)
 - *Read first:* architecture note, sections 3, 5 and 6; requirements 4.10 and 4.11.
@@ -466,9 +478,7 @@ Found but not planned into a package yet.
     numpy needs (QA-07) were decided with the owner on 2026-11-22.
   - REF-05 is closed for the clock. Which instant a contract settles at is a rule in
     `s3t.market.settlement` since WP-0.5 (the broker's `expires-at` is not that instant for
-    stocks and ETFs; product definition, 11.1). WP-0.6 gives it the calendar (`SessionTimes`).
-  - The FRED download and the as-of selection of published rates (`volcalc` `build_rates`,
-    `rates_asof`) go to WP-0.6. `pricing` has the conversion and the curve only.
+    stocks and ETFs; product definition, 11.1). It has its calendar since WP-0.6.
   - The quoting tick per contract, which widens the IV gate, is to come from the broker's chain
     (WP-1.2). `volcalc`'s tick tables per root were not ported.
   - Two service rules from `volcalc` were not ported into `pricing`. One: no Greeks where there
@@ -505,7 +515,7 @@ Found but not planned into a package yet.
     for equity options, and the exercise style is read from one contract per root. The
     allow-list did not grow.
   - The fake broker:
-    - has no holidays (WP-0.6 brings the calendar);
+    - has the holidays and early closes of the calendar since WP-0.6;
     - has ES weeklies on Fridays only (live has other weekdays too);
     - carries fewer keys than the live documents. A package that parses more keys adds them
       to the fake. The keys that WP-0.5 reads are in it.
@@ -619,14 +629,8 @@ Found but not planned into a package yet.
     - Whether all contracts of one equity root have one exercise style (assumed by
       `Instruments.exercise`).
     - Dollars per point and strike factor of products other than /ES.
-  - **For WP-0.6:** implement `SessionTimes` on the calendar (`covers` a date; the open and close
-    of its regular session in UTC, None without one).
-    - State the end of the calendar. `exchange-calendars` ends one year ahead by default
-      (4.13.2, checked 2026-11-24: 2027-11-24), and the `tt` captures list SPY to 2027-12-17.
-      An expiration beyond the end has no time to expiry. The calendar was asked to 2032 and
-      answered. Holidays that far ahead are rules, not announcements.
-    - A closure declared later is known only to a newer release of the package. Until then the
-      date counts as a session. Decide whether a configured list of closures is wanted.
+  - The items for WP-0.6 are done: `SessionTimes` on the calendar, its end (the end of the seventh
+    year ahead), and configured closures. Holidays far ahead are rules, not announcements.
   - **For WP-0.7:**
     - It builds `MarketState(feed, now=broker.data_time, period=config.stream.aggregation_period)`
       before `feed.start()`, starts it with the feed and closes it before the feed. It
@@ -664,6 +668,43 @@ Found but not planned into a package yet.
   - The reading of chains (12,478 and 33,358 contracts live) runs on the event loop and was
     not timed. Judge it at WP-0.9 against the 50 ms of PRF-05.
   - The fake's futures-option ticks have two steps and the live /ES chain four. Left as it is.
+- From WP-0.6 (2026-11-25):
+  - The proposals of the package were confirmed by the owner on 2026-11-25 (requirements, section
+    3, "The storage and reference data package", and the wording of STO-07 in 4.9).
+  - **For WP-0.7, which wires and publishes:**
+    - At the start, and before the loop serves anything: `await StateStore.open(paths.state_file,
+      backup_dir=paths.backups)`, and `await asyncio.to_thread(load_calendar, today,
+      config.calendar.closures)`. The first build of the calendar holds its thread for a second or
+      so (not timed on an idle machine).
+    - Pass `calendar.market_open` to the live broker as `data_expected` (the stall rule). The fake
+      broker does it already; give it the same calendar, or it builds its own, without the
+      configured closures.
+    - `rates = Rates(paths.rates_dir, config.rates)`, `await rates.load()`, `rates.start()`; close it
+      at the end. On the fake and the replay broker decide whether it downloads: `make e2e` must not
+      call FRED (`download = false`).
+    - The health route: `StateStore.status()`, `ExchangeCalendar.status()`, `Rates.status(data_time)`.
+    - The login brings migration 0002, the first that is applied to a file with content.
+    - A daily copy of the state file, and how many copies are kept. There is none now.
+    - `today` for the calendar is the date of the data for a replay.
+    - A backend that runs for a year has a calendar that ends a year sooner. Seven years are ahead
+      at its start, so a restart now and then is enough.
+  - **For WP-0.9:**
+    - The feed on 2026-11-27, an early close: whether late ends at 17:00, and the futures at 13:15.
+      The 15-minute candles reach back 90 days, so it can be read until February.
+    - The feed from 2026-12-06 on: whether the hour from 20:00 to 21:00 keeps its bars, and what a
+      holiday evening looks like. The next holidays are 2026-12-25 and 2027-01-01.
+    - The start of the calendar and the memory of pandas, on an idle machine.
+  - **For R2:** the sessions of CND-02 and the future times of CND-10 are `sessions(day, class)`.
+    A 4-hour bar spans two sessions. The futures' holiday hours are not verified, and whether the
+    broker counts a holiday's shortened futures session to that day or to the next was not looked
+    at.
+  - **Versions:** pandas is held below 3.1 until `exchange-calendars` has a release for it.
+  - A national day of mourning closes the stock market and shortens the futures day. The calendar
+    closes both.
+  - **FRED does not answer everything.** The application's client was answered every time (seven
+    requests), and `curl` with another start date was not (two requests; note B). If the refresh
+    fails in use, look there first. The status has the last error.
+  - `exchange-calendars` holds the holidays as code. Its version is in `CalendarStatus`.
 
 ## 9. Starting a package in a fresh session
 

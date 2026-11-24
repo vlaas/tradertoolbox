@@ -40,20 +40,26 @@ def test_same_inputs_same_documents(market: SyntheticMarket) -> None:
 def test_spy_expiration_rules(market: SyntheticMarket) -> None:
     got = dates(market, "SPY", "SPY")
     assert all(d.weekday() < 5 for d in got)
-    dailies = [TODAY + timedelta(days=i) for i in range(15)]
-    assert [d for d in got if d <= TODAY + timedelta(days=14)] == [
-        d for d in dailies if d.weekday() < 5
+    dailies = [d for d in got if d <= TODAY + timedelta(days=14)]
+    november = [date(2026, 11, n) for n in (20, 23, 24, 25, 27, 30)]  # not Thanksgiving, the 26th
+    assert dailies == november + [date(2026, 12, n) for n in (1, 2, 3, 4)]
+    weeklies = [d for d in got if TODAY + timedelta(days=14) < d <= TODAY + timedelta(days=63)]
+    # Christmas and New Year are Fridays: their weeklies are on the Thursdays before, as live
+    # for Christmas (note B, addendum "WP-0.3").
+    assert weeklies == [date(2026, 12, n) for n in (11, 18, 24, 31)] + [
+        date(2027, 1, n) for n in (8, 15, 22)
     ]
-    fridays = [d for d in got if TODAY + timedelta(days=14) < d <= TODAY + timedelta(days=63)]
-    assert all(d.weekday() == 4 for d in fridays) and len(fridays) == 7
     later = [d for d in got if d > TODAY + timedelta(days=63)]
-    assert all(d == third_friday(d.year, d.month) for d in later)
+    # The third Friday of June 2027 is the observed Juneteenth.
+    assert [d for d in later if d.weekday() != 4] == [date(2027, 6, 17)]
+    assert all(d == third_friday(d.year, d.month) for d in later if d != date(2027, 6, 17))
     assert later[-1] == third_friday(2028, 12)
 
 
 def test_spx_am_is_third_fridays_only(market: SyntheticMarket) -> None:
     got = dates(market, "SPX", "SPX")
-    assert all(d == third_friday(d.year, d.month) for d in got)
+    assert date(2027, 6, 17) in got  # for the third Friday, a holiday
+    assert all(d == third_friday(d.year, d.month) for d in got if d != date(2027, 6, 17))
     chain = market.option_chain("SPX")
     assert chain is not None
     am = next(i for i in chain["items"] if i["root-symbol"] == "SPX")
@@ -62,7 +68,8 @@ def test_spx_am_is_third_fridays_only(market: SyntheticMarket) -> None:
 
 def test_stock_has_no_dailies(market: SyntheticMarket) -> None:
     got = dates(market, "AAPL", "AAPL")
-    assert all(d.weekday() == 4 for d in got)
+    moved = [date(2026, 12, 24), date(2026, 12, 31), date(2027, 6, 17)]  # Fridays were holidays
+    assert [d for d in got if d.weekday() != 4] == moved
 
 
 def test_symbol_formats() -> None:

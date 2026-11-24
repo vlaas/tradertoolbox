@@ -195,8 +195,10 @@ def test_a_clock_change_moves_the_session_in_utc(ticks: Ticks) -> None:
 def test_a_closed_market_stands_still(ticks: Ticks) -> None:
     saturday = datetime(2026, 11, 21, 15, 0, tzinfo=UTC)
     close = datetime(2026, 11, 20, 21, 0, tzinfo=UTC)
-    assert market_instant(saturday) == close and market_instant(AT) == AT
-    assert market_instant(datetime(2026, 11, 23, 12, 0, tzinfo=UTC)) == close  # Monday, early
+    calendar = ticks.calendar
+    assert market_instant(saturday, calendar) == close and market_instant(AT, calendar) == AT
+    monday_early = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
+    assert market_instant(monday_early, calendar) == close
     symbols = ["SPY", "SPX", ".SPY261127C600"]
     for event in ("Quote", "Trade", "Greeks", "Summary"):
         assert ticks.events(event, symbols, saturday) == ticks.events(

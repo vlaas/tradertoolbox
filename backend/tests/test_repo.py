@@ -1,7 +1,8 @@
 """Repository guards: no market data or credentials (GEN-07), no machine-specific values in
 code and configuration (GEN-08), the subscription manager as the only caller of subscribe
-and unsubscribe (SUB-02), and the keys of the broker's instrument documents inside the broker
-module only (GEN-09).
+and unsubscribe (SUB-02), the keys of the broker's instrument documents inside the broker
+module only (GEN-09), one module that opens SQLite files (STO-01) and one that imports the
+calendar library.
 
 The files examined are those git would commit: tracked files plus untracked files that are
 not ignored. Documents are covered by review, not by this scan.
@@ -132,3 +133,33 @@ def test_broker_document_keys_stay_in_the_broker_module() -> None:
         if (found := _keys(path) & keys)
     }
     assert leaks == {}
+
+
+# A module that only some files may import, and those files.
+IMPORTERS = {
+    "sqlite3": ("backend/src/s3t/store/", "the application's state is in one file (STO-01)"),
+    "exchange_calendars": ("backend/src/s3t/refdata/exchange.py", "one reader of the library"),
+    "pandas": ("backend/src/s3t/refdata/exchange.py", "it comes with exchange_calendars"),
+}
+
+
+def _imports(path: Path) -> set[str]:
+    """The top-level names of everything a file imports, inside its functions too."""
+    found = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            found |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            found.add((node.module or "").split(".")[0])
+    return found
+
+
+def test_the_modules_with_one_importer() -> None:
+    seen: dict[str, set[str]] = {module: set() for module in IMPORTERS}
+    for f in committable():
+        if f.startswith(("backend/src/s3t/", "backend/tools/")) and f.endswith(".py"):
+            for module in _imports(REPO / f) & IMPORTERS.keys() if (REPO / f).is_file() else ():
+                seen[module].add(f)
+    for module, (allowed, reason) in IMPORTERS.items():
+        assert all(f.startswith(allowed) for f in seen[module]), f"{module}: {reason}"
+    assert seen["sqlite3"] and seen["exchange_calendars"]

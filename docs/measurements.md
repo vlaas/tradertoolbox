@@ -46,6 +46,21 @@ before and 1.74, 1.90 and 8.32 after; and 2026-11-24, 05:48 New York, with 2.12,
 before and 2.25, 1.67 and 1.64 after. The market tests run on a virtual clock and measure
 nothing.
 
+WP-0.6 has no performance requirement and took no timings. Importing `exchange-calendars` and
+building the calendar took more than a second while the machine was loaded (load averages above 14).
+That is not a measurement. The time and the memory are measured at WP-0.9 on an idle machine. The
+live check of the rate download was a capability check of one run: six requests to FRED, all
+answered, 2026-11-24, 17:40 New York, with load averages 6.40, 7.43 and 23.65 before and 5.72, 7.25
+and 23.40 after. It took 10.3 s, of which 5 s are the pauses between the requests; the network and
+the load decide the rest. Two requests of `curl` a few minutes later failed (note B, addendum
+"WP-0.6"). The files had 35,714 to 36,756 bytes. The refresh tests run on a virtual
+clock and measure nothing.
+
+Since WP-0.6 the fake broker has holidays, and the larger of the two size runs above gives slightly
+other bytes: 5,241,114 for the lines (5,232,559 before) and 529,325 as built (528,330 before). The
+ratios to one decimal are the same. The smaller run gives the same bytes as before (both run
+again 2026-11-25).
+
 WP-0.4 has no performance requirement. The three live rows above are single observations
 from the live check, not a performance run. The stream and feed tests run on a virtual clock
 and measure nothing. The throughput of the reader is measured live at WP-0.9 (plan,

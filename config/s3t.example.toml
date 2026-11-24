@@ -30,6 +30,11 @@ data_dir = "../data"
 # The SQLite state store: login, settings, tickets, watchlists, drawings (STO-01).
 state_file = "../data/state.sqlite"
 
+# Optional. Where copies of the state store go (STO-07): those of tools/state_backup.py and those
+# made before a migration. Without it: the directory "backups" beside the state store. Nothing
+# deletes old copies.
+# backup_dir = "../data/backups"
+
 # Optional. The read-only T3 store (STO-04). Features that need it are hidden or marked
 # unavailable when it is absent (GEN-04).
 # t3_root = "~/stores/t3"
@@ -61,3 +66,20 @@ state_file = "../data/state.sqlite"
 # candle_reserve = 5
 # changes_per_minute = 10000
 # change_reserve = 2000
+
+[calendar]
+# Optional. Days on which the exchanges are closed and the installed calendar package does not
+# know it, such as a day of mourning announced ten days before (REF-04).
+# closures = [2025-01-09]
+
+[rates]
+# Optional. The rate curve (REF-01): SOFR and Treasury yields from FRED, without a key.
+# With download = false nothing is downloaded: what was downloaded before is used, and then the
+# flat rate.
+# download = true
+# Hours from a complete download to the next one.
+# refresh_hours = 12.0
+# A series whose latest value is older than this many days is left out of the curve.
+# max_age_days = 10
+# The fallback: one continuously compounded rate, as a fraction (0.04 is 4%).
+# flat_rate = 0.04

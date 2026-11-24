@@ -5,6 +5,7 @@ description = "Self-3-Trader backend: broker connection, market state, numerics 
 requires-python = "==3.13.*"
 dependencies = [
     "backports-zstd==1.8.0",
+    "exchange-calendars==4.13.2",
     "fastapi==0.162.2",
     "httpx==0.28.1",
     "numpy==2.5.4",
@@ -24,6 +25,10 @@ build-backend = "uv_build"
 # keeps accepting the lock on later days, and the cutoff moves only when the lock is resolved
 # again. An urgent fix newer than that needs a named exclude-newer-package entry.
 exclude-newer = "14 days"
+# pandas comes with exchange-calendars, its only user here (s3t.refdata.exchange). Version 4.13.2
+# of it uses a call that pandas 3.1 deprecates and warns about on every calendar. The schedules
+# are the same on 2.3, 3.0 and 3.1 (compared 2026-11-25). Lift this with the next release.
+constraint-dependencies = ["pandas<3.1"]
 
 [tool.uv.build-backend]
 module-name = "s3t"

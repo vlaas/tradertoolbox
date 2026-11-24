@@ -54,7 +54,7 @@ import threading
 import time
 from collections.abc import Collection, Sequence
 from dataclasses import fields
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
@@ -84,13 +84,13 @@ from s3t.broker.interface import (
     StreamStatus,
     Sub,
 )
+from s3t.instants import to_micros
 
 FORMAT = 2
 META, REST, STREAM = "meta.json", "rest.jsonl", "stream.jsonl.zst"
 QUEUE_SIZE = 50_000
 FLUSH_SECONDS = 3.0
 _NY = ZoneInfo("America/New_York")
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 LOG = logging.getLogger(__name__)
 
@@ -135,11 +135,6 @@ def encode_result(call: str, result: Any) -> Any:
 def decode_result(call: str, value: Any) -> Any:
     adapter = RESULTS.get(call)
     return value if adapter is None else adapter.validate_python(value)
-
-
-def to_micros(instant: datetime) -> int:
-    delta = instant - _EPOCH
-    return (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
 
 
 def encode_sub(sub: Sub) -> list[Any]:

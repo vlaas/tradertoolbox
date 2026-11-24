@@ -7,6 +7,9 @@ source says ``fake``, and the app marks every screen "SYNTHETIC DATA" (GEN-11).
 
 On the wall clock the market's as-of instant is the start of the process. A test gives a
 clock, and the market and the stream follow it.
+
+The fake stream moves in the regular session only, and not on a holiday, so the session expects
+data exactly then. Any other rule would take the silence of a holiday for a stall (BRK-03).
 """
 
 import asyncio
@@ -23,6 +26,7 @@ from s3t.broker.fake.stream import FakeDxLink
 from s3t.broker.interface import DataSource
 from s3t.broker.limits import Clock, Sleep
 from s3t.broker.tastytrade.broker import Tastytrade
+from s3t.refdata.calendar import ExchangeCalendar
 from s3t.secrets import BrokerSecrets
 
 FAKE_CLIENT_SECRET = "fake-client-secret"
@@ -37,12 +41,14 @@ class FakeBroker(Tastytrade):
         *,
         seed: int = 1,
         market: SyntheticMarket | None = None,
+        calendar: ExchangeCalendar | None = None,
         clock: Clock = time.monotonic,
         sleep: Sleep = asyncio.sleep,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         **options: Any,
     ) -> None:
-        self.market = market or SyntheticMarket(now(), seed=seed)
+        self.market = market or SyntheticMarket(now(), seed=seed, calendar=calendar)
+        options.setdefault("data_expected", self.market.calendar.market_open)
         self.rest = FakeTastytrade(
             self.market,
             client_secret=FAKE_CLIENT_SECRET,

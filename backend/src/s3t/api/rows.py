@@ -7,25 +7,20 @@ WP-0.7; it sends these rows.
 
 import math
 from collections.abc import Collection, Mapping, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 
 from s3t.broker.interface import EventType
+from s3t.instants import to_micros
 from s3t.market.state import Flush, MarketState
 from s3t.wire.v1.market_pb2 import QuoteRows
 
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-_MICROSECOND = timedelta(microseconds=1)
 ROW_EVENTS = (EventType.QUOTE, EventType.TRADE, EventType.SUMMARY)
 """What a row of :class:`QuoteRows` is made of."""
 
 
 def micros(instant: datetime | None) -> float:
     """An instant on the wire: microseconds since 1970 UTC as a double, NaN when missing."""
-    if instant is None:
-        return math.nan
-    if instant.tzinfo is None:
-        raise ValueError("an instant on the wire is aware (GEN-10)")
-    return float((instant - _EPOCH) // _MICROSECOND)
+    return math.nan if instant is None else float(to_micros(instant))
 
 
 def _finite(values: Sequence[float]) -> list[float]:

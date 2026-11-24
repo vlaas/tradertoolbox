@@ -19,12 +19,19 @@ app marks every screen as synthetic when it runs on this market (GEN-11):
   everything here.
 - /ES: three quarterly futures with standard (AM) and weekly (PM) options.
 
-Expiration rules: every weekday up to 14 days ahead, every Friday up to 63 days, the third
+Expiration rules: every trading day up to 14 days ahead, every Friday up to 63 days, the third
 Friday of each month up to a year, and the December third Friday two years ahead (a LEAPS).
-SPX AM has the third Fridays only; AAPL has no dailies. The last weekday of a month is an
-end-of-month expiration where it is listed. The fake has no holiday calendar:
-that comes at WP-0.6. Quotes, Greeks, candles and the seeded paths are in ``ticks.py``, and
-the stream that serves them in ``stream.py`` (WP-0.4).
+SPX AM has the third Fridays only; AAPL has no dailies. The last trading day of a month is an
+end-of-month expiration where it is listed.
+
+Holidays and early closes are those of the exchange calendar (``s3t.refdata.calendar``; WP-0.6).
+A Friday without a session gives its expiration to the trading day before, as live: the SPY weekly
+of Christmas week 2026 is on Thursday (note B, addendum "WP-0.3"). `expires-at` follows the close
+of the day. Assumed: a future whose third Friday has no session ends the trading day before, and
+the weekly options of /ES expire at 15:00 Chicago on an early close too.
+
+Quotes, Greeks, candles and the seeded paths are in ``ticks.py``, and the stream that serves
+them in ``stream.py`` (WP-0.4).
 """
 
 import math
@@ -35,6 +42,8 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from s3t.refdata.calendar import ExchangeCalendar, load_calendar
+
 NY = ZoneInfo("America/New_York")
 CHICAGO = ZoneInfo("America/Chicago")
 
@@ -43,6 +52,8 @@ DXLINK_URL = "wss://dxlink.fake.invalid/realtime"
 """The address the fake stream answers to, in memory. `.invalid` never resolves."""
 
 type Doc = dict[str, Any]
+
+_DAY = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -66,9 +77,10 @@ class Underlying:
     near_step: float
     far_step: float
     atm_vol: float
-    pm_close: time = time(16, 15)
-    """When the broker says a PM-settled option expires. Live it is 16:15 for every stock and
-    ETF option and 16:00 for index options (note B, addendum "WP-0.5")."""
+    pm_after_close: timedelta = timedelta(minutes=15)
+    """When the broker says a PM-settled option expires, after the close of the session. Live it
+    is 16:15 for every stock and ETF option, 13:15 on an early close, and 16:00 for index options
+    (note B, addendum "WP-0.5")."""
     tick_sizes: tuple[Doc, ...] = ({"value": "0.01"},)
     dividend: float = 0.0
     """Annual dividend per share."""
@@ -102,7 +114,7 @@ UNDERLYINGS: dict[str, Underlying] = {
             near_step=5.0,
             far_step=25.0,
             atm_vol=0.135,
-            pm_close=time(16, 0),
+            pm_after_close=timedelta(0),
             tick_sizes=({"value": "0.05", "threshold": "3.0"}, {"value": "0.1"}),
         ),
         Underlying(
@@ -130,11 +142,6 @@ FUTURE_QUARTERS = 3
 def third_friday(year: int, month: int) -> date:
     d = date(year, month, 15)
     return d + timedelta(days=(4 - d.weekday()) % 7)
-
-
-def last_weekday(year: int, month: int) -> date:
-    d = date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
-    return d - timedelta(days=max(0, d.weekday() - 4))
 
 
 def strike_text(strike: float) -> str:
@@ -175,14 +182,20 @@ def _dec(x: float, places: int = 2) -> str:
 
 
 class SyntheticMarket:
-    """The synthetic market at one instant. Documents are built on first use and cached."""
+    """The synthetic market at one instant. Documents are built on first use and cached.
 
-    def __init__(self, asof: datetime, seed: int = 1) -> None:
+    Without a ``calendar`` it loads the exchange calendar, which takes its time once in a
+    process."""
+
+    def __init__(
+        self, asof: datetime, seed: int = 1, calendar: ExchangeCalendar | None = None
+    ) -> None:
         if asof.tzinfo is None:
             raise ValueError("asof must be an aware instant")
         self.asof = asof.astimezone(UTC)
         self.seed = seed
         self.today = self.asof.astimezone(NY).date()
+        self.calendar = calendar or load_calendar(self.today)
         self._cache: dict[tuple[str, str], Doc | None] = {}
         self._expirations: dict[str, list[tuple[date, str]]] = {}
 
@@ -202,30 +215,33 @@ class SyntheticMarket:
             self._expirations[root.symbol] = self._list_expirations(root)
         return self._expirations[root.symbol]
 
+    def _traded(self, nominal: date) -> date:
+        """A day, or the trading day before it when the market is closed on it."""
+        trading = self.calendar.is_trading_day(nominal)
+        return nominal if trading else self.calendar.previous_trading_day(nominal)
+
     def _list_expirations(self, root: Root) -> list[tuple[date, str]]:
         found: dict[date, str] = {}
         d = self.today
         month_ends = {
-            last_weekday(
-                self.today.year + (self.today.month - 1 + n) // 12,
-                (self.today.month - 1 + n) % 12 + 1,
-            )
+            self._traded(date(d.year + (d.month + n) // 12, (d.month + n) % 12 + 1, 1) - _DAY)
             for n in range(4)
         }
         end = date(self.today.year + 2, 12, 31)
         while d <= end:
             days = (d - self.today).days
-            weekday = d.weekday() < 5
+            day = self._traded(d)
             monthly = d == third_friday(d.year, d.month)
             if monthly and (days <= 366 or (d.month == 12 and d.year == self.today.year + 2)):
-                found[d] = "Regular"
-            elif not root.monthlies_only and weekday:
-                if (root.dailies and days <= 14) or (
-                    root.weeklies and d.weekday() == 4 and days <= 63
-                ):
-                    found[d] = "End-Of-Month" if d in month_ends else "Weekly"
-            d += timedelta(days=1)
-        listed = sorted(found.items())
+                found[day] = "Regular"
+            elif not root.monthlies_only and (
+                (root.dailies and days <= 14 and day == d)
+                or (root.weeklies and d.weekday() == 4 and days <= 63)
+            ):
+                found.setdefault(day, "End-Of-Month" if day in month_ends else "Weekly")
+            d += _DAY
+        # A Friday without a session can have moved to a day that is over.
+        listed = sorted((day, kind) for day, kind in found.items() if day >= self.today)
         return listed[:1] if root.only_first else listed
 
     def strikes(self, u: Underlying, expiration: date) -> list[float]:
@@ -247,18 +263,22 @@ class SyntheticMarket:
         return sorted(ks)
 
     def _expires_at(self, u: Underlying, root: Root, expiration: date) -> datetime:
-        at = time(9, 30) if root.settlement == "AM" else u.pm_close
-        return datetime.combine(expiration, at, NY)
+        opens, closes = self.session(expiration)
+        return opens if root.settlement == "AM" else closes + u.pm_after_close
 
     def _stops_trading_at(self, u: Underlying, root: Root, expiration: date) -> datetime:
         """An AM-settled option trades until the afternoon before (live, 2026-11-23: 16:15 for
         SPX)."""
         if root.settlement == "PM":
             return self._expires_at(u, root, expiration)
-        before = expiration - timedelta(days=1)
-        while before.weekday() >= 5:
-            before -= timedelta(days=1)
-        return datetime.combine(before, time(16, 15), NY)
+        before = self.calendar.previous_trading_day(expiration)
+        return self.session(before)[1] + timedelta(minutes=15)
+
+    def session(self, day: date) -> tuple[datetime, datetime]:
+        """The open and the close of a trading day, in UTC."""
+        found = self.calendar.session(day)
+        assert found is not None, f"{day} is not a trading day"
+        return found
 
     def atm_vol(self, base: float, expiration: date) -> float:
         """The fixed term structure: rising from the base by up to two points."""
@@ -398,12 +418,13 @@ class SyntheticMarket:
     # ------------------------------------------------------------------ futures
 
     def _futures(self) -> list[tuple[str, date]]:
-        """The next quarterly ES contracts: symbol and last trading day (third Friday)."""
+        """The next quarterly ES contracts: symbol and last trading day (the third Friday, or the
+        trading day before it)."""
         out: list[tuple[str, date]] = []
         year, month = self.today.year, self.today.month
         while len(out) < FUTURE_QUARTERS:
             if month in (3, 6, 9, 12):
-                last = third_friday(year, month)
+                last = self._traded(third_friday(year, month))
                 if last >= self.today:
                     out.append((f"/{FUTURE_PRODUCT}{MONTH_CODES[month - 1]}{year % 10}", last))
             month += 1
@@ -476,10 +497,13 @@ class SyntheticMarket:
             d = previous + timedelta(days=1)
             while d <= last:
                 days = (d - self.today).days
+                quarterly = d.month % 3 == 0 and d == third_friday(d.year, d.month)
+                day = d if d == last else self._traded(d)
                 if d == last:
                     root, contract, settlement, at = "ES", f"ES{fut_month}", "AM", time(8, 30)
                     exp_type = "Regular"
-                elif d.weekday() == 4 and days <= 63:
+                elif d.weekday() == 4 and days <= 63 and day >= self.today and not quarterly:
+                    # The name is that of the Friday, also when it expires the day before.
                     week = (d.day - 1) // 7 + 1
                     month = f"{MONTH_CODES[d.month - 1]}{d.year % 10}"
                     root, contract, settlement, at = f"EW{week}", f"EW{week}{month}", "PM", time(15)
@@ -493,10 +517,10 @@ class SyntheticMarket:
                         "future_last": last,
                         "root": root,
                         "contract": contract,
-                        "date": d,
+                        "date": day,
                         "type": exp_type,
                         "settlement": settlement,
-                        "expires": datetime.combine(d, at, CHICAGO),
+                        "expires": datetime.combine(day, at, CHICAGO),
                     }
                 )
                 d += timedelta(days=1)

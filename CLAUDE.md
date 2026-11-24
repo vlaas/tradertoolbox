@@ -75,6 +75,12 @@ cd backend && uv run python tools/capture.py NAME --fake --minutes 1 --config ..
 # size of a recording's stream file, zstd against gzip, on the fake broker (keeps nothing)
 cd backend && uv run python tools/recording_size.py
 
+# copy the state file, also while the backend runs (writes to paths.backup_dir)
+cd backend && uv run python tools/state_backup.py --config ../config/s3t.toml
+
+# live check of the rate download from FRED: a stated check, 6 keyless requests, no broker
+cd backend && uv run python tools/rates_check.py --config ../config/s3t.toml
+
 # chart prototype (throw-away): see prototypes/chart/README.md
 cd prototypes/chart && npm install --ignore-scripts && npx playwright test
 

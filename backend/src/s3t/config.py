@@ -19,6 +19,7 @@ import os
 import re
 import tomllib
 from collections.abc import Mapping
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,8 @@ class PathsConfig(_Section):
     """Downloads and local recordings. Inside the repository it must be git-ignored (GEN-07)."""
     state_file: Path
     """The SQLite state store (STO-01)."""
+    backup_dir: Path | None = None
+    """Where copies of the state store go (STO-07); ``backups`` beside it when not given."""
     t3_root: Path | None = None
     """The optional read-only T3 store (STO-04)."""
 
@@ -90,6 +93,16 @@ class PathsConfig(_Section):
     def recordings_dir(self) -> Path:
         """Local recordings of broker sessions (implementation plan 3.2)."""
         return self.data_dir / "recordings"
+
+    @property
+    def backups(self) -> Path:
+        """Where copies of the state store go."""
+        return self.backup_dir or self.state_file.parent / "backups"
+
+    @property
+    def rates_dir(self) -> Path:
+        """The downloaded rate series (REF-01)."""
+        return self.data_dir / "rates"
 
 
 class BrokerConfig(_Section):
@@ -159,12 +172,37 @@ class SubscriptionsConfig(_Section):
         return self.changes_per_minute - self.change_reserve
 
 
+class CalendarConfig(_Section):
+    """What the exchange calendar cannot know (REF-04). Decided 2026-11-25 (WP-0.6)."""
+
+    closures: list[date] = Field(default_factory=list)
+    """Days on which the exchanges are closed and the installed calendar does not say so. A
+    closure is announced about ten days ahead, and a release of the calendar package that knows
+    it is refused for two weeks (requirements, section 3, the version rule)."""
+
+
+class RatesConfig(_Section):
+    """The rate curve (REF-01). Decided 2026-11-25 (WP-0.6)."""
+
+    download: bool = True
+    """Whether the series are downloaded from FRED. Without it, what was downloaded before is
+    used, and the flat rate after that."""
+    refresh_hours: float = Field(default=12.0, ge=1, le=168)
+    """Hours from a complete download to the next one."""
+    max_age_days: int = Field(default=10, ge=3, le=366)
+    """A series whose latest value is older than this many days is left out of the curve."""
+    flat_rate: float = Field(default=0.04, ge=-0.05, le=0.5)
+    """The fallback: one continuously compounded rate, as a fraction (0.04 is 4%)."""
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
     stream: StreamConfig = Field(default_factory=StreamConfig)
     subscriptions: SubscriptionsConfig = Field(default_factory=SubscriptionsConfig)
+    calendar: CalendarConfig = Field(default_factory=CalendarConfig)
+    rates: RatesConfig = Field(default_factory=RatesConfig)
     source: Path
     """The file this configuration was read from."""
 

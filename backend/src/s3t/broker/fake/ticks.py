@@ -7,16 +7,16 @@ of asking.
 
 The price model:
 
-- **Days.** Weekdays are trading days; the fake has no holidays (WP-0.6 brings the calendar).
-  Each day has a seeded close-to-close return. The close of the last trading day before the
-  market's as-of date is the underlying's configured spot, and the days before and after
-  follow from it. Daily volatility is the underlying's at-the-money volatility over the
-  square root of 252.
-- **Minutes.** Inside the regular session, 09:30 to 16:00 New York, the price follows a
-  seeded Brownian bridge from the day's open to its close, one point a minute, linear in
-  between. Outside the session nothing moves: every event is the one of the last close, so
-  a closed market is silent. The live feed moves around the clock on weekdays; the fake
-  does not.
+- **Days.** The trading days, the holidays and the early closes are those of the exchange
+  calendar (WP-0.6). Each day has a seeded close-to-close return. The close of the last
+  trading day before the market's as-of date is the underlying's configured spot, and the
+  days before and after follow from it. Daily volatility is the underlying's at-the-money
+  volatility over the square root of 252.
+- **Minutes.** Inside the regular session, 09:30 to 16:00 New York or 13:00 on an early close,
+  the price follows a seeded Brownian bridge from the day's open to its close, one point a
+  minute, linear in between. Outside the session nothing moves: every event is the one of
+  the last close, so a closed market is silent. The live feed moves around the clock on
+  weekdays; the fake does not.
 - **Candles** of every period are cut from that one path, so a 15-minute bar, an hourly bar
   and the daily bar of the same day agree. Intraday bars are aligned to the UTC clock and
   daily bars are stamped at midnight UTC of their day, as the live feed does (note B,
@@ -46,7 +46,7 @@ import zlib
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -60,10 +60,10 @@ from s3t.broker.fake.market import (
     SyntheticMarket,
 )
 from s3t.pricing import black_greeks, black_price, tau_cal
+from s3t.refdata.calendar import ExchangeCalendar
 
 RATE = 0.04
-SESSION_OPEN = time(9, 30)
-SESSION_MINUTES = 390
+FULL_SESSION_MINUTES = 390
 NAN = "NaN"
 """A missing number, as dxFeed writes it in JSON."""
 
@@ -74,6 +74,7 @@ SNAPSHOT_SNIP = 0x10
 
 CANDLE_DEPTH_BARS = 8000  # minute and daily candles, as live (note B, section 6)
 CANDLE_DEPTH_DAYS = 90  # the other intraday periods, about what live gives for 15 minutes
+_TWO_WEEKS = timedelta(days=14)
 
 _OPTION = re.compile(r"\.([A-Z]+)(\d{6})([CP])(\d+(?:\.\d+)?)")
 _CANDLE = re.compile(
@@ -135,31 +136,16 @@ def parse_candle_symbol(symbol: str) -> tuple[str, int] | None:
     return m["symbol"], seconds
 
 
-def is_trading_day(d: date) -> bool:
-    return d.weekday() < 5
-
-
-def previous_trading_day(d: date) -> date:
-    d -= timedelta(days=1)
-    while not is_trading_day(d):
-        d -= timedelta(days=1)
-    return d
-
-
-def market_instant(at: datetime) -> datetime:
+def market_instant(at: datetime, calendar: ExchangeCalendar) -> datetime:
     """The instant itself inside a session, else the close of the last session before it.
     Events are made for this instant, so a closed market sends nothing new."""
     day = at.astimezone(NY).date()
-    if is_trading_day(day):
-        opened = datetime.combine(day, SESSION_OPEN, NY)
-        closed = opened + timedelta(minutes=SESSION_MINUTES)
-        if opened <= at <= closed:
-            return at
-        if at > closed:
-            return closed.astimezone(UTC)
-    last = previous_trading_day(day)
-    closed = datetime.combine(last, SESSION_OPEN, NY) + timedelta(minutes=SESSION_MINUTES)
-    return closed.astimezone(UTC)
+    session = calendar.session(day)
+    if session is not None and at >= session[0]:
+        return min(at, session[1])
+    last = calendar.session(calendar.previous_trading_day(day))
+    assert last is not None
+    return last[1]
 
 
 def _ms(instant: datetime) -> int:
@@ -187,10 +173,33 @@ class _Instrument:
     is_call: bool = False
 
 
+class _Position(NamedTuple):
+    """Where an instant lies in a trading day."""
+
+    day: date
+    minute: float
+    """Minutes since the open: negative before it, above ``length`` after the close."""
+    length: int
+    """The minutes of the day's session."""
+
+    @property
+    def ended(self) -> bool:
+        return self.minute >= self.length
+
+
 class _Path:
     """The price path of one underlying or future."""
 
-    def __init__(self, seed: int, key: str, base: float, vol: float, anchor: date) -> None:
+    def __init__(
+        self,
+        seed: int,
+        key: str,
+        base: float,
+        vol: float,
+        anchor: date,
+        calendar: ExchangeCalendar,
+    ) -> None:
+        self.calendar = calendar
         self._seed = (seed, zlib.crc32(key.encode()))
         self._daily = vol / math.sqrt(252)
         self._volume = 2e7 * 100.0 / base
@@ -210,15 +219,13 @@ class _Path:
     def close(self, day: date) -> float:
         """The close of a trading day."""
         while day > self._high:
-            nxt = self._high + timedelta(days=1)
-            while not is_trading_day(nxt):
-                nxt += timedelta(days=1)
+            nxt = self.calendar.next_trading_day(self._high)
             self._closes[nxt.toordinal()] = self._closes[self._high.toordinal()] * math.exp(
                 self._return(nxt)[0]
             )
             self._high = nxt
         while day < self._low:
-            prev = previous_trading_day(self._low)
+            prev = self.calendar.previous_trading_day(self._low)
             self._closes[prev.toordinal()] = self._closes[self._low.toordinal()] / math.exp(
                 self._return(self._low)[0]
             )
@@ -226,27 +233,35 @@ class _Path:
         return self._closes[day.toordinal()]
 
     def open(self, day: date) -> float:
-        return self.close(previous_trading_day(day)) * math.exp(self._return(day)[1])
+        before = self.calendar.previous_trading_day(day)
+        return self.close(before) * math.exp(self._return(day)[1])
+
+    def hours(self, day: date) -> tuple[datetime, int]:
+        """The open of a trading day and the minutes of its session: 390, and 210 on an early
+        close."""
+        session = self.calendar.session(day)
+        assert session is not None, f"{day} is not a trading day"
+        opens, closes = session
+        return opens, round((closes - opens).total_seconds() / 60.0)
 
     def minutes(self, day: date) -> tuple[np.ndarray, np.ndarray]:
-        """The session of a trading day: 391 prices, one per minute boundary, and the 390
-        volumes of the minutes between them."""
+        """The session of a trading day: one price per minute boundary, the open and the close
+        included, and the volumes of the minutes between them."""
         key = day.toordinal()
         found = self._minutes.get(key)
         if found is not None:
             self._minutes.move_to_end(key)
             return found
-        z = self._draws(1, day, 2 * SESSION_MINUTES)
-        walk = np.concatenate(([0.0], np.cumsum(z[:SESSION_MINUTES])))
-        share = np.arange(SESSION_MINUTES + 1) / SESSION_MINUTES
-        bridge = (walk - share * walk[-1]) * self._daily / math.sqrt(SESSION_MINUTES)
+        n = self.hours(day)[1]
+        z = self._draws(1, day, 2 * n)
+        walk = np.concatenate(([0.0], np.cumsum(z[:n])))
+        share = np.arange(n + 1) / n
+        bridge = (walk - share * walk[-1]) * self._daily / math.sqrt(n)
         lo, lc = math.log(self.open(day)), math.log(self.close(day))
         prices = np.exp(lo + share * (lc - lo) + bridge)
         # More volume at the open and the close, as a session has.
         shape = 1.0 + 1.5 * (2.0 * share[:-1] - 1.0) ** 2
-        volumes = np.round(
-            self._volume / SESSION_MINUTES * shape * np.exp(0.3 * z[SESSION_MINUTES:])
-        )
+        volumes = np.round(self._volume / FULL_SESSION_MINUTES * shape * np.exp(0.3 * z[n:]))
         self._minutes[key] = (prices, volumes)
         if len(self._minutes) > 40:
             self._minutes.popitem(last=False)
@@ -266,22 +281,22 @@ class _Path:
             )
         return self._bars[key]
 
-    def position(self, at: datetime) -> tuple[date, float]:
-        """The trading day an instant belongs to and the minutes since its open; the
-        minutes are negative before the open and above 390 after the close. On a day
-        without trading it is the previous trading day, after its close."""
-        local = at.astimezone(NY)
-        day = local.date()
-        if not is_trading_day(day):
-            return previous_trading_day(day), float(SESSION_MINUTES) + 1.0
-        opened = datetime.combine(day, SESSION_OPEN, NY)
-        return day, (at - opened).total_seconds() / 60.0
+    def position(self, at: datetime) -> _Position:
+        """The trading day an instant belongs to, and where in it. On a day without trading
+        it is the previous trading day, after its close."""
+        day = at.astimezone(NY).date()
+        if not self.calendar.is_trading_day(day):
+            last = self.calendar.previous_trading_day(day)
+            length = self.hours(last)[1]
+            return _Position(last, length + 1.0, length)
+        opened, length = self.hours(day)
+        return _Position(day, (at - opened).total_seconds() / 60.0, length)
 
     def price(self, at: datetime) -> float:
-        day, x = self.position(at)
+        day, x, length = self.position(at)
         if x <= 0.0:
-            return self.close(previous_trading_day(day))
-        if x >= SESSION_MINUTES:
+            return self.close(self.calendar.previous_trading_day(day))
+        if x >= length:
             return self.close(day)
         prices, _ = self.minutes(day)
         i = int(x)
@@ -290,10 +305,10 @@ class _Path:
     def session_so_far(self, at: datetime) -> tuple[float, float, float, float, float] | None:
         """Open, high, low, last and volume of the instant's day up to the instant; None
         before the open."""
-        day, x = self.position(at)
+        day, x, length = self.position(at)
         if x <= 0.0:
             return None
-        if x >= SESSION_MINUTES:
+        if x >= length:
             return self.day_bar(day)
         prices, volumes = self.minutes(day)
         i = int(x)
@@ -314,7 +329,8 @@ class Ticks:
 
     def __init__(self, market: SyntheticMarket) -> None:
         self.market = market
-        self._anchor = previous_trading_day(market.today)
+        self.calendar = market.calendar
+        self._anchor = self.calendar.previous_trading_day(market.today)
         self._paths: dict[str, _Path] = {}
         self._instruments: dict[str, _Instrument | None] = {}
         self._futures: dict[str, _Instrument] | None = None
@@ -323,8 +339,9 @@ class Ticks:
 
     def _path(self, inst: _Instrument) -> _Path:
         if inst.path not in self._paths:
-            base, vol = inst.base, inst.vol
-            self._paths[inst.path] = _Path(self.market.seed, inst.path, base, vol, self._anchor)
+            self._paths[inst.path] = _Path(
+                self.market.seed, inst.path, inst.base, inst.vol, self._anchor, self.calendar
+            )
         return self._paths[inst.path]
 
     def _future_instruments(self) -> dict[str, _Instrument]:
@@ -470,7 +487,7 @@ class Ticks:
     def events(self, event: str, symbols: list[str], at: datetime) -> list[Doc]:
         """One event of this type per symbol that has one at this instant. Candles are
         served by :meth:`candles` and :meth:`candle`."""
-        at = market_instant(at)
+        at = market_instant(at, self.calendar)
         options = self.option_values(symbols, at) if event != "Profile" else {}
         out: list[Doc] = []
         for symbol in symbols:
@@ -488,16 +505,18 @@ class Ticks:
 
     def _sizes(self, inst: _Instrument, at: datetime, scale: int) -> tuple[int, int]:
         """Bid and ask size: new every second of a session, standing still outside one."""
-        day, x = self._path(self._underlying_of(inst)).position(at)
-        moment = int(at.timestamp()) if 0.0 < x < SESSION_MINUTES else day.toordinal()
+        day, x, length = self._path(self._underlying_of(inst)).position(at)
+        moment = int(at.timestamp()) if 0.0 < x < length else day.toordinal()
         rng = self.market._rng("size", inst.symbol, moment)
         return rng.randint(1, scale), rng.randint(1, scale)
 
     def _underlying_event(self, event: str, inst: _Instrument, at: datetime) -> Doc | None:
         path = self._path(inst)
         price = path.price(at)
-        day, x = path.position(at)
-        previous = path.close(previous_trading_day(day))
+        position = path.position(at)
+        day = position.day
+        before = self.calendar.previous_trading_day(day)
+        previous = path.close(before)
         if event == "Quote":
             if inst.kind == "index":
                 # Live, note B section 5: an index quote has no sizes and is far too wide
@@ -549,13 +568,12 @@ class Ticks:
             }
         if event == "Summary":
             so_far = path.session_so_far(at)
-            before = previous_trading_day(day)
             return {
                 "dayId": _day_id(day),
                 "dayOpenPrice": NAN if so_far is None else round(so_far[0], 2),
                 "dayHighPrice": NAN if so_far is None else round(so_far[1], 2),
                 "dayLowPrice": NAN if so_far is None else round(so_far[2], 2),
-                "dayClosePrice": round(path.close(day), 2) if x >= SESSION_MINUTES else NAN,
+                "dayClosePrice": round(path.close(day), 2) if position.ended else NAN,
                 "dayClosePriceType": "REGULAR",
                 "prevDayId": _day_id(before),
                 "prevDayClosePrice": round(previous, 2),
@@ -624,7 +642,7 @@ class Ticks:
             }
         rng = self.market._rng("option", inst.symbol)
         interest, volume = rng.randint(0, 5000), rng.randint(0, 800)
-        day, _ = self._path(self._underlying_of(inst)).position(at)
+        day = self._path(self._underlying_of(inst)).position(at).day
         last = max(round(price / tick) * tick, tick)
         if event == "Trade":
             return {
@@ -649,7 +667,7 @@ class Ticks:
                 "dayLowPrice": NAN,
                 "dayClosePrice": NAN,
                 "dayClosePriceType": "REGULAR",
-                "prevDayId": _day_id(previous_trading_day(day)),
+                "prevDayId": _day_id(self.calendar.previous_trading_day(day)),
                 "prevDayClosePrice": round(last, 4),
                 "prevDayClosePriceType": "REGULAR",
                 "prevDayVolume": volume,
@@ -669,18 +687,22 @@ class Ticks:
             return []
         period = parsed[1]
         path = self._path(inst)
-        today, _ = path.position(at)
+        today = path.position(at).day
         if period == 86400:
             limit = CANDLE_DEPTH_BARS
             first_day = from_time.astimezone(UTC).date()
         else:
             limit = CANDLE_DEPTH_BARS if period == 60 else 10**9
-            depth = 30 if period == 60 else CANDLE_DEPTH_DAYS
+            # 8,000 minutes are 21 full sessions: 40 days hold them whatever the holidays.
+            depth = 40 if period == 60 else CANDLE_DEPTH_DAYS
             first_day = max(from_time.astimezone(NY).date(), today - timedelta(days=depth))
+        # The path needs a trading day before each day, so it begins on the calendar's second.
+        begin = self.calendar.first
+        first_day = max(first_day, self.calendar.trading_days(begin, begin + _TWO_WEEKS)[1])
         bars: list[tuple[int, float, float, float, float, float]] = []
         day = today
         while day >= first_day and len(bars) < limit:
-            if is_trading_day(day):
+            if self.calendar.is_trading_day(day):
                 found = self._bars_of_day(path, day, period, at)
                 bars.extend(b for b in reversed(found) if b[0] >= _ms(from_time))
             day -= timedelta(days=1)
@@ -712,10 +734,11 @@ class Ticks:
         if parsed is None or inst is None or inst.kind == "option":
             return None
         path = self._path(inst)
-        day, _ = path.position(at)
+        day = path.position(at).day
         bars = self._bars_of_day(path, day, parsed[1], at)
         if not bars:
-            bars = self._bars_of_day(path, previous_trading_day(day), parsed[1], at)
+            before = self.calendar.previous_trading_day(day)
+            bars = self._bars_of_day(path, before, parsed[1], at)
         vol = self.market.atm_vol(inst.vol, self.market.today + timedelta(days=30))
         return self._candle(symbol, inst, bars[-1], vol)
 
@@ -725,20 +748,20 @@ class Ticks:
     ) -> list[tuple[int, float, float, float, float, float]]:
         """The bars of one trading day up to ``at``, oldest first: start in milliseconds,
         open, high, low, close, volume."""
-        opened = datetime.combine(day, SESSION_OPEN, NY)
+        opened, length = path.hours(day)
         minutes_in = (at - opened).total_seconds() / 60.0
         if minutes_in <= 0.0:
             return []
         if period == 86400:
             stamp = int(datetime.combine(day, time(0), UTC).timestamp()) * 1000
-            if minutes_in >= SESSION_MINUTES:
+            if minutes_in >= length:
                 return [(stamp, *path.day_bar(day))]
             so_far = path.session_so_far(at)
             assert so_far is not None
             return [(stamp, *so_far)]
         prices, volumes = path.minutes(day)
-        done = min(int(minutes_in), SESSION_MINUTES)
-        starts = int(opened.timestamp()) + 60 * np.arange(done + (minutes_in < SESSION_MINUTES))
+        done = min(int(minutes_in), length)
+        starts = int(opened.timestamp()) + 60 * np.arange(done + (minutes_in < length))
         buckets = starts // period
         last = path.price(at)
         out = []

@@ -20,9 +20,8 @@ calendar must therefore reach the last listed expiration.
 
 The broker's own instants stay in the records as facts (``expires_at``, ``stops_trading_at``).
 
-The calendar arrives with WP-0.6. Until then nothing implements :class:`SessionTimes` in the
-product: a stand-in without early closes would be three hours wrong on such a day, and no
-package uses the instant before WP-1.1.
+The exchange calendar (``s3t.refdata.calendar``, WP-0.6) is the :class:`SessionTimes` of the
+product. No package uses the instant before WP-1.1.
 """
 
 from datetime import date, datetime, timedelta
@@ -36,7 +35,7 @@ DAYS_BACK = 4
 
 class SessionTimes(Protocol):
     """The regular session of US equity and index options: the part of the exchange calendar
-    (REF-04, WP-0.6) that the settlement rule needs."""
+    (REF-04) that the settlement rule needs."""
 
     def covers(self, day: date) -> bool:
         """Whether the calendar knows this date, with or without a session."""

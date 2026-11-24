@@ -1,5 +1,5 @@
-"""The settlement instant (REF-05, MKT-01), on a calendar of the test's own. The exchange
-calendar comes with WP-0.6."""
+"""The settlement instant (REF-05, MKT-01), on a calendar of the test's own, and at the end on
+the exchange calendar."""
 
 import dataclasses
 from datetime import UTC, date, datetime, time, timedelta
@@ -16,6 +16,7 @@ from s3t.broker.tastytrade.instruments import (
 )
 from s3t.market.settlement import settles_at
 from s3t.pricing import tau_cal
+from s3t.refdata.calendar import load_calendar
 
 NY = ZoneInfo("America/New_York")
 THANKSGIVING, EARLY_CLOSE = date(2026, 11, 26), date(2026, 11, 27)
@@ -114,3 +115,29 @@ def test_a_futures_option_settles_when_the_broker_says(market: SyntheticMarket) 
         assert settles_at(expiration, Sessions()) == expiration.expires_at
     weekly = chain.of_root("EW4")[0]
     assert settles_at(weekly, Sessions()) == datetime(2026, 11, 27, 21, 0, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------- on the exchange calendar
+
+
+@pytest.mark.parametrize(
+    ("day", "settlement", "want"),
+    [
+        (date(2026, 11, 25), "pm", datetime(2026, 11, 25, 21, 0, tzinfo=UTC)),
+        (THANKSGIVING, "pm", datetime(2026, 11, 25, 21, 0, tzinfo=UTC)),
+        (EARLY_CLOSE, "pm", datetime(2026, 11, 27, 18, 0, tzinfo=UTC)),
+        (EARLY_CLOSE, "am", datetime(2026, 11, 27, 14, 30, tzinfo=UTC)),
+        (MOURNING, "pm", datetime(2025, 1, 8, 21, 0, tzinfo=UTC)),
+        (date(2027, 3, 12), "pm", datetime(2027, 3, 12, 21, 0, tzinfo=UTC)),
+        (date(2027, 3, 15), "pm", datetime(2027, 3, 15, 20, 0, tzinfo=UTC)),
+        (date(2027, 6, 18), "am", datetime(2027, 6, 17, 13, 30, tzinfo=UTC)),  # Juneteenth
+        (date(2031, 12, 19), "pm", datetime(2031, 12, 19, 21, 0, tzinfo=UTC)),  # SPX, 1,855 days
+        (date(2034, 1, 20), "pm", None),  # beyond the calendar
+    ],
+)
+def test_on_the_exchange_calendar(
+    spx: list[Expiration], day: date, settlement: str, want: datetime | None
+) -> None:
+    option = next(e for e in spx if e.settlement == settlement)
+    moved = dataclasses.replace(option, expiration_date=day)
+    assert settles_at(moved, load_calendar(date(2026, 11, 25))) == want

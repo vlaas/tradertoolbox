@@ -427,6 +427,68 @@ are in note B, addenda "WP-0.5" and "WP-0.5, live". The signatures are in
 - **The generator** writes the fixtures in a process of its own. One process holds one version
   of a `.proto` file, and the application may have loaded the committed one.
 
+The storage and reference data package (WP-0.6). **Decided 2026-11-25 (owner, WP-0.6 review).** The
+facts behind it are in note B, addendum "WP-0.6". The signatures are in `s3t.store`,
+`s3t.refdata` and `s3t.instants`.
+
+- **Instants in the store** (GEN-10) are INTEGER microseconds since 1970 in UTC, in columns whose
+  names end in `_at_us`. One module converts for the store, the recordings and the wire. Tables
+  are STRICT. A calendar date is ISO text.
+- **Migrations** (STO-02) are SQL files `NNNN_name.sql` without a gap. Each runs in one transaction
+  together with its record: version, name, checksum, instant. A script cannot end its transaction,
+  set a pragma or attach a file; an authorizer denies it. Foreign keys are off during a migration
+  and checked before its commit.
+- **A file that cannot be used is refused before anything in it is changed:** one of another
+  program, one of a newer version, one whose applied migration is not the file here now. There are
+  no down-migrations. The way back is the copy that is made before a migration of a file with
+  content.
+- **Tables come with their packages** (STO-01). Now there is `setting` only: key, JSON value,
+  instant. WP-0.7 adds the login, WP-1.3 the tickets, and so on. Only `s3t.store` opens a SQLite
+  file; a test of the repository holds it.
+- **One thread owns the connection.** A function on the tables takes the connection and runs in
+  one transaction, for reading or for writing. The write-ahead log is synced at every commit
+  (`synchronous=FULL`), because writes are rare. The file and its copies are readable by the owner
+  only.
+- **The backup** (STO-07) is SQLite's online backup: one consistent state, in one file that needs no
+  other, checked before it gets its name. It is a command, `tools/state_backup.py`. Nothing is
+  overwritten and nothing is deleted. There is no schedule; a daily copy fits the process of
+  WP-0.7. The wording of STO-07 was changed for it (4.9).
+- **The calendar** (REF-04) has the trading days and regular sessions of `exchange-calendars`, XNYS
+  for stocks, ETFs and indexes and the days of CMES for futures. One module imports the library.
+  It covers 1990 to the end of the seventh year ahead. A question about a day outside is refused,
+  except by `market_open`, which the stall rule asks and which answers "closed".
+- **Sessions by class,** New York time. Stocks and ETFs: overnight from 20:00 the evening before to
+  04:00, early to 09:30, regular, late for four hours after the close (20:00; 17:00 on an early
+  close). Indexes: regular only. Futures: from 18:00 the evening before to 17:00, to 13:15 when the
+  stock market closes early, to 13:00 when it is closed. The overnight session belongs to the
+  trading day after it (measured, note B, addendum "WP-0.6"). **Not verified:** the end of late on
+  an early close, and the futures' holidays and early closes.
+- **Options have no class.** They settle by the regular session. Their own quoting hours differ by
+  symbol: ETF options to 16:15, and since 2026-10-19 longer hours at Cboe for some symbols (search
+  excerpts). Nothing needs them before WP-1.2.
+- **Configured closures:** `[calendar] closures`. A closure is announced about ten days ahead, and
+  the version rule takes no package younger than 14 days. A configured closure closes every class.
+- **The 23-hour trading** that NYSE Arca starts on 2026-12-06, and Nasdaq probably with it (overnight
+  from 21:00; search excerpts), changes no class. The feed has bars from 20:00 already.
+- **The rates** (REF-01) are kept as FRED sent them, one CSV file per series in `data_dir/rates`,
+  with the history from 2018. A download replaces a file only if it can be read and loses nothing.
+  A complete download is repeated after 12 hours. A failed one is tried again after 10 minutes,
+  doubling to 2 hours, for the missing series only.
+- **The curve belongs to the time of the data,** so a replay gets the rates of its day. A value of
+  day d counts from d+1 (`volcalc`). For a replay that can be some hours early, because Treasury
+  values come out in the afternoon of the next business day (from memory). A series older than
+  10 days is left out. DTB3 stands in for DGS3MO when that has no usable value.
+- **The flat rate** is used when no series has a usable value, and the status says why. Its default
+  is 0.04, the rate of the fake broker. `[rates] download = false` switches the network off.
+- **The fake broker** has the holidays and early closes of the calendar. An expiration on a closed
+  Friday moves to the trading day before. Its session expects data when the calendar has the market
+  open, so that the silence of a holiday is not a stall. Assumed: the weekly options of /ES expire
+  at 15:00 Chicago on an early close too.
+- **pandas** comes with `exchange-calendars` and is held below 3.1 (`constraint-dependencies`): the
+  library uses a call that pandas 3.1 deprecates. The schedules are the same on 2.3, 3.0 and 3.1
+  (compared 2026-11-25). It is a runtime dependency that nothing else uses. WP-0.2 had refused a
+  development library that brings it.
+
 ## 4. Requirements
 
 ### 4.1 General
@@ -606,8 +668,18 @@ Open detail: whether built bars are also cut at the regular close, so that no ba
 | STO-04 | The T3 store and the `volcalc` lake are read-only and optional; their paths are configuration. | R3 | T, R |
 | STO-05 | A ticket is stored in the backend and addressed by id. Saving a ticket stores a context snapshot with it: underlying price, IV figures, the legs' quotes and Greeks, the time. | R1 | T |
 | STO-06 | Drawings are stored per symbol with anchors as UTC instants and prices, in a versioned record. | R2 | T |
-| STO-07 | The state file can be backed up by copying while the backend runs. | R0 | T |
+| STO-07 | A consistent copy of the state file can be taken while the backend runs. | R0 | T |
 | STO-08 | The IV-history set is one compact Parquet file per root, derived from the lake's surfaces: at-the-money IV at fixed maturities, model-free IV, skew measures and realised-volatility windows, per day and per intraday snapshot. | R3 | T |
+
+Decided 2026-11-25 (owner, WP-0.6 review):
+
+- **STO-07** was reworded. Until then it read "The state file can be backed up by copying while the
+  backend runs." A plain copy of a SQLite file in WAL mode is not a backup: the newest transactions
+  are in the file beside it, and the file can change while it is copied (sqlite.org, "How To
+  Corrupt An SQLite Database File" and "SQLite Backup API"; search excerpts). A test shows a plain
+  copy that lacks them.
+- **STO-01** is closed for the file, its mode and the rule that nothing else opens a SQLite file.
+  The tables it lists come with their packages.
 
 ### 4.10 API and transport
 
