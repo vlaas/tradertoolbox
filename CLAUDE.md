@@ -57,11 +57,16 @@ holds.
 make setup      # uv sync --locked in backend/, npm ci --ignore-scripts in frontend/
 make gen        # regenerate Protocol Buffers code, OpenAPI schema and types, the wire fixture
 make check      # ruff, pyright, pytest, svelte-check, tsc, vitest, stale check, licence check
-make e2e        # build the frontend; Playwright in Chromium, Firefox and WebKit
+make e2e        # build the frontend; Playwright against the backend on the fake broker, 3 browsers
 make licences   # the licence check alone (policy in backend/tools/licences.py)
 make audit      # known vulnerabilities in both lock files; needs the network
 
 # configuration: copy config/s3t.example.toml to config/s3t.toml (git-ignored)
+
+# set the password of the app (asks for it), then run the backend; it serves frontend/dist.
+# [broker] source = "fake" in the configuration runs it without the broker
+cd backend && uv run python tools/set_password.py --config ../config/s3t.toml
+cd backend && uv run python -m s3t --config ../config/s3t.toml
 
 # live read-only check of the broker client: a stated check, 13 requests at 1 per second
 cd backend && uv run python tools/broker_check.py --config ../config/s3t.toml
@@ -75,7 +80,8 @@ cd backend && uv run python tools/capture.py NAME --fake --minutes 1 --config ..
 # size of a recording's stream file, zstd against gzip, on the fake broker (keeps nothing)
 cd backend && uv run python tools/recording_size.py
 
-# copy the state file, also while the backend runs (writes to paths.backup_dir)
+# copy the state file, also while the backend runs (writes to paths.backup_dir). The running
+# backend makes a copy a day by itself
 cd backend && uv run python tools/state_backup.py --config ../config/s3t.toml
 
 # live check of the rate download from FRED: a stated check, 6 keyless requests, no broker

@@ -1,12 +1,12 @@
 """Market values as the columns of a wire message (MKT-07, GEN-10; ``market.proto``).
 
 A missing number stays NaN, from the broker module through the market state to the browser, and
-an instant becomes microseconds since 1970 as a double. The WebSocket and its topics come with
-WP-0.7; it sends these rows.
+an instant becomes microseconds since 1970 as a double. The ``quotes`` topic sends these rows
+(``s3t.api.topics``).
 """
 
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from s3t.broker.interface import EventType
@@ -54,7 +54,7 @@ def quote_rows(state: MarketState, symbols: Mapping[str, str]) -> QuoteRows:
 
 def changed_symbols(flush: Flush, symbols: Mapping[str, str]) -> dict[str, str]:
     """The instruments among ``symbols`` whose row a flush changed, in their order."""
-    changed: Collection[str] = frozenset().union(
-        *(flush.changed.get(event, frozenset()) for event in ROW_EVENTS)
-    )
+    changed: set[str] = set()
+    for event in ROW_EVENTS:
+        changed |= flush.changed.get(event, frozenset())
     return {symbol: stream for symbol, stream in symbols.items() if stream in changed}

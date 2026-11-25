@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from s3t.store.backup import backup, backup_name
-from s3t.store.migrate import StoreError
+from s3t.store.migrate import StoreError, load_migrations
 from s3t.store.settings import get_setting, set_setting
 from s3t.store.state import StateStore
 
@@ -50,7 +50,8 @@ async def test_a_copy_while_the_store_is_open(path: Path, tmp_path: Path) -> Non
     put(plain, content(path))
     target = tmp_path / "copies" / "one.sqlite"
     report = await asyncio.to_thread(backup, path, target)
-    assert (report.path, report.version, report.size) == (target, 1, target.stat().st_size)
+    assert (report.path, report.version) == (target, len(load_migrations()))
+    assert report.size == target.stat().st_size
     assert len(settings(target)) == ROWS
     with pytest.raises((sqlite3.Error, AssertionError)):
         assert len(settings(plain)) == ROWS
@@ -122,7 +123,7 @@ async def test_a_copy_made_by_the_tool_from_another_process(path: Path, tmp_path
     run = [sys.executable, str(TOOL), "--config", str(config)]
     done = await asyncio.to_thread(subprocess.run, run, capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
-    assert "schema version 1" in done.stdout
+    assert f"schema version {len(load_migrations())}" in done.stdout
     (copy,) = (path.parent / "backups").iterdir()
     assert len(settings(copy)) == ROWS
     again = [*run, "--to", str(copy)]

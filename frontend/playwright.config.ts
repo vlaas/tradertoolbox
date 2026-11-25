@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // The browser suite (implementation plan 3.1 and 3.5): Chromium, Firefox and WebKit against
-// the built app. Until the backend serves the app (WP-0.7) it is served by `vite preview` on
+// the built app, served by the real backend on the fake broker (backend/tools/e2e_backend.py) on
 // the loopback address. S3T_E2E_PORT overrides the port.
 const port = Number(process.env.S3T_E2E_PORT ?? 4178)
 const baseURL = `http://127.0.0.1:${port}`
@@ -16,9 +16,11 @@ export default defineConfig({
   reporter: 'list',
   use: { baseURL, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   webServer: {
-    command: `npx vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+    command: `uv run python tools/e2e_backend.py --port ${port} --frontend ../frontend/dist`,
+    cwd: '../backend',
     url: baseURL,
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
     timeout: 60_000,
   },
   projects: [

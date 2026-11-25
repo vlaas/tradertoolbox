@@ -72,8 +72,15 @@ class Tastytrade(TastytradeRest):
         await super().aclose()
 
 
-def from_config(config: Config, *, transport: httpx.AsyncBaseTransport | None = None) -> Tastytrade:
-    """The live broker for the configured environment file, limits and stream settings."""
+def from_config(
+    config: Config,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+    data_expected: Callable[[datetime], bool] = regular_hours,
+) -> Tastytrade:
+    """The live broker for the configured environment file, limits and stream settings.
+    ``data_expected`` is the stall rule's "the market is open" (BRK-03); the application passes
+    the exchange calendar's, and the tools use the stand-in."""
     secrets = load_broker_secrets(config.paths.env_file)
     return Tastytrade(
         secrets,
@@ -82,4 +89,5 @@ def from_config(config: Config, *, transport: httpx.AsyncBaseTransport | None = 
         rate=config.broker.rest_rate,
         burst=config.broker.rest_burst,
         transport=transport,
+        data_expected=data_expected,
     )

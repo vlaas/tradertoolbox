@@ -36,7 +36,8 @@ draws. A language model reaches the same functions through MCP.
 ```
 
 Backend modules: `pricing`, `broker`, `subs`, `market`, `refdata`, `candles`, `analysis`,
-`store`, `api`, `mcp`; later `alerts`, `scanner`, `recorder`.
+`store`, `system`, `api`, `mcp`; later `alerts`, `scanner`, `recorder`. (`system` was added with
+WP-0.7, proposed.)
 
 ## 3. Technology selection
 
@@ -104,7 +105,7 @@ Set-up (WP-0.1). Decided 2026-11-22:
     (RUF, SIM, PT) were measured and left out.
   - pyright in its standard mode, as `volcalc` uses, so that ported code passes unchanged.
     Strict mode gave 671 errors (474 in the ported `pricing`, where numpy and scipy are not
-    fully typed). It is reconsidered for `api` at WP-0.7.
+    fully typed). Strict for `api` and `system` since WP-0.7 (proposed, below).
   - Frontend: `svelte-check --fail-on-warnings` and strict TypeScript settings. A Prettier
     check with its Svelte plugin is added when WP-0.8 starts. No ESLint unless a need shows.
 - **Generated code is committed** (QA-05). `make check` regenerates it into a temporary
@@ -253,8 +254,8 @@ The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
   keepalive runs every 30 s). No data for `stall_after` (60 s, `[stream]`) while the market
   is open and something is subscribed is a stall: the phase `stalled`, then a loss. Each
   stall in a row doubles the wait, up to 15 minutes; data that keeps coming resets it. "The
-  market is open" is a rule passed to the session. Until the calendar of WP-0.6 is wired in,
-  it is weekdays 09:30 to 16:00 New York.
+  market is open" is a rule passed to the session. The backend passes the exchange calendar
+  (WP-0.7). Without one, in the tools, it is weekdays 09:30 to 16:00 New York.
 - **Gap** (BRK-02, BRK-06). When a session is open again, a gap item goes out before any of
   its data: the number and the receipt time of the last batch before the loss, and the time
   the new session opened. The session is then `connected`. "Resubscribing" (BRK-06) is a
@@ -452,7 +453,8 @@ facts behind it are in note B, addendum "WP-0.6". The signatures are in `s3t.sto
 - **The backup** (STO-07) is SQLite's online backup: one consistent state, in one file that needs no
   other, checked before it gets its name. It is a command, `tools/state_backup.py`. Nothing is
   overwritten and nothing is deleted. There is no schedule; a daily copy fits the process of
-  WP-0.7. The wording of STO-07 was changed for it (4.9).
+  WP-0.7 (it is proposed below, and deletes its own old copies). The wording of STO-07 was changed
+  for it (4.9).
 - **The calendar** (REF-04) has the trading days and regular sessions of `exchange-calendars`, XNYS
   for stocks, ETFs and indexes and the days of CMES for futures. One module imports the library.
   It covers 1990 to the end of the seventh year ahead. A question about a day outside is refused,
@@ -488,6 +490,77 @@ facts behind it are in note B, addendum "WP-0.6". The signatures are in `s3t.sto
   library uses a call that pandas 3.1 deprecates. The schedules are the same on 2.3, 3.0 and 3.1
   (compared 2026-11-25). It is a runtime dependency that nothing else uses. WP-0.2 had refused a
   development library that brings it.
+
+The API package (WP-0.7). **Proposed 2026-11-25, not confirmed yet.** The signatures are in
+`s3t.system` and `s3t.api`, the messages in `proto/s3t/wire/v1/channel.proto` and `status.proto`.
+
+- **Two new packages of modules.** `s3t.system` is the process as a whole: the composition, the
+  login, the features and the health service. `s3t.api` is the edge. A service knows neither the
+  API nor MCP (API-01). Tests of the repository hold it, and that only one module carries messages
+  (API-08) and that nothing outside `pricing` has the tools for a second pricing (GEN-05).
+- **Start and end.** The socket is opened first and listens at once, so a second backend stops
+  before it opens a broker session or the state file. Everything is closed in the opposite order on
+  SIGINT or SIGTERM. What keeps the backend from starting is one line and exit status 1.
+- **What is public** (SEC-02): `POST /api/login` and the files of the built frontend. Everything
+  else under `/api/` is closed by one guard, also a route that nobody thought of. The OpenAPI
+  schema is not served; nothing reads it at run time.
+- **Origin.** The WebSocket, and every request with a method that could change something, must state
+  the origin of the listen address or of the host name, with the port. SameSite=Strict is not enough:
+  a page on another port of the same host is the same site. Without the check it opened the WebSocket
+  in all three browsers (measured 2026-11-25, `frontend/e2e/backend.spec.ts`).
+- **The password** is set by `tools/set_password.py` only, with 12 to 1,024 characters. It ends
+  every session. There is no set-up page. argon2id with 64 MiB and three passes, one check at a time,
+  in a thread. Five wrong passwords are free; after that each one holds the login, from 1 s doubling
+  to 60 s, for everybody. The count is not kept over a restart.
+- **A session** is 256 random bits in a cookie; the state file has their SHA-256. It ends after
+  `[login] session_days` (30). The cookie is HttpOnly and SameSite=Strict, for the path `/api`, and
+  has the port in its name, because cookies are shared between the ports of a host. It has no
+  `Secure` mark before the phone step brings TLS. A logout ends the open WebSockets of the session
+  at once; any other end is seen within 60 s.
+- **Migration 0002** brings the tables `login` and `session`.
+- **The message layer** (API-03, API-08). `ClientMessage` subscribes and unsubscribes under numbers
+  that the client chooses; they rise and are used once. `ServerMessage` has the number, a snapshot
+  mark and a body. To change a list, subscribe anew and then end the old subscription. A slow client
+  gets fewer messages and never old ones; after 30 s without taking any it is given up. What cannot
+  be read ends the connection; a topic that fails ends itself with a message. A heartbeat goes out
+  every 5 s with the time of the data.
+- **The JSON form** (API-04) is chosen by the client per connection, with the WebSocket subprotocol
+  `s3t.v1.json` in place of `s3t.v1.protobuf`. No setting of the server. The version is in the name,
+  so a page that speaks another one is refused before it is open.
+- **Topic `status`.** The whole state in every message: at once when a person would call it a change,
+  otherwise every 5 s while the running figures move. It holds the mark of GEN-11, the nickname
+  (GEN-03), the stream, the use per class and in total, the REST state, and `live_since_us`.
+- **Live or not** (UI-05). A row has no mark. A quote or a trade is live when it was received at
+  `live_since_us` of the `status` or later; when that is unset, nothing is live. `prev_close` is a
+  value of the day and is not judged by it.
+- **A stall is a mark** (BRK-06). The phase `stalled` lasts no time, so a state that is published
+  could never show it. `StreamStatus.stalled` holds from a stall until data comes again.
+- **Topic `quotes`.** Stocks, ETFs and indexes, at most 100 symbols. The snapshot comes at once, with
+  empty rows for what is not known yet. The instruments are read one at a time, because the request
+  limit is shared with the token that a reconnect needs. A symbol without data has a note: unknown,
+  cut by the budget (SUB-03), or the broker could not be asked (tried again after 30 s). Futures come
+  with a call of the broker interface that says what a symbol is; nothing outside the broker module
+  may read a symbol.
+- **Tiers** (GEN-04). A feature is declared once with the tiers it needs and with what the app does
+  without them (hidden or unavailable). Every route and topic names its feature or is listed as one of
+  the process itself; a test holds it. T1 is absent when the broker refused the grant; T2 until R3
+  records; T3 without its directory. One feature now: `quotes`.
+- **The health route** gives the status records of the parts as they are, and the counts that should
+  be zero. It needs a session like every other route.
+- **The choice of broker** (GEN-11): `[broker] source`, `recording`, `fake_start`,
+  `account_nickname`. The nickname refuses four digits or more, against the account number by
+  mistake. `fake_start` sets the clock of the synthetic market, which moves in the regular session
+  only.
+- **Rates.** Only the live broker downloads. The fake uses the flat rate and reads no file. A replay
+  reads the files, so that a run can be repeated.
+- **A daily copy of the state file,** `[store] daily_copies` (14). None is made while the newest is
+  under a day old. It deletes the oldest of its own copies, by their names, and no other file. This
+  changes "nothing is deleted" above for these copies alone.
+- **Dependencies:** uvicorn 0.54.0 (BSD-3-Clause) and argon2-cffi 25.1.0 (MIT). With them click,
+  argon2-cffi-bindings, cffi and pycparser. cffi is MIT-0, a named exception (QA-07).
+- **pyright** is strict for `api`, `system` and `__main__`: 4 findings when it was switched on, all
+  fixed. It finds `s3t` in its source now (`extraPaths`), and no longer as an installed package.
+- **A content policy** lets the page load code and data from this backend only.
 
 ## 4. Requirements
 
@@ -707,6 +780,13 @@ Decided 2026-11-25 (owner, WP-0.6 review):
 | SEC-07 | The backend serves the built frontend itself. | R0 | T |
 | SEC-08 | A health route reports broker connection, stream state, subscription use, store versions and the reference data in use. | R0 | T |
 
+State after WP-0.7 (2026-11-25):
+
+- **SEC-06** is measured on macOS only (`docs/measurements.md`). Linux was not run.
+- **API-05** is closed for `status` and `quotes`.
+- **SEC-02**: the login and the files of the built frontend are public, as they must be. A proposal,
+  section 3.
+
 ### 4.12 Frontend, general
 
 | ID | Requirement | Release | Verify |
@@ -868,6 +948,7 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 | lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Decided 2026-11-22 |
 | spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only; not redistributed | Decided 2026-11-22 |
 | certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Decided 2026-11-22 (WP-0.3) |
+| cffi | MIT-0 | The binding of argon2-cffi to its C code, used unmodified; a runtime dependency. MIT-0 is MIT without the duty to name the author | Proposed 2026-11-25 (WP-0.7) |
 
 ## 5. Open points
 

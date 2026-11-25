@@ -19,9 +19,9 @@ import os
 import re
 import tomllib
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -37,6 +37,7 @@ DEFAULT_PATH = Path("config") / "s3t.toml"
 EXAMPLE_NAME = "config/s3t.example.toml"
 
 _HOST_LABEL = re.compile(r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)")
+_RECORDING = re.compile(r"[A-Za-z0-9_-]+")
 
 
 class ConfigError(Exception):
@@ -53,7 +54,8 @@ class ServerConfig(_Section):
     """One IP address to listen on; never a wildcard address (prepares SEC-03)."""
     port: int = Field(ge=1, le=65535)
     host_name: str | None = None
-    """The name the browser uses to reach the backend; checked as the origin later."""
+    """The name the browser uses to reach the backend. With it, that name is an accepted origin
+    beside the listen address (SEC-02)."""
 
     @field_validator("listen_address")
     @classmethod
@@ -76,6 +78,18 @@ class ServerConfig(_Section):
             raise ValueError("must be a plain host name, without scheme, port or path")
         return value
 
+    @property
+    def origins(self) -> frozenset[str]:
+        """The origins a browser states for a page of this backend, as it writes them: lower
+        case, no final dot, an IPv6 address in brackets, and no port where it is the default.
+        Plain HTTP only: TLS comes with the phone step (architecture note, section 6)."""
+        address = self.listen_address
+        hosts = [f"[{address}]" if ":" in address else address]
+        if self.host_name is not None:
+            hosts.append(self.host_name.rstrip(".").lower())
+        port = "" if self.port == 80 else f":{self.port}"
+        return frozenset(f"http://{host}{port}" for host in hosts)
+
 
 class PathsConfig(_Section):
     env_file: Path
@@ -88,6 +102,9 @@ class PathsConfig(_Section):
     """Where copies of the state store go (STO-07); ``backups`` beside it when not given."""
     t3_root: Path | None = None
     """The optional read-only T3 store (STO-04)."""
+    frontend_dir: Path | None = None
+    """The built frontend that the backend serves (SEC-07); ``frontend/dist`` of the repository
+    the backend runs from when not given."""
 
     @property
     def recordings_dir(self) -> Path:
@@ -106,16 +123,54 @@ class PathsConfig(_Section):
 
 
 class BrokerConfig(_Section):
-    """The REST client's request limit (BRK-04). Decided 2026-11-22 (WP-0.3).
+    """Which broker the backend runs on (GEN-11), and the REST client's request limit (BRK-04,
+    decided 2026-11-22, WP-0.3). The broker's real limits are not published or measured yet
+    (WP-0.9). The defaults are conservative: the probe of note B ran at one call per second
+    without a refusal.
 
-    The broker's real limits are not published or measured yet (WP-0.9). The defaults are
-    conservative: the probe of note B ran at one call per second without a refusal.
+    ``recording`` and ``fake_start`` may stay in the file while another source is chosen, so that
+    changing the source is a change of one line. Proposed 2026-11-25 (WP-0.7).
     """
 
+    source: Literal["live", "fake", "replay"] = "live"
+    recording: str | None = None
+    """Replay only: the name of a recording below ``data_dir/recordings``."""
+    fake_start: datetime | None = None
+    """Fake only: the instant at which the synthetic market's clock starts; the wall clock when
+    not given. The synthetic market moves in the regular session only."""
+    account_nickname: str | None = None
+    """What the app shows for the account, never its number (GEN-03)."""
     rest_rate: float = Field(default=2.0, gt=0, le=50)
     """Requests per second, on average."""
     rest_burst: int = Field(default=4, ge=1, le=100)
     """Requests that may go at once after a quiet spell."""
+
+    @field_validator("recording")
+    @classmethod
+    def _plain_name(cls, value: str | None) -> str | None:
+        if value is not None and not _RECORDING.fullmatch(value):
+            raise ValueError("must be a name of letters, digits, '-' and '_', not a path")
+        return value
+
+    @field_validator("fake_start")
+    @classmethod
+    def _an_instant(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("must state its offset, for example 2026-11-20T15:00:00Z")
+        return value
+
+    @field_validator("account_nickname")
+    @classmethod
+    def _not_the_number(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or len(re.findall(r"\d", value)) >= 4):
+            raise ValueError("must be a name, and not the account number")
+        return value
+
+    @model_validator(mode="after")
+    def _replay_names_its_recording(self) -> "BrokerConfig":
+        if self.source == "replay" and self.recording is None:
+            raise ValueError("the replay needs the name of a recording")
+        return self
 
 
 class StreamConfig(_Section):
@@ -195,6 +250,20 @@ class RatesConfig(_Section):
     """The fallback: one continuously compounded rate, as a fraction (0.04 is 4%)."""
 
 
+class LoginConfig(_Section):
+    """The login (SEC-01). Proposed 2026-11-25 (WP-0.7)."""
+
+    session_days: int = Field(default=30, ge=1, le=365)
+    """Days from a login to the end of its session."""
+
+
+class StoreConfig(_Section):
+    """The state store (STO-07). Proposed 2026-11-25 (WP-0.7)."""
+
+    daily_copies: int = Field(default=14, ge=0, le=366)
+    """Daily copies of the state file that are kept; 0 makes none."""
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
@@ -203,6 +272,8 @@ class Config(_Section):
     subscriptions: SubscriptionsConfig = Field(default_factory=SubscriptionsConfig)
     calendar: CalendarConfig = Field(default_factory=CalendarConfig)
     rates: RatesConfig = Field(default_factory=RatesConfig)
+    login: LoginConfig = Field(default_factory=LoginConfig)
+    store: StoreConfig = Field(default_factory=StoreConfig)
     source: Path
     """The file this configuration was read from."""
 

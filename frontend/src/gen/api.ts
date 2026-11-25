@@ -3,10 +3,505 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+    "/api/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Features
+         * @description The data tiers that are there, and the features that need them.
+         */
+        get: operations["features"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Health
+         * @description The state of everything.
+         */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description Open a session. The answer sets its cookie.
+         */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description End the session, and the WebSockets that were opened with it.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Session
+         * @description The session of this browser.
+         */
+        get: operations["session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /**
+         * ApiError
+         * @description The answer of a route that refuses or fails.
+         */
+        ApiError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** @enum {string} */
+        AuthState: "none" | "valid" | "due" | "lapsed" | "renewing" | "refused";
+        /**
+         * CalendarStatus
+         * @description For the health route (SEC-08).
+         */
+        CalendarStatus: {
+            /** Closures */
+            closures: string[];
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /** Source */
+            source: string;
+        };
+        /** @enum {string} */
+        ClassName: "recorder" | "positions" | "views" | "background";
+        /** ClassReport */
+        ClassReport: {
+            /** Counted */
+            counted: number;
+            demand_class: components["schemas"]["ClassName"];
+            /** Granted */
+            granted: number;
+            /** Wanted */
+            wanted: number;
+        };
+        /** ConsumerReport */
+        ConsumerReport: {
+            demand_class: components["schemas"]["ClassName"];
+            /** Granted */
+            granted: number;
+            /** Name */
+            name: string;
+            /** Wanted */
+            wanted: number;
+        };
+        /**
+         * CopiesStatus
+         * @description For the health route (SEC-08).
+         */
+        CopiesStatus: {
+            /** Failures */
+            failures: number;
+            /** Keep */
+            keep: number;
+            /** Last At */
+            last_at: string | null;
+            /** Last Error */
+            last_error: string | null;
+        };
+        /**
+         * EventType
+         * @description The stream events the application asks for. The values are the application's own
+         *     names; a broker module maps them to its wire names (GEN-09).
+         * @enum {string}
+         */
+        EventType: "quote" | "trade" | "summary" | "greeks" | "profile" | "candle";
+        /** FeatureReport */
+        FeatureReport: {
+            /** Available */
+            available: boolean;
+            /** Name */
+            name: string;
+            /** Needs */
+            needs: components["schemas"]["Tier"][];
+            /** Reason */
+            reason: string | null;
+            /**
+             * Show
+             * @enum {string}
+             */
+            show: "available" | "unavailable" | "hidden";
+            /** Title */
+            title: string;
+        };
+        /** FeaturesReport */
+        FeaturesReport: {
+            /** Features */
+            features: components["schemas"]["FeatureReport"][];
+            /** Tiers */
+            tiers: components["schemas"]["TierReport"][];
+        };
+        /**
+         * Gap
+         * @description Data was lost between two sessions of the stream (BRK-02).
+         *
+         *     Emitted when a session is open again after a loss, before the phase ``connected`` and
+         *     before any data of the new session. The new session holds no subscription: the data
+         *     comes back as the subscription manager sends the granted set again.
+         */
+        Gap: {
+            /** Last Seq */
+            last_seq: number;
+            /** Reason */
+            reason: string;
+            /** Seq */
+            seq: number;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
+        };
+        /** Health */
+        Health: {
+            /** Account */
+            account: string | null;
+            calendar: components["schemas"]["CalendarStatus"];
+            copies: components["schemas"]["CopiesStatus"];
+            /**
+             * Data Time
+             * Format: date-time
+             */
+            data_time: string;
+            market: components["schemas"]["MarketStatus"];
+            rates: components["schemas"]["RatesStatus"];
+            rest: components["schemas"]["RestStatus"];
+            source: components["schemas"]["SourceReport"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            store: components["schemas"]["StoreStatus"];
+            stream: components["schemas"]["StreamStatus"];
+            subscriptions: components["schemas"]["SubscriptionsReport"];
+            /** Version */
+            version: string;
+        };
+        /**
+         * Knot
+         * @description One point of the curve and where it comes from.
+         */
+        Knot: {
+            /** Days */
+            days: number;
+            /**
+             * Observed
+             * Format: date
+             */
+            observed: string;
+            /** Rate */
+            rate: number;
+            /** Series */
+            series: string;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+        };
+        /**
+         * MarketStatus
+         * @description The market state at this moment, for the health route (WP-0.7).
+         */
+        MarketStatus: {
+            /** Failures */
+            failures: number;
+            /** Flushes */
+            flushes: number;
+            /** Last Batch At */
+            last_batch_at: string | null;
+            /** Live Since */
+            live_since: string | null;
+            /** Lost */
+            lost: number;
+            /** Period */
+            period: number;
+            /** Values */
+            values: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * RatesStatus
+         * @description What is in use, for the app and the health route (REF-01, SEC-08).
+         */
+        RatesStatus: {
+            /** Downloads */
+            downloads: boolean;
+            /** Failures */
+            failures: number;
+            /** Flat Rate */
+            flat_rate: number;
+            /** Knots */
+            knots: components["schemas"]["Knot"][];
+            /** Last Error */
+            last_error: string | null;
+            /** Next Refresh At */
+            next_refresh_at: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Refreshed At */
+            refreshed_at: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "curve" | "flat";
+        };
+        /**
+         * RestStatus
+         * @description The state of the REST connection, for the status bar and the health route (BRK-09).
+         *
+         *     ``auth`` is one of:
+         *
+         *     - ``none``: no access token yet; the first call fetches one.
+         *     - ``valid``: a token is held with more than the renewal margin (60 s) left.
+         *     - ``due``: the token is inside the margin; the next call renews it first.
+         *     - ``lapsed``: the token has expired while nothing was called; the next call renews it.
+         *       This is normal after a quiet spell, because renewal happens on use.
+         *     - ``renewing``: a renewal is under way.
+         *     - ``refused``: the broker refused the grant, or the grant has more than read scope.
+         *       No call is made until the backend is restarted with a new grant; ``refusal`` says why.
+         */
+        RestStatus: {
+            auth: components["schemas"]["AuthState"];
+            /** Burst */
+            burst: number;
+            /** Held Until */
+            held_until: string | null;
+            /** Last Renewal At */
+            last_renewal_at: string | null;
+            /** Rate */
+            rate: number;
+            /** Rate Limited */
+            rate_limited: number;
+            /** Refusal */
+            refusal: string | null;
+            /** Renewals */
+            renewals: number;
+            /** Renews From */
+            renews_from: string | null;
+            /** Requests Last Minute */
+            requests_last_minute: number;
+            /** Token Expires At */
+            token_expires_at: string | null;
+        };
+        /**
+         * SessionReport
+         * @description The session of this browser.
+         */
+        SessionReport: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** SourceReport */
+        SourceReport: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "live" | "fake" | "replay";
+            /** Mark */
+            mark: string | null;
+            /** Recorded On */
+            recorded_on: string | null;
+        };
+        /**
+         * StoreStatus
+         * @description For the health route (SEC-08).
+         */
+        StoreStatus: {
+            /** Size */
+            size: number;
+            /** Sqlite */
+            sqlite: string;
+            /** Version */
+            version: number;
+        };
+        /** @enum {string} */
+        StreamPhase: "idle" | "connecting" | "connected" | "stalled" | "disconnected" | "closed";
+        /**
+         * StreamStatus
+         * @description The state of the session at this moment, for the status bar and the health route.
+         */
+        StreamStatus: {
+            /** Aggregation Period */
+            aggregation_period: number | null;
+            /** Candle Limit */
+            candle_limit: number;
+            /** Candles */
+            candles: number;
+            /** Connected At */
+            connected_at: string | null;
+            /** Ignored Events */
+            ignored_events: number;
+            /** Last Data At */
+            last_data_at: string | null;
+            last_gap: components["schemas"]["Gap"] | null;
+            /** Limit */
+            limit: number;
+            /** Parse Errors */
+            parse_errors: number;
+            phase: components["schemas"]["StreamPhase"];
+            /** Reason */
+            reason: string | null;
+            /** Reconnects */
+            reconnects: number;
+            /** Since */
+            since: string | null;
+            /** Sink Errors */
+            sink_errors: number;
+            /** Stalled */
+            stalled: boolean;
+            /** Stalls */
+            stalls: number;
+            /** Subscribed */
+            subscribed: number;
+        };
+        /**
+         * SubscriptionsReport
+         * @description The use of the subscriptions (SUB-07), and the faults of the feed.
+         */
+        SubscriptionsReport: {
+            /** Budget */
+            budget: number;
+            /** Candle Budget */
+            candle_budget: number;
+            /** Candles */
+            candles: number;
+            /** Cap Refusals */
+            cap_refusals: number;
+            /** Change Budget */
+            change_budget: number;
+            /** Changes Last Minute */
+            changes_last_minute: number;
+            /** Classes */
+            classes: components["schemas"]["ClassReport"][];
+            /** Consumers */
+            consumers: components["schemas"]["ConsumerReport"][];
+            /** Failures */
+            failures: number;
+            /** Granted */
+            granted: number;
+            /** Lost */
+            lost: number;
+            /** Pending */
+            pending: number;
+            /** Rate Errors */
+            rate_errors: number;
+            /** Resubscribing */
+            resubscribing: boolean;
+            /** Sent */
+            sent: number;
+        };
+        /**
+         * Tier
+         * @enum {string}
+         */
+        Tier: "T1" | "T2" | "T3";
+        /** TierReport */
+        TierReport: {
+            /** Present */
+            present: boolean;
+            /** Reason */
+            reason: string | null;
+            tier: components["schemas"]["Tier"];
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -14,4 +509,197 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+    features: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeaturesReport"];
+                };
+            };
+            /** @description There is no session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Health"];
+                };
+            };
+            /** @description There is no session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionReport"];
+                };
+            };
+            /** @description The password is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The page is not of this backend. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No password has been set. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The request cannot be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description There were too many wrong passwords. Retry-After says how long to wait. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description There is no session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The page is not of this backend. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionReport"];
+                };
+            };
+            /** @description There is no session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+}

@@ -1,0 +1,126 @@
+// The messages of the browser's one connection (API-03 to API-05, API-08; WP-0.7).
+//
+// - The client subscribes to topics. Each subscription has a number, which the client chooses.
+//   The numbers rise and are used once on a connection. Number 0 is the connection itself.
+// - The first message of a subscription is a snapshot, then changes follow. `snapshot` marks a
+//   message that replaces everything the subscription said before it.
+// - After a reconnect the client sends its topics again and gets fresh snapshots. The backend
+//   keeps nothing of a connection that ended.
+// - To change what a subscription asks for, subscribe under a new number and then end the old
+//   one. In that order the backend keeps what both want.
+// - A message on the wire is one of these, whole. Nothing here depends on what carries it.
+//
+// The rules of market.proto hold for numbers, instants and columns.
+
+syntax = "proto3";
+
+package s3t.wire.v1;
+
+import "s3t/wire/v1/market.proto";
+import "s3t/wire/v1/status.proto";
+
+message ClientMessage {
+  oneof body {
+    Subscribe subscribe = 1;
+    Unsubscribe unsubscribe = 2;
+  }
+}
+
+message Subscribe {
+  uint32 id = 1;
+  oneof topic {
+    StatusTopic status = 2;
+    QuotesTopic quotes = 3;
+  }
+}
+
+message Unsubscribe {
+  uint32 id = 1;
+}
+
+// The state of the backend.
+message StatusTopic {}
+
+// The latest values of some instruments. The rows come in this order.
+message QuotesTopic {
+  repeated string symbol = 1;
+}
+
+message ServerMessage {
+  uint32 id = 1;
+  bool snapshot = 2;
+  oneof body {
+    Status status = 3;
+    Quotes quotes = 4;
+    Refused refused = 5;
+    Heartbeat heartbeat = 6;
+    Bye bye = 7;
+  }
+}
+
+message Quotes {
+  // Every row of the subscription in a snapshot, the ones that changed later. A row without any
+  // value has NaN everywhere. Unset: no row changed.
+  QuoteRows rows = 1;
+  // The symbols that get no data, and why. It replaces the notes before it. Unset: they are as
+  // they were.
+  Notes notes = 2;
+}
+
+message Notes {
+  repeated Note note = 1;
+}
+
+enum NoteKind {
+  NOTE_KIND_UNSPECIFIED = 0;
+  // The broker does not know the symbol.
+  NOTE_KIND_UNKNOWN = 1;
+  // The subscription budget does not reach that far (SUB-03).
+  NOTE_KIND_CUT = 2;
+  // The broker could not be asked. It is tried again.
+  NOTE_KIND_UNREACHABLE = 3;
+}
+
+message Note {
+  string symbol = 1;
+  NoteKind kind = 2;
+  // For people.
+  string text = 3;
+}
+
+enum RefusalKind {
+  REFUSAL_KIND_UNSPECIFIED = 0;
+  // The request cannot be read or is out of bounds.
+  REFUSAL_KIND_INVALID = 1;
+  // The topic is not known to this version of the backend.
+  REFUSAL_KIND_UNKNOWN_TOPIC = 2;
+  // The data the topic needs is not there (GEN-04).
+  REFUSAL_KIND_UNAVAILABLE = 3;
+  // The topic failed. The log of the backend has the error.
+  REFUSAL_KIND_FAILED = 4;
+}
+
+// The subscription has ended.
+message Refused {
+  RefusalKind kind = 1;
+  string reason = 2;
+}
+
+// Sent every few seconds, so that silence means a lost connection.
+message Heartbeat {
+  double data_time_us = 1;
+}
+
+enum ByeKind {
+  BYE_KIND_UNSPECIFIED = 0;
+  // The login session ended: logged out, expired, or the password was changed.
+  BYE_KIND_SESSION_ENDED = 1;
+  // The client sent what cannot be read.
+  BYE_KIND_PROTOCOL = 2;
+}
+
+// The backend ends the connection.
+message Bye {
+  ByeKind kind = 1;
+  string reason = 2;
+}

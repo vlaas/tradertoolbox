@@ -78,13 +78,15 @@ class Instruments:
         pending = self._held.get(key)
         if pending is None:
             pending = self._held[key] = asyncio.ensure_future(load())
-        try:
-            # One caller that gives up must not end the call for the others.
-            return await asyncio.shield(pending)
-        finally:
-            failed = pending.done() and (pending.cancelled() or pending.exception() is not None)
-            if failed and self._held.get(key) is pending:
-                del self._held[key]
+            # In a callback, because every caller may have given up before the call fails.
+            pending.add_done_callback(lambda done: self._drop_a_failure(key, done))
+        # One caller that gives up must not end the call for the others.
+        return await asyncio.shield(pending)
+
+    def _drop_a_failure(self, key: _Key, done: asyncio.Future[Any]) -> None:
+        failed = done.cancelled() or done.exception() is not None
+        if failed and self._held.get(key) is done:
+            del self._held[key]
 
 
 def _any_contract(chain: OptionChain, root: str) -> OptionContract | None:

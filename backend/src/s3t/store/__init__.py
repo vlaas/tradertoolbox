@@ -2,8 +2,8 @@
 
 - ``state``: opening the file and the transactions on it.
 - ``migrate``: the numbered migration files in ``migrations/`` and how they are applied.
-- ``backup``: a consistent copy of the file, also while the backend runs.
-- ``settings``: the first table.
+- ``backup``: a consistent copy of the file, also while the backend runs; ``daily``: one a day.
+- ``settings``: the first table. ``login``: the password hash and the sessions (WP-0.7).
 
 Decided 2026-11-25 (owner, WP-0.6 review); requirements, section 3, hold the reasons. Rules for
 every table:

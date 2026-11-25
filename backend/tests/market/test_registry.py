@@ -10,6 +10,7 @@ from s3t.broker.fake.clock import FakeClock
 from s3t.broker.fake.rest import FakeTastytrade
 from s3t.broker.interface import BrokerUnavailable, NotFound
 from s3t.broker.limits import Backoff
+from s3t.broker.tastytrade.broker import Tastytrade
 from s3t.market.registry import Instruments
 
 pytestmark = pytest.mark.anyio
@@ -58,6 +59,34 @@ async def test_an_error_is_not_kept(make_client: MakeClient, fake: FakeTastytrad
     with pytest.raises(BrokerUnavailable):
         await registry.security("SPY")
     assert (await registry.security("SPY")).symbol == "SPY"
+
+
+async def test_an_error_is_not_kept_when_every_caller_gave_up(client: Any) -> None:  # noqa: F811
+    """A view that is closed while its read is under way (WP-0.7). Before, the next one got the
+    error of the read nobody waited for, without a request of its own."""
+    answer, calls = asyncio.Event(), 0
+
+    async def equity(symbol: str) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await answer.wait()  # the fake's own reads never wait, so none can be left early
+            raise BrokerUnavailable("the first read")
+        return await Tastytrade.equity(client, symbol)
+
+    client.equity = equity
+    registry = Instruments(client)
+    left = asyncio.create_task(registry.security("SPY"))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    left.cancel()
+    await asyncio.gather(left, return_exceptions=True)
+    assert left.cancelled() and repr(registry) == "Instruments(1 held)"  # still under way
+    answer.set()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert repr(registry) == "Instruments(0 held)"
+    assert (await registry.security("SPY")).symbol == "SPY" and calls == 2
 
 
 async def test_what_was_read_is_forgotten_on_the_next_day(

@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from s3t.instants import to_micros
-from s3t.store.migrate import Migration, StoreError
+from s3t.store.migrate import Migration, StoreError, load_migrations
 from s3t.store.settings import all_settings, delete_setting, get_setting, set_setting
 from s3t.store.state import StateStore
 
@@ -42,7 +42,8 @@ async def test_the_file_is_made_private_and_in_wal_mode(path: Path) -> None:
     for name in files:
         assert stat.S_IMODE((path.parent / name).stat().st_mode) == 0o600, name
     status = await store.status()
-    assert status.version == 1 and status.size > 0 and status.sqlite == sqlite3.sqlite_version
+    assert status.version == len(load_migrations()) and status.size > 0
+    assert status.sqlite == sqlite3.sqlite_version
     await store.aclose()
     assert {f.name for f in path.parent.iterdir()} == {"state.sqlite"}  # nothing else is needed
 

@@ -2,7 +2,8 @@
 code and configuration (GEN-08), the subscription manager as the only caller of subscribe
 and unsubscribe (SUB-02), the keys of the broker's instrument documents inside the broker
 module only (GEN-09), one module that opens SQLite files (STO-01) and one that imports the
-calendar library.
+calendar library, one implementation of the numerics (GEN-05), services that do not know who calls
+them (API-01) and messages that do not know what carries them (API-08).
 
 The files examined are those git would commit: tracked files plus untracked files that are
 not ignored. Documents are covered by review, not by this scan.
@@ -140,6 +141,8 @@ IMPORTERS = {
     "sqlite3": ("backend/src/s3t/store/", "the application's state is in one file (STO-01)"),
     "exchange_calendars": ("backend/src/s3t/refdata/exchange.py", "one reader of the library"),
     "pandas": ("backend/src/s3t/refdata/exchange.py", "it comes with exchange_calendars"),
+    "argon2": ("backend/src/s3t/system/", "one place hashes the password (SEC-01)"),
+    "uvicorn": ("backend/src/s3t/api/server.py", "one place starts a server (SEC-03)"),
 }
 
 
@@ -162,4 +165,71 @@ def test_the_modules_with_one_importer() -> None:
                 seen[module].add(f)
     for module, (allowed, reason) in IMPORTERS.items():
         assert all(f.startswith(allowed) for f in seen[module]), f"{module}: {reason}"
-    assert seen["sqlite3"] and seen["exchange_calendars"]
+    assert all(seen[module] for module in IMPORTERS if module != "pandas")
+
+
+SRC = REPO / "backend" / "src" / "s3t"
+WEB = {"fastapi", "starlette", "uvicorn", "websockets", "httpx"}
+
+
+def _modules(path: Path) -> set[str]:
+    """The full names of everything a file imports, with the names taken from a module."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            found |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            found |= {node.module, *(f"{node.module}.{alias.name}" for alias in node.names)}
+    return found
+
+
+def _inside(modules: set[str], package: str) -> set[str]:
+    return {m for m in modules if m == package or m.startswith(f"{package}.")}
+
+
+def test_the_messages_do_not_know_what_carries_them() -> None:
+    """API-08: one module is the carrier, and another one starts the server. The messages, the
+    topics and what they are made of know neither."""
+    for name in ("channel", "topics", "status", "rows"):
+        path = SRC / "api" / f"{name}.py"
+        assert not _imports(path) & WEB, name
+        for carrier in ("ws", "server", "app", "guard", "routes", "frontend"):
+            assert not _inside(_modules(path), f"s3t.api.{carrier}"), f"{name}: {carrier}"
+    websocket = {"starlette.websockets", "fastapi.WebSocket"}
+    users = {p.name for p in (SRC / "api").glob("*.py") if _modules(p) & websocket}
+    assert users == {"ws.py"}
+
+
+def test_the_services_do_not_know_who_calls_them() -> None:
+    """API-01: a route and an MCP tool call the same function, so a service knows neither."""
+    for path in SRC.rglob("*.py"):
+        package = path.relative_to(SRC).parts[0]
+        if package in ("api", "mcp", "__main__.py", "wire"):
+            continue
+        assert not _inside(_modules(path), "s3t.api"), path.name
+        assert not _inside(_modules(path), "s3t.mcp"), path.name
+        assert not _imports(path) & {"fastapi", "starlette", "uvicorn"}, path.name
+
+
+# What computes a price, a volatility, a Greek or a forward belongs to these (GEN-05). The synthetic
+# market prices its options with the same functions.
+NUMERICS = {"scipy", "statistics"}
+NUMERIC_CALLS = {"erf", "erfc", "NormalDist", "ndtr", "norm"}
+
+
+def test_one_implementation_of_the_numerics() -> None:
+    """GEN-05, the structure: the pricing core is the only one that has the tools for a second one,
+    and nothing at the edge of the process computes."""
+    for path in SRC.rglob("*.py"):
+        package = path.relative_to(SRC).parts[0]
+        if package in ("pricing", "wire"):
+            continue
+        assert not _imports(path) & NUMERICS, path.name
+        names = {
+            n.attr for n in ast.walk(ast.parse(path.read_text())) if isinstance(n, ast.Attribute)
+        }
+        taken = {m.rsplit(".", 1)[-1] for m in _modules(path)}
+        assert not (names | taken) & NUMERIC_CALLS, path.name
+        if package in ("api", "system", "mcp"):
+            assert "numpy" not in _imports(path), path.name
+            assert not _inside(_modules(path), "s3t.pricing"), path.name

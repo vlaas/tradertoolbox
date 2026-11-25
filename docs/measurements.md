@@ -61,6 +61,18 @@ other bytes: 5,241,114 for the lines (5,232,559 before) and 529,325 as built (52
 ratios to one decimal are the same. The smaller run gives the same bytes as before (both run
 again 2026-11-25).
 
+WP-0.7 has no performance requirement and took no timings. SEC-06 (M) is recorded here for macOS:
+the backend ran as an ordinary process of an ordinary user (not root, no container) on macOS 15.7.4,
+2026-11-25, 03:28 to 03:29 local time, on the fake broker. It listened on the one configured address
+(`lsof`), answered the login, the health route and the page, refused a second instance, had no
+connection to another machine after a minute, and ended on SIGTERM with exit status 0 and its state
+file closed. The resident memory after that minute was 200 MB (`ps`): one look, not a measurement.
+Load averages (1, 5 and 15 minutes): 18.13, 19.13 and 21.46 before, 16.85, 18.60 and 21.08 after, so
+nothing here is a timing. **Linux was not run.** The same run is a test
+(`tests/api/test_server.py`), with a WebSocket open at the end. The topic tests run on a virtual clock
+and measure nothing. The browser suite (`make e2e`) passed in Chromium, Firefox and WebKit the same
+night under the same load.
+
 WP-0.4 has no performance requirement. The three live rows above are single observations
 from the live check, not a performance run. The stream and feed tests run on a virtual clock
 and measure nothing. The throughput of the reader is measured live at WP-0.9 (plan,

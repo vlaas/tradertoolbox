@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "Self-3-Trader backend: broker connection, market state, numerics and the API"
 requires-python = "==3.13.*"
 dependencies = [
+    "argon2-cffi==25.1.0",
     "backports-zstd==1.8.0",
     "exchange-calendars==4.13.2",
     "fastapi==0.162.2",
@@ -12,6 +13,7 @@ dependencies = [
     "protobuf==7.36.2",
     "pydantic==2.14.3",
     "scipy==1.18.1",
+    "uvicorn==0.54.0",
     "websockets==17.4",
 ]
 
@@ -67,9 +69,12 @@ select = [
 [tool.pyright]
 include = ["src", "tests", "tools"]
 exclude = ["src/s3t/wire", "**/__pycache__", ".venv"]
-extraPaths = ["tools", "tests"]
+extraPaths = ["src", "tools", "tests"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
+# Proposed 2026-11-25 (WP-0.7): the two packages at the edge of the process. Strict mode for all was
+# measured at WP-0.1 and left out for the ported numerics (requirements, section 3).
+strict = ["src/s3t/api", "src/s3t/system", "src/s3t/__main__.py"]
 venvPath = "."
 venv = ".venv"
 

@@ -14,8 +14,9 @@
 listen_address = "127.0.0.1"
 port = 8740
 
-# Optional. The host name the browser uses to reach the backend. It becomes the expected
-# origin of the WebSocket (SEC-02, WP-0.7). Without it, only the listen address is accepted.
+# Optional. The host name the browser uses to reach the backend. The backend accepts the pages of
+# this name and of the listen address, and of no other origin (SEC-02). Without it, only the listen
+# address is accepted: to open the app as "localhost", name that here.
 # host_name = "trader.example.internal"
 
 [paths]
@@ -32,14 +33,28 @@ state_file = "../data/state.sqlite"
 
 # Optional. Where copies of the state store go (STO-07): those of tools/state_backup.py and those
 # made before a migration. Without it: the directory "backups" beside the state store. Nothing
-# deletes old copies.
+# deletes old copies, except the daily ones ([store] below).
 # backup_dir = "../data/backups"
 
 # Optional. The read-only T3 store (STO-04). Features that need it are hidden or marked
 # unavailable when it is absent (GEN-04).
 # t3_root = "~/stores/t3"
 
+# Optional. The built frontend that the backend serves (SEC-07). Without it: frontend/dist of the
+# repository the backend runs from.
+# frontend_dir = "../frontend/dist"
+
 [broker]
+# Optional. The broker the backend runs on (GEN-11): "live", "fake" (the synthetic market) or
+# "replay" (a local recording). On the fake and the replay the app marks every screen.
+# source = "live"
+# The recording to replay, below data_dir/recordings. Needed for source = "replay" only.
+# recording = "NAME"
+# The instant at which the synthetic market's clock starts, for source = "fake" only. Without it the
+# clock is the wall clock, and the synthetic market moves in the regular session only.
+# fake_start = 2026-11-20T15:00:00Z
+# What the app shows for the account. Never the account number (GEN-03).
+# account_nickname = "main"
 # Optional. The REST client's request limit (BRK-04): an average rate in requests per second
 # and the burst allowed after a quiet spell. The broker's real limits are measured at WP-0.9.
 # rest_rate = 2.0
@@ -83,3 +98,13 @@ state_file = "../data/state.sqlite"
 # max_age_days = 10
 # The fallback: one continuously compounded rate, as a fraction (0.04 is 4%).
 # flat_rate = 0.04
+
+[login]
+# Optional. Days from a login to the end of its session (SEC-01). The password is set with
+# tools/set_password.py.
+# session_days = 30
+
+[store]
+# Optional. Daily copies of the state store that are kept in backup_dir; 0 makes none. Only these
+# copies are ever deleted, the oldest first.
+# daily_copies = 14

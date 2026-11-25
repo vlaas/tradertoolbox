@@ -158,6 +158,7 @@ class DxLinkSession:
         self._closed = False
         self._sessions = 0
         self._stalls = 0
+        self._stalled = False
         self._stall_wait = stall_after
         self._expected_since: float | None = None
         self._last_message = clock()
@@ -255,6 +256,7 @@ class DxLinkSession:
             connected_at=self._connected_at,
             last_data_at=self._last_data_at,
             reconnects=max(self._sessions - 1, 0),
+            stalled=self._stalled,
             stalls=self._stalls,
             last_gap=self._last_gap,
             subscribed=self._subscribed,
@@ -262,6 +264,9 @@ class DxLinkSession:
             limit=self._limit,
             candle_limit=self._candle_limit,
             aggregation_period=self._granted_period,
+            parse_errors=self.parse_errors,
+            sink_errors=self.sink_errors,
+            ignored_events=self.ignored_events,
         )
 
     async def aclose(self) -> None:
@@ -445,6 +450,7 @@ class DxLinkSession:
             quiet = now - max(self._last_data, self._first_sub, self._expected_since)
             if quiet > self._stall_wait:
                 self._stalls += 1
+                self._stalled = True
                 reason = f"no data for {quiet:.0f} s"
                 self._stall_wait = min(self._stall_wait * 2.0, MAX_STALL_WAIT_S)
                 self._set_phase("stalled", reason)
@@ -583,6 +589,7 @@ class DxLinkSession:
         if delivered:
             now = self._clock()
             self._last_data, self._last_data_at = now, received_at
+            self._stalled = False
             if self._phase == "connected" and now - self._last_sub >= LIVELY_AFTER_S:
                 self._stall_wait = self._stall_after
 

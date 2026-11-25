@@ -117,7 +117,7 @@ def load_broker_secrets(path: Path) -> BrokerSecrets:
 
 _SECRET_KEYS = (
     "access_token|access-token|refresh_token|refresh-token|client_secret|client-secret"
-    "|id_token|id-token|session-token|remember-token|token"
+    "|id_token|id-token|session-token|remember-token|token|password"
 )
 _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # JSON members and form or query fields that carry a secret.

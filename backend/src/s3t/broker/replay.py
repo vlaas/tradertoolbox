@@ -137,6 +137,8 @@ class ReplayStream:
         self._last_data_at: datetime | None = None
         self._last_gap: Gap | None = None
         self._reconnects = -1
+        self._stalls = 0
+        self._stalled = False
         self._task: asyncio.Task[None] | None = None
         self.emitted = 0
 
@@ -155,6 +157,9 @@ class ReplayStream:
             self._subs.clear()  # a new session holds nothing
         elif phase == "connected":
             self._reconnects += 1
+        elif phase == "stalled":
+            self._stalls += 1
+            self._stalled = True
         self._emit(StreamState(self._next(), phase, at, reason))
 
     def start(self) -> None:
@@ -194,13 +199,17 @@ class ReplayStream:
             connected_at=self._broker.started_at,
             last_data_at=self._last_data_at,
             reconnects=max(self._reconnects, 0),
-            stalls=0,
+            stalled=self._stalled,
+            stalls=self._stalls,
             last_gap=self._last_gap,
             subscribed=len(self._subs),
             candles=sum(1 for key in self._subs if key[0] is EventType.CANDLE),
             limit=0,
             candle_limit=0,
             aggregation_period=None,
+            parse_errors=0,
+            sink_errors=0,
+            ignored_events=0,
         )
 
     async def aclose(self) -> None:
@@ -272,7 +281,7 @@ class ReplayStream:
 
     def _batch_out(self, event: EventType, rows: list[tuple[Any, ...]], at: datetime) -> None:
         columns = tuple(list(column) for column in zip(*rows, strict=True))
-        self._last_data_at = at
+        self._last_data_at, self._stalled = at, False
         self._last_batch_seq = self._next()
         self._emit(EventBatch(self._last_batch_seq, event, at, columns))
 

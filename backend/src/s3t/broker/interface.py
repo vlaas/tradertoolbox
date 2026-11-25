@@ -384,6 +384,9 @@ class StreamStatus:
     last_data_at: datetime | None
     reconnects: int
     """Sessions opened after the first one."""
+    stalled: bool
+    """The last session was given up for its silence (BRK-03), and no data has come since. The
+    phase ``stalled`` itself lasts no time: the session is dropped at once."""
     stalls: int
     last_gap: Gap | None
     subscribed: int
@@ -396,6 +399,12 @@ class StreamStatus:
     candle_limit: int
     aggregation_period: float | None
     """Seconds, as the server granted it."""
+    parse_errors: int
+    """Messages of the broker that could not be read. Not zero means a fault."""
+    sink_errors: int
+    """Items the sink raised for. Not zero means a fault."""
+    ignored_events: int
+    """Candle events left out for a missing time or an unknown symbol form."""
 
 
 class Stream(Protocol):

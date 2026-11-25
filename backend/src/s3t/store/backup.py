@@ -5,9 +5,9 @@ beside it, and a checkpoint can change the file while it is copied. SQLite's onl
 one consistent state in one step. Writers are not held up by it.
 
 The copy is one file that needs no other. It is checked before it gets its name, so a file with
-that name is whole. Nothing is overwritten, and nothing is deleted. To use a copy, stop the
-backend and put the copy in the place of the state file, and remove the state file's ``-wal`` and
-``-shm`` files.
+that name is whole. Nothing is overwritten. Nothing is deleted here; the daily copies
+(``s3t.store.daily``) are the only ones that ever are. To use a copy, stop the backend and put the
+copy in the place of the state file, and remove the state file's ``-wal`` and ``-shm`` files.
 """
 
 import os

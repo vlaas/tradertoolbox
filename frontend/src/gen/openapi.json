@@ -1,8 +1,1251 @@
 {
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "description": "The answer of a route that refuses or fails.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiError",
+        "type": "object"
+      },
+      "AuthState": {
+        "enum": [
+          "none",
+          "valid",
+          "due",
+          "lapsed",
+          "renewing",
+          "refused"
+        ],
+        "type": "string"
+      },
+      "CalendarStatus": {
+        "description": "For the health route (SEC-08).",
+        "properties": {
+          "closures": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Closures",
+            "type": "array"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "source",
+          "closures"
+        ],
+        "title": "CalendarStatus",
+        "type": "object"
+      },
+      "ClassName": {
+        "enum": [
+          "recorder",
+          "positions",
+          "views",
+          "background"
+        ],
+        "type": "string"
+      },
+      "ClassReport": {
+        "properties": {
+          "counted": {
+            "title": "Counted",
+            "type": "integer"
+          },
+          "demand_class": {
+            "$ref": "#/components/schemas/ClassName"
+          },
+          "granted": {
+            "title": "Granted",
+            "type": "integer"
+          },
+          "wanted": {
+            "title": "Wanted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "demand_class",
+          "wanted",
+          "granted",
+          "counted"
+        ],
+        "title": "ClassReport",
+        "type": "object"
+      },
+      "ConsumerReport": {
+        "properties": {
+          "demand_class": {
+            "$ref": "#/components/schemas/ClassName"
+          },
+          "granted": {
+            "title": "Granted",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "wanted": {
+            "title": "Wanted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "demand_class",
+          "wanted",
+          "granted"
+        ],
+        "title": "ConsumerReport",
+        "type": "object"
+      },
+      "CopiesStatus": {
+        "description": "For the health route (SEC-08).",
+        "properties": {
+          "failures": {
+            "title": "Failures",
+            "type": "integer"
+          },
+          "keep": {
+            "title": "Keep",
+            "type": "integer"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "required": [
+          "keep",
+          "last_at",
+          "failures",
+          "last_error"
+        ],
+        "title": "CopiesStatus",
+        "type": "object"
+      },
+      "EventType": {
+        "description": "The stream events the application asks for. The values are the application's own\nnames; a broker module maps them to its wire names (GEN-09).",
+        "enum": [
+          "quote",
+          "trade",
+          "summary",
+          "greeks",
+          "profile",
+          "candle"
+        ],
+        "title": "EventType",
+        "type": "string"
+      },
+      "FeatureReport": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/Tier"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "show": {
+            "enum": [
+              "available",
+              "unavailable",
+              "hidden"
+            ],
+            "title": "Show",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "needs",
+          "available",
+          "reason",
+          "show"
+        ],
+        "title": "FeatureReport",
+        "type": "object"
+      },
+      "FeaturesReport": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureReport"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/TierReport"
+            },
+            "title": "Tiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tiers",
+          "features"
+        ],
+        "title": "FeaturesReport",
+        "type": "object"
+      },
+      "Gap": {
+        "description": "Data was lost between two sessions of the stream (BRK-02).\n\nEmitted when a session is open again after a loss, before the phase ``connected`` and\nbefore any data of the new session. The new session holds no subscription: the data\ncomes back as the subscription manager sends the granted set again.",
+        "properties": {
+          "last_seq": {
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "last_seq",
+          "since",
+          "until",
+          "reason"
+        ],
+        "title": "Gap",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "calendar": {
+            "$ref": "#/components/schemas/CalendarStatus"
+          },
+          "copies": {
+            "$ref": "#/components/schemas/CopiesStatus"
+          },
+          "data_time": {
+            "format": "date-time",
+            "title": "Data Time",
+            "type": "string"
+          },
+          "market": {
+            "$ref": "#/components/schemas/MarketStatus"
+          },
+          "rates": {
+            "$ref": "#/components/schemas/RatesStatus"
+          },
+          "rest": {
+            "$ref": "#/components/schemas/RestStatus"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceReport"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "store": {
+            "$ref": "#/components/schemas/StoreStatus"
+          },
+          "stream": {
+            "$ref": "#/components/schemas/StreamStatus"
+          },
+          "subscriptions": {
+            "$ref": "#/components/schemas/SubscriptionsReport"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "started_at",
+          "data_time",
+          "source",
+          "account",
+          "rest",
+          "stream",
+          "subscriptions",
+          "market",
+          "store",
+          "copies",
+          "calendar",
+          "rates"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "Knot": {
+        "description": "One point of the curve and where it comes from.",
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "observed": {
+            "format": "date",
+            "title": "Observed",
+            "type": "string"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "series": {
+            "title": "Series",
+            "type": "string"
+          }
+        },
+        "required": [
+          "series",
+          "days",
+          "observed",
+          "rate"
+        ],
+        "title": "Knot",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "format": "password",
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "MarketStatus": {
+        "description": "The market state at this moment, for the health route (WP-0.7).",
+        "properties": {
+          "failures": {
+            "title": "Failures",
+            "type": "integer"
+          },
+          "flushes": {
+            "title": "Flushes",
+            "type": "integer"
+          },
+          "last_batch_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Batch At"
+          },
+          "live_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Since"
+          },
+          "lost": {
+            "title": "Lost",
+            "type": "integer"
+          },
+          "period": {
+            "title": "Period",
+            "type": "number"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/EventType"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values",
+          "period",
+          "live_since",
+          "last_batch_at",
+          "flushes",
+          "lost",
+          "failures"
+        ],
+        "title": "MarketStatus",
+        "type": "object"
+      },
+      "RatesStatus": {
+        "description": "What is in use, for the app and the health route (REF-01, SEC-08).",
+        "properties": {
+          "downloads": {
+            "title": "Downloads",
+            "type": "boolean"
+          },
+          "failures": {
+            "title": "Failures",
+            "type": "integer"
+          },
+          "flat_rate": {
+            "title": "Flat Rate",
+            "type": "number"
+          },
+          "knots": {
+            "items": {
+              "$ref": "#/components/schemas/Knot"
+            },
+            "title": "Knots",
+            "type": "array"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "next_refresh_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Refresh At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "refreshed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refreshed At"
+          },
+          "source": {
+            "enum": [
+              "curve",
+              "flat"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "reason",
+          "flat_rate",
+          "knots",
+          "downloads",
+          "refreshed_at",
+          "failures",
+          "last_error",
+          "next_refresh_at"
+        ],
+        "title": "RatesStatus",
+        "type": "object"
+      },
+      "RestStatus": {
+        "description": "The state of the REST connection, for the status bar and the health route (BRK-09).\n\n``auth`` is one of:\n\n- ``none``: no access token yet; the first call fetches one.\n- ``valid``: a token is held with more than the renewal margin (60 s) left.\n- ``due``: the token is inside the margin; the next call renews it first.\n- ``lapsed``: the token has expired while nothing was called; the next call renews it.\n  This is normal after a quiet spell, because renewal happens on use.\n- ``renewing``: a renewal is under way.\n- ``refused``: the broker refused the grant, or the grant has more than read scope.\n  No call is made until the backend is restarted with a new grant; ``refusal`` says why.",
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/AuthState"
+          },
+          "burst": {
+            "title": "Burst",
+            "type": "integer"
+          },
+          "held_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held Until"
+          },
+          "last_renewal_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Renewal At"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "rate_limited": {
+            "title": "Rate Limited",
+            "type": "integer"
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal"
+          },
+          "renewals": {
+            "title": "Renewals",
+            "type": "integer"
+          },
+          "renews_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renews From"
+          },
+          "requests_last_minute": {
+            "title": "Requests Last Minute",
+            "type": "integer"
+          },
+          "token_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expires At"
+          }
+        },
+        "required": [
+          "auth",
+          "token_expires_at",
+          "renews_from",
+          "last_renewal_at",
+          "renewals",
+          "refusal",
+          "rate",
+          "burst",
+          "requests_last_minute",
+          "held_until",
+          "rate_limited"
+        ],
+        "title": "RestStatus",
+        "type": "object"
+      },
+      "SessionReport": {
+        "description": "The session of this browser.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "expires_at"
+        ],
+        "title": "SessionReport",
+        "type": "object"
+      },
+      "SourceReport": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "live",
+              "fake",
+              "replay"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark"
+          },
+          "recorded_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded On"
+          }
+        },
+        "required": [
+          "kind",
+          "mark",
+          "recorded_on"
+        ],
+        "title": "SourceReport",
+        "type": "object"
+      },
+      "StoreStatus": {
+        "description": "For the health route (SEC-08).",
+        "properties": {
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "sqlite": {
+            "title": "Sqlite",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "size",
+          "sqlite"
+        ],
+        "title": "StoreStatus",
+        "type": "object"
+      },
+      "StreamPhase": {
+        "enum": [
+          "idle",
+          "connecting",
+          "connected",
+          "stalled",
+          "disconnected",
+          "closed"
+        ],
+        "type": "string"
+      },
+      "StreamStatus": {
+        "description": "The state of the session at this moment, for the status bar and the health route.",
+        "properties": {
+          "aggregation_period": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aggregation Period"
+          },
+          "candle_limit": {
+            "title": "Candle Limit",
+            "type": "integer"
+          },
+          "candles": {
+            "title": "Candles",
+            "type": "integer"
+          },
+          "connected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          },
+          "ignored_events": {
+            "title": "Ignored Events",
+            "type": "integer"
+          },
+          "last_data_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Data At"
+          },
+          "last_gap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gap"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "parse_errors": {
+            "title": "Parse Errors",
+            "type": "integer"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/StreamPhase"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reconnects": {
+            "title": "Reconnects",
+            "type": "integer"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "sink_errors": {
+            "title": "Sink Errors",
+            "type": "integer"
+          },
+          "stalled": {
+            "title": "Stalled",
+            "type": "boolean"
+          },
+          "stalls": {
+            "title": "Stalls",
+            "type": "integer"
+          },
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase",
+          "since",
+          "reason",
+          "connected_at",
+          "last_data_at",
+          "reconnects",
+          "stalled",
+          "stalls",
+          "last_gap",
+          "subscribed",
+          "candles",
+          "limit",
+          "candle_limit",
+          "aggregation_period",
+          "parse_errors",
+          "sink_errors",
+          "ignored_events"
+        ],
+        "title": "StreamStatus",
+        "type": "object"
+      },
+      "SubscriptionsReport": {
+        "description": "The use of the subscriptions (SUB-07), and the faults of the feed.",
+        "properties": {
+          "budget": {
+            "title": "Budget",
+            "type": "integer"
+          },
+          "candle_budget": {
+            "title": "Candle Budget",
+            "type": "integer"
+          },
+          "candles": {
+            "title": "Candles",
+            "type": "integer"
+          },
+          "cap_refusals": {
+            "title": "Cap Refusals",
+            "type": "integer"
+          },
+          "change_budget": {
+            "title": "Change Budget",
+            "type": "integer"
+          },
+          "changes_last_minute": {
+            "title": "Changes Last Minute",
+            "type": "integer"
+          },
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/ClassReport"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "consumers": {
+            "items": {
+              "$ref": "#/components/schemas/ConsumerReport"
+            },
+            "title": "Consumers",
+            "type": "array"
+          },
+          "failures": {
+            "title": "Failures",
+            "type": "integer"
+          },
+          "granted": {
+            "title": "Granted",
+            "type": "integer"
+          },
+          "lost": {
+            "title": "Lost",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "rate_errors": {
+            "title": "Rate Errors",
+            "type": "integer"
+          },
+          "resubscribing": {
+            "title": "Resubscribing",
+            "type": "boolean"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resubscribing",
+          "granted",
+          "budget",
+          "candles",
+          "candle_budget",
+          "sent",
+          "pending",
+          "changes_last_minute",
+          "change_budget",
+          "rate_errors",
+          "lost",
+          "classes",
+          "consumers",
+          "failures",
+          "cap_refusals"
+        ],
+        "title": "SubscriptionsReport",
+        "type": "object"
+      },
+      "Tier": {
+        "enum": [
+          "T1",
+          "T2",
+          "T3"
+        ],
+        "title": "Tier",
+        "type": "string"
+      },
+      "TierReport": {
+        "properties": {
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/Tier"
+          }
+        },
+        "required": [
+          "tier",
+          "present",
+          "reason"
+        ],
+        "title": "TierReport",
+        "type": "object"
+      }
+    }
+  },
   "info": {
     "title": "Self-3-Trader",
     "version": "0.0.1"
   },
   "openapi": "3.1.0",
-  "paths": {}
+  "paths": {
+    "/api/features": {
+      "get": {
+        "description": "The data tiers that are there, and the features that need them.",
+        "operationId": "features",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturesReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "There is no session."
+          }
+        },
+        "summary": "Get Features"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "The state of everything.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "There is no session."
+          }
+        },
+        "summary": "Get Health"
+      }
+    },
+    "/api/login": {
+      "post": {
+        "description": "Open a session. The answer sets its cookie.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The password is wrong."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The page is not of this backend."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No password has been set."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The request cannot be read."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "There were too many wrong passwords. Retry-After says how long to wait."
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "description": "End the session, and the WebSockets that were opened with it.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "There is no session."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The page is not of this backend."
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/api/session": {
+      "get": {
+        "description": "The session of this browser.",
+        "operationId": "session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "There is no session."
+          }
+        },
+        "summary": "Session"
+      }
+    }
+  }
 }

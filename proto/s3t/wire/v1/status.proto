@@ -1,0 +1,137 @@
+// The state of the backend for the status bar (BRK-06, BRK-09, SUB-07, GEN-11; WP-0.7).
+//
+// The rules of market.proto hold. A message holds the whole state: a change replaces it. A text
+// that is missing is empty.
+
+syntax = "proto3";
+
+package s3t.wire.v1;
+
+message Status {
+  Source source = 1;
+  // The instant the broker's data belongs to: the position in the recording on a replay.
+  double data_time_us = 2;
+  // The nickname of the account, never its number (GEN-03). Empty when none is configured.
+  string account = 3;
+  StreamState stream = 4;
+  Subscriptions subscriptions = 5;
+  RestState rest = 6;
+  // A quote or a trade is live when it was received at this instant or later (UI-05). Unset:
+  // nothing is live.
+  optional double live_since_us = 7;
+}
+
+enum SourceKind {
+  SOURCE_KIND_UNSPECIFIED = 0;
+  SOURCE_KIND_LIVE = 1;
+  SOURCE_KIND_FAKE = 2;
+  SOURCE_KIND_REPLAY = 3;
+}
+
+message Source {
+  SourceKind kind = 1;
+  // The permanent mark for every screen. Empty on the live broker.
+  string mark = 2;
+  // Replay only: the New York date of the recording, YYYY-MM-DD.
+  string recorded_on = 3;
+}
+
+enum StreamPhase {
+  STREAM_PHASE_UNSPECIFIED = 0;
+  STREAM_PHASE_IDLE = 1;
+  STREAM_PHASE_CONNECTING = 2;
+  STREAM_PHASE_CONNECTED = 3;
+  STREAM_PHASE_STALLED = 4;
+  STREAM_PHASE_DISCONNECTED = 5;
+  STREAM_PHASE_CLOSED = 6;
+}
+
+message StreamState {
+  StreamPhase phase = 1;
+  optional double since_us = 2;
+  // Why the last session ended or stalled.
+  string reason = 3;
+  optional double connected_at_us = 4;
+  optional double last_data_at_us = 5;
+  uint32 reconnects = 6;
+  uint32 stalls = 7;
+  // A session is open, and the granted set is still being sent to it.
+  bool resubscribing = 8;
+  // Unset when there was none.
+  Gap last_gap = 9;
+  // Seconds, as the server granted it.
+  optional double aggregation_period = 10;
+  // The last session was given up for its silence, and no data has come since. The phase of that
+  // name lasts no time.
+  bool stalled = 11;
+}
+
+// Data was lost between two sessions of the stream.
+message Gap {
+  double since_us = 1;
+  double until_us = 2;
+  string reason = 3;
+}
+
+enum DemandClass {
+  DEMAND_CLASS_UNSPECIFIED = 0;
+  DEMAND_CLASS_RECORDER = 1;
+  DEMAND_CLASS_POSITIONS = 2;
+  DEMAND_CLASS_VIEWS = 3;
+  DEMAND_CLASS_BACKGROUND = 4;
+}
+
+message ClassUse {
+  DemandClass demand_class = 1;
+  uint32 wanted = 2;
+  // To this class or to a higher one.
+  uint32 granted = 3;
+  // Counts against the budget for this class. The counts of all classes add up to the total.
+  uint32 counted = 4;
+}
+
+message Subscriptions {
+  uint32 granted = 1;
+  uint32 budget = 2;
+  uint32 candles = 3;
+  uint32 candle_budget = 4;
+  // Sent on the current connection and still held there.
+  uint32 sent = 5;
+  // Changes not sent yet.
+  uint32 pending = 6;
+  uint32 changes_last_minute = 7;
+  uint32 change_budget = 8;
+  uint32 rate_errors = 9;
+  // Batches that did not reach a reader in the backend.
+  uint32 lost = 10;
+  repeated ClassUse classes = 11;
+}
+
+enum AuthState {
+  AUTH_STATE_UNSPECIFIED = 0;
+  AUTH_STATE_NONE = 1;
+  AUTH_STATE_VALID = 2;
+  AUTH_STATE_DUE = 3;
+  AUTH_STATE_LAPSED = 4;
+  AUTH_STATE_RENEWING = 5;
+  AUTH_STATE_REFUSED = 6;
+}
+
+message RestState {
+  AuthState auth = 1;
+  optional double token_expires_at_us = 2;
+  // From this instant the next call renews the token first.
+  optional double renews_from_us = 3;
+  optional double last_renewal_at_us = 4;
+  uint32 renewals = 5;
+  // Why the broker refused the grant.
+  string refusal = 6;
+  // The configured limit: requests per second on average, and requests at once.
+  double rate = 7;
+  uint32 burst = 8;
+  uint32 requests_last_minute = 9;
+  // While a 429 holds every request: the end of the hold.
+  optional double held_until_us = 10;
+  // 429 answers so far.
+  uint32 rate_limited = 11;
+}

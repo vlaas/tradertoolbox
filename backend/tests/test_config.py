@@ -1,7 +1,7 @@
 """Configuration loading (GEN-08)."""
 
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -64,8 +64,12 @@ def test_the_examples_commented_keys_are_the_defaults(tmp_path: Path) -> None:
     key that the example shows with its default has that default."""
     text = re.sub(r"^# (\w+ = )", r"\1", EXAMPLE.read_text(), flags=re.MULTILINE)
     shown, plain = load_config(write(tmp_path, text)), load_config(EXAMPLE)
-    for section in ("broker", "stream", "subscriptions", "rates"):
+    for section in ("stream", "subscriptions", "rates", "login", "store"):
         assert getattr(shown, section) == getattr(plain, section), section
+    # These three have no default to show.
+    own = {"recording", "fake_start", "account_nickname"}
+    assert shown.broker.model_dump(exclude=own) == plain.broker.model_dump(exclude=own)
+    assert (shown.broker.recording, shown.broker.account_nickname) == ("NAME", "main")
     assert shown.calendar.closures == [date(2025, 1, 9)] and plain.calendar.closures == []
     assert shown.paths.backups.name == plain.paths.backups.name == "backups"
 
@@ -243,4 +247,66 @@ def test_calendar_and_rates_sections(tmp_path: Path) -> None:
 )
 def test_calendar_and_rates_sections_refused(tmp_path: Path, lines: str) -> None:
     with pytest.raises(ConfigError, match=r"calendar|rates"):
+        load_config(write(tmp_path, VALID.format(address="127.0.0.1") + lines + "\n"))
+
+
+def test_the_choice_of_broker(tmp_path: Path) -> None:
+    base = VALID.format(address="127.0.0.1")
+    assert load_config(write(tmp_path, base)).broker.source == "live"  # by default (GEN-11)
+    more = '[broker]\nsource = "replay"\nrecording = "spy-2026-11-24"\n'
+    broker = load_config(write(tmp_path, base + more)).broker
+    assert (broker.source, broker.recording) == ("replay", "spy-2026-11-24")
+    more = '[broker]\nsource = "fake"\nfake_start = 2026-11-20T10:00:00-05:00\n'
+    broker = load_config(write(tmp_path, base + more + 'recording = "kept"\n')).broker
+    assert broker.fake_start == datetime(2026, 11, 20, 15, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        'source = "replay"',  # which recording?
+        'source = "paper"',
+        'recording = "../elsewhere"',
+        'recording = ""',
+        "fake_start = 2026-11-20T15:00:00",  # an instant states its offset (GEN-10)
+        'account_nickname = " "',
+    ],
+)
+def test_the_choice_of_broker_refused(tmp_path: Path, lines: str) -> None:
+    text = VALID.format(address="127.0.0.1") + f"[broker]\n{lines}\n"
+    with pytest.raises(ConfigError, match="broker"):
+        load_config(write(tmp_path, text))
+
+
+def test_the_nickname_is_not_the_account_number(tmp_path: Path) -> None:
+    """GEN-03, against the likely mistake. The error does not repeat the value."""
+    text = VALID.format(address="127.0.0.1") + '[broker]\naccount_nickname = "5WZ99173"\n'
+    with pytest.raises(ConfigError, match="not the account number") as info:
+        load_config(write(tmp_path, text))
+    assert "5WZ99173" not in str(info.value)
+
+
+@pytest.mark.parametrize(
+    ("server", "origins"),
+    [
+        ('listen_address = "192.0.2.10"\nport = 8740', {"http://192.0.2.10:8740"}),
+        ('listen_address = "::1"\nport = 8740', {"http://[::1]:8740"}),
+        ('listen_address = "192.0.2.10"\nport = 80', {"http://192.0.2.10"}),
+        (
+            'listen_address = "192.0.2.10"\nport = 8740\nhost_name = "Trader.Example.Internal."',
+            {"http://192.0.2.10:8740", "http://trader.example.internal:8740"},
+        ),
+    ],
+)
+def test_the_origins_are_written_as_browsers_write_them(
+    tmp_path: Path, server: str, origins: set[str]
+) -> None:
+    paths = VALID.format(address="x").split("[paths]")[1]
+    config = load_config(write(tmp_path, f"[server]\n{server}\n[paths]{paths}"))
+    assert config.server.origins == origins
+
+
+@pytest.mark.parametrize("lines", ["[login]\nsession_days = 0", "[store]\ndaily_copies = -1"])
+def test_login_and_store_sections_refused(tmp_path: Path, lines: str) -> None:
+    with pytest.raises(ConfigError, match=r"login|store"):
         load_config(write(tmp_path, VALID.format(address="127.0.0.1") + lines + "\n"))
