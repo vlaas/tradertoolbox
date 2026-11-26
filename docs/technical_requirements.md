@@ -37,7 +37,7 @@ draws. A language model reaches the same functions through MCP.
 
 Backend modules: `pricing`, `broker`, `subs`, `market`, `refdata`, `candles`, `analysis`,
 `store`, `system`, `api`, `mcp`; later `alerts`, `scanner`, `recorder`. (`system` was added with
-WP-0.7, proposed.)
+WP-0.7; decided 2026-11-27.)
 
 ## 3. Technology selection
 
@@ -105,7 +105,7 @@ Set-up (WP-0.1). Decided 2026-11-22:
     (RUF, SIM, PT) were measured and left out.
   - pyright in its standard mode, as `volcalc` uses, so that ported code passes unchanged.
     Strict mode gave 671 errors (474 in the ported `pricing`, where numpy and scipy are not
-    fully typed). Strict for `api` and `system` since WP-0.7 (proposed, below).
+    fully typed). Strict for `api` and `system` since WP-0.7 (decided 2026-11-27, below).
   - Frontend: `svelte-check --fail-on-warnings` and strict TypeScript settings. A Prettier
     check with its Svelte plugin is added when WP-0.8 starts. No ESLint unless a need shows.
 - **Generated code is committed** (QA-05). `make check` regenerates it into a temporary
@@ -521,7 +521,7 @@ The API package (WP-0.7). The signatures are in `s3t.system` and `s3t.api`, the 
 - **One state file for every broker** stays for now. Whether the fake and the replay get their own,
   or a mark on what is stored, is decided before WP-1.3 stores tickets.
 
-**Proposed 2026-11-25, not confirmed yet:**
+**Decided 2026-11-27 (owner, WP-0.7 review),** as proposed on 2026-11-25:
 
 - **Two new packages of modules.** `s3t.system` is the process as a whole: the composition, the
   login, the features and the health service. `s3t.api` is the edge. A service knows neither the
@@ -803,8 +803,8 @@ State after WP-0.7 (2026-11-25):
 
 - **SEC-06** is measured on macOS only (`docs/measurements.md`). Linux was not run.
 - **API-05** is closed for `status` and `quotes`.
-- **SEC-02**: the login and the files of the built frontend are public, as they must be. A proposal,
-  section 3.
+- **SEC-02**: the login and the files of the built frontend are public, as they must be (decided
+  2026-11-27, section 3).
 
 ### 4.12 Frontend, general
 

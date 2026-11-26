@@ -5,7 +5,7 @@ A :class:`Connection` reads the client's messages and runs one task per subscrip
 know that the carrier is a WebSocket (``s3t.api.ws``). A test of the repository holds that nothing
 of the web framework is imported here.
 
-Proposed 2026-11-25 (WP-0.7):
+Decided 2026-11-27 (owner, WP-0.7 review):
 
 - **Two codecs, the same messages:** Protocol Buffers, and their canonical JSON for people. The
   client chooses when it connects.

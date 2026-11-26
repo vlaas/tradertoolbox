@@ -2,7 +2,7 @@
 
 :func:`create_api` makes the FastAPI application with the routes and the WebSocket. The OpenAPI
 schema is made from it offline by ``tools/generate.py`` (API-02, QA-05), and is not served: nothing
-reads it at run time (proposed 2026-11-25, WP-0.7).
+reads it at run time (decided 2026-11-27, WP-0.7).
 
 :func:`create_app` is what the server runs. What is under ``/api/`` reaches the API only through the
 guard, and everything else is a file of the frontend. So a route that is registered elsewhere is not

@@ -1,5 +1,5 @@
 """The data tier that every feature needs, and whether it is there (GEN-04; product definition,
-section 5). Proposed 2026-11-25 (WP-0.7).
+section 5). Decided 2026-11-27 (owner, WP-0.7 review).
 
 A feature is declared once, here. A route or a topic that serves one names it; those that belong
 to the process itself (login, health, status) need no data and are listed in a test. When a tier

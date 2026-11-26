@@ -129,7 +129,7 @@ class BrokerConfig(_Section):
     without a refusal.
 
     ``recording`` and ``fake_start`` may stay in the file while another source is chosen, so that
-    changing the source is a change of one line. Proposed 2026-11-25 (WP-0.7).
+    changing the source is a change of one line. Decided 2026-11-27 (owner, WP-0.7 review).
     """
 
     source: Literal["live", "fake", "replay"] = "live"

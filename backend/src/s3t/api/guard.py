@@ -1,4 +1,4 @@
-"""Who may reach the API (SEC-01, SEC-02). Proposed 2026-11-25 (WP-0.7).
+"""Who may reach the API (SEC-01, SEC-02). Decided 2026-11-27 (owner, WP-0.7 review).
 
 :class:`Guard` is around everything under ``/api/``, so a route that is added is closed without
 doing anything for it. It is plain ASGI and it is default deny:

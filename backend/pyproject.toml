@@ -72,7 +72,7 @@ exclude = ["src/s3t/wire", "**/__pycache__", ".venv"]
 extraPaths = ["src", "tools", "tests"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
-# Proposed 2026-11-25 (WP-0.7): the two packages at the edge of the process. Strict mode for all was
+# Decided 2026-11-27 (WP-0.7): the two packages at the edge of the process. Strict mode for all was
 # measured at WP-0.1 and left out for the ported numerics (requirements, section 3).
 strict = ["src/s3t/api", "src/s3t/system", "src/s3t/__main__.py"]
 venvPath = "."
