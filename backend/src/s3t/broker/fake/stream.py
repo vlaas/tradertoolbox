@@ -26,6 +26,9 @@ Scenarios (implementation plan 3.3), each an attribute or a method:
 - ``no_bid`` and ``no_ask``: symbols whose quote lacks that side: a price of 0 with the size
   ``"NaN"``, as dxFeed sends it (note B, addendum "WP-0.5"). ``index_without_quote``:
   an index sends trades only.
+- ``fixed_quotes``: the bid and the ask of a symbol, set by a test, in place of the market's.
+  The next tick sends them, so a test knows the value it waits for (the browser suite,
+  ``tools/e2e_backend.py``; WP-0.8). The sizes stay the market's.
 - ``candle_gaps`` and ``candle_suspects``: history with a hole, and with a bar whose high is
   ten times too large. A clock change needs no switch: bars are stamped in UTC, so the
   session moves by an hour where New York changes its clocks.
@@ -315,6 +318,7 @@ class FakeDxLink:
         self.change_limit: tuple[int, float] = (10_000, 60.0)
         self.no_bid: set[str] = set()
         self.no_ask: set[str] = set()
+        self.fixed_quotes: dict[str, tuple[float, float]] = {}
         self.index_without_quote = False
         self.candle_gaps: dict[str, tuple[datetime, datetime]] = {}
         self.candle_suspects: dict[str, datetime] = {}
@@ -416,6 +420,9 @@ class FakeDxLink:
                     doc["bidPrice"], doc["bidSize"] = 0.0, NAN
                 if doc["eventSymbol"] in self.no_ask:
                     doc["askPrice"], doc["askSize"] = 0.0, NAN
+                fixed = self.fixed_quotes.get(doc["eventSymbol"])
+                if fixed is not None:
+                    doc["bidPrice"], doc["askPrice"] = fixed
         return docs
 
     def candle_history(self, symbol: str, start_ms: int, at: datetime) -> list[dict[str, Any]]:

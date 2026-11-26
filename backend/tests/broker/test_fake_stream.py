@@ -231,6 +231,30 @@ async def test_quote_scenarios(rig: StreamRig) -> None:
     assert {r.symbol for r in rig.rows(EventType.TRADE)} == {"SPY", "AAPL", "SPX"}
 
 
+async def test_a_fixed_quote_is_sent_and_changed_and_released(rig: StreamRig) -> None:
+    """The browser suite sets a quote and waits for exactly that value (WP-0.8)."""
+    rig.dxlink.fixed_quotes["SPY"] = (111.11, 111.13)
+    session = await rig.open()
+    await session.subscribe([Sub("SPY", EventType.QUOTE), Sub("AAPL", EventType.QUOTE)])
+    await rig.clock.settle()
+    first = {r.symbol: r for r in rig.rows(EventType.QUOTE)}
+    assert (first["SPY"].bid, first["SPY"].ask) == (111.11, 111.13)
+    assert first["SPY"].bid_size > 0  # the sizes stay the market's
+    assert first["AAPL"].bid != 111.11
+
+    rig.dxlink.fixed_quotes["SPY"] = (222.22, 222.24)
+    rig.dxlink.tick()
+    await rig.clock.settle()
+    changed = [r for r in rig.rows(EventType.QUOTE) if r.symbol == "SPY"][-1]
+    assert (changed.bid, changed.ask) == (222.22, 222.24)
+
+    del rig.dxlink.fixed_quotes["SPY"]
+    rig.dxlink.tick()
+    await rig.clock.settle()
+    released = [r for r in rig.rows(EventType.QUOTE) if r.symbol == "SPY"][-1]
+    assert released.bid not in (111.11, 222.22) and released.ask > released.bid
+
+
 async def test_candle_scenarios(rig: StreamRig) -> None:
     gap = (datetime(2026, 11, 17, tzinfo=UTC), datetime(2026, 11, 19, tzinfo=UTC))
     suspect = datetime(2026, 11, 13, tzinfo=UTC)

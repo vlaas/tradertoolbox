@@ -1,0 +1,265 @@
+/* The design tokens (UI-06, UI-10). The colours, the colour-blind palette and the density are the
+   backtester viewer's (`backtester/viewer/src/app.css`, commit a29aa78), lifted as the code audit
+   says (section 3). Dark by default, light by the system setting; `data-theme` on <html> overrides,
+   `data-palette="cb"` swaps the semantic colours for the colour-blind-safe set,
+   `data-density="compact"` shortens rows. Not taken: the web font (a proposal of WP-0.8: the
+   system's monospace stack until the chain grid), the viewer's skeleton and progress styles.
+
+   One spacing scale (UI-10): every gap and margin below comes from --space-*. */
+:root {
+  --bg: #0f1115;
+  --panel: #161920;
+  --fg: #d6d9df;
+  --muted: #8b919c;
+  --grid: #262a33;
+  --border: #30353f;
+  --accent: #60a5fa;
+  --on-accent: #0f1115;
+  --error: #f87171;
+  --warn: #f59f00;
+  --selection: #ffd54f;
+  --profit: #26a69a;
+  --loss: #ef5350;
+  --call: #4dabf7;
+  --put: #da77f2;
+  --share: #69db7c;
+  --stale: rgb(139 145 156 / 25%);
+  --indicative: #f59f00;
+  --row-h: 28px;
+  --tile-h: 72px;
+  --tile-value: 18px;
+  --tile-gap: 2px;
+  --ok: var(--profit);
+  --popup: #1c2029;
+
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 10px;
+  --space-5: 16px;
+  /* Between panels and at the window's edges (product definition 6.3: small). */
+  --gap: var(--space-3);
+  --bar-h: 38px;
+  --statusbar-h: 24px;
+
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #ffffff;
+    --panel: #f6f8fa;
+    --fg: #24292f;
+    --muted: #57606a;
+    --grid: #d0d7de;
+    --border: #d0d7de;
+    --accent: #0a58ca;
+    --on-accent: #ffffff;
+    --error: #b42318;
+    --warn: #8a5a00;
+    --popup: #ffffff;
+    color-scheme: light;
+  }
+}
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --panel: #f6f8fa;
+  --fg: #24292f;
+  --muted: #57606a;
+  --grid: #d0d7de;
+  --border: #d0d7de;
+  --accent: #0a58ca;
+  --on-accent: #ffffff;
+  --error: #b42318;
+  --warn: #8a5a00;
+  --popup: #ffffff;
+  color-scheme: light;
+}
+:root[data-palette='cb'] {
+  --profit: #1f77b4;
+  --loss: #ff7f0e;
+  --put: #ffd43b;
+}
+:root[data-density='compact'] {
+  --row-h: 24px;
+  --tile-h: 56px;
+  --tile-value: 15px;
+  --tile-gap: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    13px/1.4 system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+a {
+  color: var(--accent);
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+.mono {
+  font-family: var(--mono);
+}
+.muted {
+  color: var(--muted);
+}
+.error {
+  color: var(--error);
+}
+.num {
+  text-align: right;
+}
+.spacer {
+  flex: 1;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: 26px;
+  padding: 0 8px;
+}
+button {
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+button:disabled,
+select:disabled,
+input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The level of a state, as the status texts give it: a dot beside words, never colour alone. */
+.level {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+.level::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.level.ok::before {
+  background: var(--ok);
+}
+.level.warn::before {
+  background: var(--warn);
+}
+.level.error::before {
+  background: var(--error);
+}
+
+/* Tables of figures: tabular, right-aligned numbers (UI-07 base). */
+table.figures {
+  border-collapse: collapse;
+  width: 100%;
+}
+table.figures th,
+table.figures td {
+  padding: var(--space-1) var(--space-3);
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--grid);
+}
+table.figures th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+table.figures .text {
+  text-align: left;
+}
+table.figures td.price {
+  font-family: var(--mono);
+}
+
+dl + table.figures {
+  margin-top: var(--space-4);
+}
+
+/* Facts as two columns: a name and its value. */
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+dl.facts dt {
+  color: var(--muted);
+}
+dl.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A value that is not live (UI-05): dimmed, and its row says "stale" in words. */
+.stale {
+  color: var(--muted);
+}

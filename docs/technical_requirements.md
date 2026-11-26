@@ -65,7 +65,7 @@ policy is under QA-07).
 | Other charts | ECharts: payoff, skew, term structure, histograms | Architecture note, section 7 |
 | Chain grid | Written new, on a virtual-row library | Same |
 | Backend tools | ruff (lint and format), pyright, pytest, hypothesis, pip-licenses, pip-audit; mpmath for the pricing cross-check (decided 2026-11-22, WP-0.2) | Architecture note, section 8 |
-| Frontend tools | vitest, Playwright (Chromium, Firefox, WebKit), openapi-typescript, svelte-check, license-checker-rseidelsohn | Same; the prototype |
+| Frontend tools | vitest, Playwright (Chromium, Firefox, WebKit), openapi-typescript, svelte-check, license-checker-rseidelsohn; Prettier with `prettier-plugin-svelte` (WP-0.8) | Same; the prototype |
 
 Not chosen yet: the library for GARCH fitting (stage b of the probabilities), and the reverse
 proxy for TLS at the phone step.
@@ -107,7 +107,9 @@ Set-up (WP-0.1). Decided 2026-11-22:
     Strict mode gave 671 errors (474 in the ported `pricing`, where numpy and scipy are not
     fully typed). Strict for `api` and `system` since WP-0.7 (decided 2026-11-27, below).
   - Frontend: `svelte-check --fail-on-warnings` and strict TypeScript settings. A Prettier
-    check with its Svelte plugin is added when WP-0.8 starts. No ESLint unless a need shows.
+    check with its Svelte plugin (`prettier` 3.10.1, `prettier-plugin-svelte` 4.1.1, both MIT) runs
+    in `make check` since WP-0.8 (2026-11-27): no semicolons, single quotes, width 100, trailing
+    commas, the style the code had. Generated code is left out. No ESLint unless a need shows.
 - **Generated code is committed** (QA-05). `make check` regenerates it into a temporary
   directory and fails on any stale, missing or orphaned file. The list of generated trees is
   the root `.gitattributes`, where each is marked `linguist-generated`. A test keeps it equal
@@ -580,6 +582,57 @@ The API package (WP-0.7). The signatures are in `s3t.system` and `s3t.api`, the 
   regular session only.
 - **Dependencies:** uvicorn 0.54.0 (BSD-3-Clause) and argon2-cffi 25.1.0 (MIT). With them click,
   argon2-cffi-bindings, cffi and pycparser.
+
+The frontend shell (WP-0.8). The code is in `frontend/src`; its parts are named in the plan,
+WP-0.8.
+
+**Proposed 2026-11-27, not confirmed by the owner:**
+
+- **The status bar** (BRK-09's layout, left open at WP-0.3): left to right, the browser's
+  connection; the stream (phase, "quotes every 0.5 s", resubscribing, stalled, the last gap); the
+  subscriptions ("Subscriptions 1,046 of 25,000", what is pending, batches lost); REST ("token
+  valid, renews from 10:14:01 ET · 5 req/min, limit 2/s burst 4", a hold "after a 429"); the mark
+  of GEN-11; the time of the data; "Read-only: no orders are sent"; an information icon that says
+  what the figures are. Each part is a dot and words, so no state is told by colour alone. Every
+  figure is also on the status screen. The mock-ups are not changed.
+- **The login is a state, not an address.** Without a session the login screen stands in for the
+  screen of the address, and the address stays. A session that ends while a page is open (`Bye`
+  with `SESSION_ENDED`) takes it to the login screen with the reason.
+- **Addresses.** `#/status` is the only screen of R0 and the default; an address of no screen is
+  replaced by it without a step in the history. The top bar lists only the screens that exist.
+- **The connection** (`lib/connection.ts`). After a loss the next attempt waits 0.5 s, doubling to
+  8 s, and from 0.5 s again once a connection brought a message. Silence for 15 s is a loss (three
+  missed heartbeats). A refused handshake asks `GET /api/session`: none means the login screen; no
+  answer means trying again; a session that is there twice in a row means another version of the
+  messages, and the page reloads, at most once a minute. Close 1012 reads "the backend restarts".
+  The numbers of the subscriptions rise over the life of the page, not only of a connection.
+- **The JSON form** (API-04) is `?wire=json` in the page's address.
+- **Live values** (UI-05). A quote is live by the rule of 2026-11-27 (above), and only while the
+  connection is open and the `status` came on it. A row that is not live is dimmed and says
+  "stale" in its own column; `prev_close` is not judged. The loss of the connection is a mark in
+  the top bar of every screen, with the reason and the wait, and the first part of the status bar.
+- **The mark of GEN-11** sits in the top bar, which is the header of every screen window (as in the
+  mock-ups), and in the status bar. Its text is the backend's.
+- **Times** are New York time, written with "ET" (CH-06's default is exchange time). The backend's
+  instants are compared with the time of its data, which is the fake broker's own clock there.
+- **The status screen** lists SPY, SPX and AAPL, which the fake and the live broker know. The list
+  can be edited and is kept in the browser. The health and the features routes are asked at each
+  connection and every 30 s, for the rates (REF-01), the calendar (REF-04), the state file and the
+  data tiers (GEN-04).
+- **Layout** (UI-08 base). The window does not scroll at 1024 by 600 and above; below it the areas
+  stack and the page scrolls. The spacing scale is 2, 4, 6, 10 and 16 px, with 6 px between panels
+  and at the window's edges (UI-10).
+- **The information icon** (UI-11 base) is one component on a native popover, so its box is drawn
+  above every scrolling area (UI-09 base). It opens towards the side of the window with room.
+- **Tokens and fonts.** The viewer's tokens as they are, dark by default and light by the system's
+  setting, with no switch yet. No web font: the system's monospace stack for prices. JetBrains Mono,
+  which the mock-ups use, is OFL-1.1 and not on the allow-list (plan section 8, WP-1.5).
+- **The dev server.** `S3T_BACKEND=http://<address>:<port> npm run dev` sends `/api` and the
+  WebSocket to that backend and states the backend's origin (SEC-02). No address is in the code.
+- **The browser suite** runs one backend per engine, and one test at a time in each, so that a
+  restart in one engine breaks no test of another. Its tool (`backend/tools/e2e_backend.py`) has a
+  control on the next port for the tests: restart the backend, drop the stream, set a quote. It is
+  not part of the application.
 
 ## 4. Requirements
 

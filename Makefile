@@ -2,7 +2,8 @@
 #
 #   make setup     install the locked dependencies of backend/ and frontend/
 #   make gen       regenerate Protocol Buffers code, the OpenAPI schema and types, the wire fixture
-#   make check     lint, type checks, tests, the generated-code check and the licence check
+#   make check     lint (ruff, Prettier), type checks, tests, the generated-code check and the
+#                  licence check
 #   make e2e       build the frontend and run the browser suite in Chromium, Firefox and WebKit
 #   make licences  the licence check alone
 #   make audit     known vulnerabilities in both lock files (needs the network)
@@ -28,6 +29,7 @@ check: lint types test gen-check licences
 lint:
 	$(BACKEND) uv run ruff check .
 	$(BACKEND) uv run ruff format --check .
+	$(FRONTEND) npx prettier --check .
 
 types:
 	$(BACKEND) uv run pyright

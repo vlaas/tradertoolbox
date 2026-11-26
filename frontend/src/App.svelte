@@ -1,12 +1,15 @@
 <script lang="ts">
-  // Placeholder shell (WP-0.1); WP-0.8 replaces it. The round trip shows that the generated
-  // Protocol Buffers code runs in each browser engine of the e2e suite.
-  import { roundTrip } from './lib/wirecheck'
+  // The app: the login screen until this browser has a session, then the shell.
+  import { onMount } from 'svelte'
+  import Shell from './components/Shell.svelte'
+  import Login from './screens/Login.svelte'
+  import { checkSession, session } from './stores/session.svelte'
 
-  const wire = roundTrip()
+  onMount(() => void checkSession())
 </script>
 
-<main>
-  <h1>Self-3-Trader</h1>
-  <p data-testid="wire">{wire}</p>
-</main>
+{#if session.phase === 'in'}
+  <Shell />
+{:else if session.phase === 'out'}
+  <Login />
+{/if}

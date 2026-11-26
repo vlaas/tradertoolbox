@@ -24,6 +24,7 @@ implementation plan section 1; QA-08). Results from the research notes stay in t
 | 2026-11-23 | WP-0.4 | Recording: size of the stream file, zstd against gzip. Sizes, not timings | 493 subscriptions, 10 minutes: the lines are 5,232,559 bytes. zstd with a frame every 3 s (as built, 201 frames): 760,065 bytes, 6.9 times smaller. zstd in one frame with a block flush every 3 s: 528,330, 9.9 times. zstd in one frame: 515,753, 10.1 times. gzip level 5 in one stream (part 1): 626,603, 8.4 times. **As built, the file is 1.21 times the size of gzip's** | 1.58, 2.49, 12.29 (sizes do not depend on it) | `tools/recording_size.py`: the fake broker through the feed on a virtual clock, Friday 2026-11-20 from 10:00 New York. Synthetic data; one run, and the data is the same on every run |
 | 2026-11-23 | WP-0.4 | The same, smaller | 133 subscriptions, 3 minutes: lines 514,484 bytes. zstd in frames (61): 88,166, 5.8 times. Block flush: 62,771, 8.2 times. One frame: 60,119, 8.6 times. gzip level 5: 67,625, 7.6 times. As built, 1.30 times the size of gzip's | as above | `tools/recording_size.py --minutes 3 --strikes 10` |
 | 2026-11-24 | WP-0.4 | Recording: the same sizes after the change to a block flush (decided 2026-11-24). Sizes, not timings | 493 subscriptions, 10 minutes, lines 5,232,559 bytes. As built now, one frame with a block flush every 3 s: 528,330 bytes, 9.9 times smaller, 0.84 of gzip's size. The other figures are those of the row of 2026-11-23: the data is the same | not taken (sizes do not depend on it) | `tools/recording_size.py`, one run. The tool computes each variant from the recorded lines, with a flush every 3 s of the data's time |
+| 2026-11-27 | WP-0.8 | The built frontend (`npm run build`, Vite 8.3.6). Sizes, not timings | Script 181.74 kB (57.58 kB gzip), stylesheet 7.60 kB (2.35 kB gzip), page 0.39 kB. What the script is made of was not looked at | 24.42, 25.56, 21.20 (sizes do not depend on it) | Vite's own report of one build, 2026-11-27 01:30 local time |
 
 WP-0.1 has no performance requirement and took no timings.
 
@@ -72,6 +73,14 @@ nothing here is a timing. **Linux was not run.** The same run is a test
 (`tests/api/test_server.py`), with a WebSocket open at the end. The topic tests run on a virtual clock
 and measure nothing. The browser suite (`make e2e`) passed in Chromium, Firefox and WebKit the same
 night under the same load.
+
+WP-0.8 has no performance requirement and took no timings. The size of the built frontend is the row
+above. The browser suite took 37 s to 52 s for its 27 and, at the end, 30 tests, with load averages
+from 11.8 to 26.4: run times of a loaded machine, not measurements. Through the suite
+the app's reconnect after a restart of the backend with 3 s away took 5.6 s (Chromium) to 8.0 s
+(Firefox, WebKit) of test time, under the same load; not a measurement either. The time from a
+quote in the broker to the screen was not timed. On the fake broker it should be at most a tick of
+1 s plus a flush of 0.5 s: computed from the two periods, not seen.
 
 WP-0.4 has no performance requirement. The three live rows above are single observations
 from the live check, not a performance run. The stream and feed tests run on a virtual clock

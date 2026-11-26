@@ -1,0 +1,7 @@
+# The Prettier check of `make check` (requirements, section 3, linting; added at WP-0.8).
+# Generated code is owned by backend/tools/generate.py and not formatted by hand.
+src/gen/
+dist/
+test-results/
+playwright-report/
+package-lock.json

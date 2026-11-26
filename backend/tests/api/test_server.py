@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Receive, Scope, Send
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
@@ -47,6 +47,33 @@ async def serving(app: ASGIApp, sock: socket.socket) -> AsyncIterator[None]:
     finally:
         os.kill(os.getpid(), signal.SIGTERM)  # as it is stopped in use
         await asyncio.wait_for(task, 15)
+
+
+async def _plain(scope: Scope, receive: Receive, send: Send) -> None:
+    assert scope["type"] == "http"
+    await send({"type": "http.response.start", "status": 204, "headers": []})
+    await send({"type": "http.response.body", "body": b""})
+
+
+async def test_a_stop_event_ends_the_server_and_frees_the_port() -> None:
+    """The browser suite's backend restarts on the same port (``tools/e2e_backend.py``)."""
+    config = ServerConfig(listen_address="127.0.0.1", port=free_port())
+    url = f"http://127.0.0.1:{config.port}/"
+    for _ in range(2):  # a second server on the same port, after the first one stopped
+        stop = asyncio.Event()
+        task = asyncio.create_task(serve(_plain, listen(config), stop=stop))
+        async with httpx.AsyncClient() as client:
+            for _ in range(50):
+                with contextlib.suppress(httpx.ConnectError):
+                    assert (await client.get(url)).status_code == 204
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                pytest.fail("the server did not answer")
+            stop.set()
+            await asyncio.wait_for(task, 10)
+            with pytest.raises(httpx.ConnectError):
+                await client.get(url)
 
 
 # ---------------------------------------------------------------------- one address

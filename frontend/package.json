@@ -23,6 +23,8 @@
     "@types/node": "24.19.2",
     "license-checker-rseidelsohn": "5.0.1",
     "openapi-typescript": "7.13.0",
+    "prettier": "3.10.1",
+    "prettier-plugin-svelte": "4.1.1",
     "svelte": "5.57.3",
     "svelte-check": "4.7.8",
     "typescript": "5.9.3",

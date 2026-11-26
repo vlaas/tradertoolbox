@@ -49,7 +49,7 @@ names its split point.
 | WP-0.5 | Market state and instruments | M | done 2026-11-24 |
 | WP-0.6 | Storage, configuration, reference data | M | done 2026-11-25 |
 | WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; SEC-06 open for Linux |
-| WP-0.8 | Frontend shell | M | not started |
+| WP-0.8 | Frontend shell | M | done 2026-11-27; proposals open |
 | WP-0.9 | R0 live measurements and acceptance | S | not started |
 | WP-1.1 | Forwards and surface | M | not started |
 | WP-1.2 | Chain service | M | not started |
@@ -324,7 +324,34 @@ the real broker in regular hours. Each has a checklist and a named point in the 
 - *Done when:* a quote changed in the fake broker appears in the browser, the connection
   loss is shown and recovered from, in three browsers.
 - *Closes:* UI-03, UI-05, BRK-06, BRK-09, SUB-07 and GEN-11 (shown); the base for UI-01,
-  UI-04, UI-08 and UI-10.
+  UI-04, UI-08 and UI-10. **Proposed** (2026-11-27, not confirmed): REF-01, REF-04 and GEN-03
+  (shown) as well. WP-0.6 and section 8 say that WP-0.8 shows them, and it does.
+- *Review of UI-03 (R), 2026-11-27, by Claude:* one module opens the WebSocket,
+  `frontend/src/lib/connection.ts`, and only `src/stores/connection.svelte.ts` uses it. A store of
+  a topic subscribes there and never sees the socket: `status.svelte.ts` for `status`,
+  `quotes.svelte.ts` for `quotes`. The carrier is an interface of two calls, so another carrier
+  would replace `webSocket()` and nothing else (API-08, the browser's side).
+- *Done 2026-11-27:* the Prettier check, first (the existing files already followed it); the
+  connection module with its rules (subscription numbers, resubscription after a reconnect, the
+  15 s silence, the wait from 0.5 s to 8 s, `Bye`, a refused handshake, `Refused`, the JSON form
+  by `?wire=json`); the stores of `status` and `quotes`; the login screen; hash routing; the
+  viewer's tokens with one spacing scale; the shell with top bar and status bar; the status screen
+  with the stream, the subscription use, the REST state, the rates, the calendar, the data tiers
+  and a live quote list with its stale marks; the information icon as a native popover; the dev
+  server's proxy. For the browser suite: one backend per engine, and a test control in
+  `backend/tools/e2e_backend.py` (restart the backend, drop the stream, set a quote), with
+  `serve(stop=)` and the fake's `fixed_quotes`. Both "done when" sentences are tests in three
+  engines (`frontend/e2e/live.spec.ts`): a bid and ask set in the fake show on the screen to the
+  cent; a restart of the backend shows the loss in the top bar and the status bar, marks the
+  quotes stale, and the app comes back with fresh snapshots. A drop of the broker's stream shows
+  its reconnect and gap, and `?wire=json` gives text frames and the same screen. The JSON test
+  failed once in Firefox, by a race in the test itself (a frame of the page before); it keeps the
+  frames per socket since, and passed nine runs in a row. The test of the loss failed with a fault put in the loss mark, and again
+  with one put in the live rule; three faults put in the connection module each failed a unit test. The status screen was looked
+  at once, in Chromium at 1440 by 900; that look found an explanation box cut off at the window's
+  edge, which is fixed and is now a test. M0 holds on the fake broker: **nothing of this package
+  ran against the live broker** (WP-0.9). The proposals are in the requirements, section 3, "The
+  frontend shell".
 
 **WP-0.9 R0 live measurements and acceptance** (S)
 - *Do, read-only and rate-limited, on a trading day:* how the subscription cap counts; REST
@@ -515,12 +542,14 @@ Found but not planned into a package yet.
     decided (requirements, section 3; the certifi exception under QA-07).
   - BRK-09 was added in the review of the proposals (2026-11-22). The client gives the data
     (`rest_status()`), the topic `status` publishes it (WP-0.7), and WP-0.8 shows it in the status
-    bar. How the status bar lays it out is open: a mock-up change, or a proposal at WP-0.8.
+    bar. How the status bar lays it out is proposed at WP-0.8 (requirements, section 3, "The
+    frontend shell"); the mock-ups were not changed.
   - Closed for the broker side only:
     - GEN-02 and SEC-05: the canary test (`tests/broker/test_canary.py`) covers the stream
       token since WP-0.4. The routes and the topics have their own since WP-0.7
       (`tests/api/test_canary_routes.py`). The MCP results follow in R4.
-    - GEN-03: the nickname is configured and published since WP-0.7; WP-0.8 shows it.
+    - GEN-03: the nickname is configured and published since WP-0.7; shown in the top bar since
+      WP-0.8.
     - GEN-09: reviewed for the stream at WP-0.4 and for the instruments at WP-0.5. A test
       (`tests/test_repo.py`) holds the keys of the instrument documents inside the broker
       module. The metrics are still broker JSON (WP-1.1, WP-1.2).
@@ -702,13 +731,14 @@ Found but not planned into a package yet.
     file is kept, in a folder per year. The nickname refuses five digits in a row. On 2026-11-27 the
     rest as proposed, migration 0002 among them. A migration file that is in a state file is never
     changed; a correction is a new file.
-  - **For WP-0.8:** a page that is open and not touched is logged out after 48 hours. The connection
-    module should take `Bye` with `SESSION_ENDED` to the login screen, and say why.
+  - Done at WP-0.8: a page that is open and not touched is logged out after 48 hours. The connection
+    module takes `Bye` with `SESSION_ENDED` to the login screen, which says why.
   - **SEC-06 on Linux:** the backend was not run there. A unit file for a system service was not
     written, because it could not be tried. Do both when the target machine is there, or at WP-0.9.
   - **Not verified live:** nothing of this package ran against the real broker. The tests and the
     hand run are on the fake broker and on replays of it. WP-0.9 runs the backend for a day.
-  - **For WP-0.8, the connection module:**
+  - **For WP-0.8, the connection module** (each item done at WP-0.8, in
+    `frontend/src/lib/connection.ts`, `frontend/vite.config.ts` and their tests):
     - The subprotocol is `s3t.v1.protobuf`; `s3t.v1.json` for reading along. A page that speaks an
       unknown one is refused, and reloads. A browser is told no status for a refused WebSocket: ask
       `GET /api/session` (401) whether a login is needed.
@@ -758,6 +788,37 @@ Found but not planned into a package yet.
     uvicorn 0.54 log an error each time.
   - `json_format` takes an empty JSON list for an empty message. It is ignored, as every message
     without a known body is.
+- From WP-0.8 (2026-11-27):
+  - **Proposals, not confirmed:** the requirements, section 3, "The frontend shell (WP-0.8)", and
+    REF-01, REF-04 and GEN-03 in WP-0.8's "Closes".
+  - **Not verified live:** the app never ran against the live broker. The mark of GEN-11 is absent
+    on the live broker by a unit test only. WP-0.9 runs the backend for a day: look at the status
+    bar and the status screen then, in regular hours.
+  - **Seen in a browser only on the fake broker, and some not at all.** Tested without a browser
+    (unit tests on fake timers): a stall in the status bar, a hold after a 429, a refused grant, the
+    reload when the backend speaks another version, a silent connection, a topic refused with
+    `UNAVAILABLE` (GEN-04; the fake has every tier). The replay broker's mark was not seen.
+  - **The look** was seen once: Chromium, 1440 by 900, the light theme (the headless default). The
+    dark theme, Firefox, WebKit and windows below 1024 by 600 were not looked at. Below about 1300
+    px the status bar probably takes two lines (estimated from the one look, not seen).
+  - **For WP-1.5:** the mock-ups use JetBrains Mono for prices. Its licence is OFL-1.1, which is not
+    on the allow-list; it needs a named exception or the system's monospace stays (proposal of
+    WP-0.8).
+  - **Accessibility checks** (plan 3.5, the viewer's axe): not added. `axe-core` is MPL-2.0, a named
+    exception like hypothesis. Add them with the first screen of R1 (WP-1.5 or WP-1.6).
+  - **For WP-1.8:** the symbols of the status screen's quote list are kept in the browser (local
+    storage). Watchlists replace them. A row received before a reconnect stays stale until its next
+    event, by the live rule; a symbol that rarely trades says "stale" for a long time.
+  - The status screen shows two clocks: the browser's and the backend's wall clock (the connection,
+    the start) and the time of the data (everything of the market). On the fake broker they are days
+    apart; both are written in New York time.
+  - **The browser suite** runs one backend per engine (ports 4178, 4180, 4182, each with its control
+    on the next port) and one test at a time per engine. A restart of the e2e backend starts the
+    fake market's clock again at `fake_start`.
+  - `serve()` has a stop event (`s3t.api.server`) and the fake stream the scenario `fixed_quotes`,
+    both for the browser suite. The test control is in the tool, not in the application.
+  - The information box is a native popover. It needs about Chromium 114, Firefox 125 and Safari 17
+    or later (from memory, not looked up); the three engines of the suite have it.
 
 ## 9. Starting a package in a fresh session
 

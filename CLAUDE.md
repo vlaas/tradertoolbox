@@ -56,8 +56,9 @@ holds.
 ```
 make setup      # uv sync --locked in backend/, npm ci --ignore-scripts in frontend/
 make gen        # regenerate Protocol Buffers code, OpenAPI schema and types, the wire fixture
-make check      # ruff, pyright, pytest, svelte-check, tsc, vitest, stale check, licence check
-make e2e        # build the frontend; Playwright against the backend on the fake broker, 3 browsers
+make check      # ruff, Prettier, pyright, pytest, svelte-check, tsc, vitest, stale check, licences
+make e2e        # build the frontend; Playwright in 3 browsers, each against its own backend on the
+                # fake broker (backend/tools/e2e_backend.py, with a test control on the next port)
 make licences   # the licence check alone (policy in backend/tools/licences.py)
 make audit      # known vulnerabilities in both lock files; needs the network
 
@@ -67,6 +68,10 @@ make audit      # known vulnerabilities in both lock files; needs the network
 # [broker] source = "fake" in the configuration runs it without the broker
 cd backend && uv run python tools/set_password.py --config ../config/s3t.toml
 cd backend && uv run python -m s3t --config ../config/s3t.toml
+
+# the app from Vite's dev server, against a running backend (its address and port); ?wire=json in
+# the page's address makes its WebSocket speak readable JSON
+cd frontend && S3T_BACKEND=http://<listen address>:<port> npm run dev
 
 # live read-only check of the broker client: a stated check, 13 requests at 1 per second
 cd backend && uv run python tools/broker_check.py --config ../config/s3t.toml

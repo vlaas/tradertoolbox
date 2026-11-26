@@ -44,9 +44,12 @@ class _Server(uvicorn.Server):
         yield
 
 
-async def serve(app: ASGIApp, sock: socket.socket) -> None:
-    """Serve until SIGINT or SIGTERM, and return when the connections are closed. A second signal
-    does not wait for them."""
+async def serve(app: ASGIApp, sock: socket.socket, *, stop: asyncio.Event | None = None) -> None:
+    """Serve until SIGINT or SIGTERM, or until ``stop`` is set, and return when the connections are
+    closed. A second signal does not wait for them. The socket is closed then.
+
+    ``stop`` lets a caller end the server and start another on the same port (the browser suite's
+    backend restarts that way; ``tools/e2e_backend.py``)."""
     server = _Server(
         uvicorn.Config(
             app,
@@ -62,15 +65,24 @@ async def serve(app: ASGIApp, sock: socket.socket) -> None:
     )
     loop = asyncio.get_running_loop()
 
-    def stop(number: signal.Signals) -> None:
+    def on_signal(number: signal.Signals) -> None:
         LOG.info("%s: the backend stops", number.name)
         server.force_exit = server.should_exit
         server.should_exit = True
 
+    async def stop_when_set(event: asyncio.Event) -> None:
+        await event.wait()
+        LOG.info("the backend stops")
+        server.should_exit = True
+
     for number in SIGNALS:
-        loop.add_signal_handler(number, stop, number)
+        loop.add_signal_handler(number, on_signal, number)
+    watcher = None if stop is None else asyncio.create_task(stop_when_set(stop))
     try:
         await server.serve(sockets=[sock])
     finally:
         for number in SIGNALS:
             loop.remove_signal_handler(number)
+        if watcher is not None:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)

@@ -1,13 +1,14 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, type Page, test } from '@playwright/test'
+import { PASSWORD } from './app.ts'
 
 // The backend in front of the three browser engines (SEC-01, SEC-02, SEC-07, API-03, API-04). What
 // a browser does by itself can only be seen here: that it keeps the cookie from scripts, sends it
-// with the WebSocket, states its origin, and is allowed to connect by the content policy. The
-// connection module of the app comes with WP-0.8; here the page speaks the JSON form by hand.
+// with the WebSocket, states its origin, and is allowed to connect by the content policy. Here the
+// page speaks the JSON form by hand, beside the app; the app's own connection is in live.spec.ts.
 
-const password = 'e2e-password-of-the-browser-suite' // backend/tools/e2e_backend.py
+const password = PASSWORD
 
 async function login(page: Page, given: string): Promise<number> {
   return page.evaluate(async (text) => {
