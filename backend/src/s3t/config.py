@@ -162,7 +162,8 @@ class BrokerConfig(_Section):
     @field_validator("account_nickname")
     @classmethod
     def _not_the_number(cls, value: str | None) -> str | None:
-        if value is not None and (not value.strip() or len(re.findall(r"\d", value)) >= 4):
+        # An account number has five digits in a row; "Roth 2025" is a name (decided 2026-11-26).
+        if value is not None and (not value.strip() or re.search(r"\d{5}", value)):
             raise ValueError("must be a name, and not the account number")
         return value
 
@@ -251,17 +252,17 @@ class RatesConfig(_Section):
 
 
 class LoginConfig(_Section):
-    """The login (SEC-01). Proposed 2026-11-25 (WP-0.7)."""
+    """The login (SEC-01). Decided 2026-11-26 (owner, WP-0.7 review)."""
 
-    session_days: int = Field(default=30, ge=1, le=365)
-    """Days from a login to the end of its session."""
+    session_hours: int = Field(default=48, ge=1, le=8760)
+    """Hours from the last use of a session to its end. Raise it to stay logged in longer."""
 
 
 class StoreConfig(_Section):
-    """The state store (STO-07). Proposed 2026-11-25 (WP-0.7)."""
+    """The state store (STO-07). Decided 2026-11-26 (owner, WP-0.7 review)."""
 
-    daily_copies: int = Field(default=14, ge=0, le=366)
-    """Daily copies of the state file that are kept; 0 makes none."""
+    daily_copy: bool = True
+    """Whether the running backend copies the state file once a day. Every copy is kept."""
 
 
 class Config(_Section):

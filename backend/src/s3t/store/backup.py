@@ -5,9 +5,13 @@ beside it, and a checkpoint can change the file while it is copied. SQLite's onl
 one consistent state in one step. Writers are not held up by it.
 
 The copy is one file that needs no other. It is checked before it gets its name, so a file with
-that name is whole. Nothing is overwritten. Nothing is deleted here; the daily copies
-(``s3t.store.daily``) are the only ones that ever are. To use a copy, stop the backend and put the
-copy in the place of the state file, and remove the state file's ``-wal`` and ``-shm`` files.
+that name is whole. Nothing is overwritten, and nothing is deleted. To use a copy, stop the backend
+and put the copy in the place of the state file, and remove the state file's ``-wal`` and ``-shm``
+files.
+
+The copies lie in a folder per year (:func:`copy_path`): the daily ones, those made before a
+migration and those of ``tools/state_backup.py``. There are a few a day at most, so one level is
+enough (decided 2026-11-26, owner, WP-0.7 review).
 """
 
 import os
@@ -35,6 +39,12 @@ def backup_name(state_file: Path, at: datetime, mark: str = "") -> str:
     The ending keeps the copy out of the repository (a test refuses it there)."""
     parts = [state_file.stem, mark, f"{at.astimezone(UTC):%Y%m%dT%H%M%SZ}"]
     return "-".join(p for p in parts if p) + ".sqlite"
+
+
+def copy_path(directory: Path, state_file: Path, at: datetime, mark: str = "") -> Path:
+    """Where a copy made at this instant goes: ``directory/2026/state-20261125T101500Z.sqlite``.
+    The year is the one of the name, in UTC."""
+    return directory / f"{at.astimezone(UTC):%Y}" / backup_name(state_file, at, mark)
 
 
 def backup(state_file: Path, target: Path) -> BackupReport:

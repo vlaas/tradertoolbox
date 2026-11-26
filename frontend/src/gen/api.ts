@@ -169,12 +169,12 @@ export interface components {
         CopiesStatus: {
             /** Failures */
             failures: number;
-            /** Keep */
-            keep: number;
             /** Last At */
             last_at: string | null;
             /** Last Error */
             last_error: string | null;
+            /** On */
+            on: boolean;
         };
         /**
          * EventType

@@ -62,10 +62,12 @@ async def test_a_request_without_a_session_is_refused(rig: ApiRig, method: str, 
 
 @pytest.mark.parametrize(("method", "path"), CLOSED_HTTP)
 async def test_a_session_that_has_expired_is_refused(rig: ApiRig, method: str, path: str) -> None:
+    """48 hours after its last use."""
     await rig.log_in()
-    rig.clock.now += 30 * 86400 - 1
-    assert (await rig.http.get("/api/session")).status_code == 200
-    rig.clock.now += 1
+    for _ in range(3):  # a week, used every two days less a second
+        rig.clock.now += 48 * 3600 - 1
+        assert (await rig.http.get("/api/session")).status_code == 200
+    rig.clock.now += 48 * 3600
     assert (await rig.http.request(method, path)).status_code == 401
 
 
@@ -168,7 +170,7 @@ async def test_the_websocket_refuses_a_session_that_has_ended(rig: ApiRig) -> No
     with pytest.raises(Refused):
         await rig.socket(token=token)
     token = await rig.log_in()
-    rig.clock.now += 30 * 86400
+    rig.clock.now += 48 * 3600
     with pytest.raises(Refused):
         await rig.socket(token=token)
 

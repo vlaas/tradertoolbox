@@ -65,7 +65,7 @@ EXCEPTIONS: dict[str, dict[str, Exception_]] = {
             "Mozilla Public License 2.0 (MPL 2.0)",
             "CA certificate bundle of httpx, data used unmodified",
         ),
-        # Proposed 2026-11-25 (WP-0.7): brought in by argon2-cffi. MIT without the duty to name
+        # Decided 2026-11-26 (WP-0.7): brought in by argon2-cffi. MIT without the duty to name
         # the author.
         "cffi": Exception_("MIT-0", "the binding of argon2-cffi to its C code, used unmodified"),
     },

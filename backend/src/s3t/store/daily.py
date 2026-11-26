@@ -1,12 +1,12 @@
 """A copy of the state file once a day, while the backend runs (STO-07).
 
-Proposed 2026-11-25 (WP-0.7). The newest copies are kept, a configured number of them
-(``[store] daily_copies``). This is the only thing that deletes a copy, and it deletes none but
-its own: the name of a daily copy holds the mark ``daily``, and the copies made by hand or before
-a migration do not.
+Decided 2026-11-26 (owner, WP-0.7 review): every copy is kept, and nothing is deleted. The copies
+lie in a folder per year beside the others (``s3t.store.backup.copy_path``), and the mark ``daily``
+in the name tells them from those made before a migration or by hand. ``[store] daily_copy``
+switches them off.
 
-A copy is made when the newest one is a day old, so a backend that is started several times a day
-does not fill its places with copies of one day. The names hold the time, so nothing else is kept.
+A copy is made when the newest daily copy is a day old, so a backend that is started several times
+a day makes one a day, not one a start.
 """
 
 import asyncio
@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from s3t.store.backup import backup, backup_name
+from s3t.store.backup import backup, copy_path
 from s3t.store.migrate import StoreError
 
 MARK = "daily"
@@ -36,8 +36,8 @@ type Sleep = Callable[[float], Awaitable[None]]
 class CopiesStatus:
     """For the health route (SEC-08)."""
 
-    keep: int
-    """How many are kept; 0 makes none."""
+    on: bool
+    """Whether daily copies are made."""
     last_at: datetime | None
     """UTC. The newest daily copy that is there."""
     failures: int
@@ -50,13 +50,13 @@ class DailyCopies:
         self,
         state_file: Path,
         directory: Path,
-        keep: int,
         *,
+        on: bool = True,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Sleep = asyncio.sleep,
         run: Run = asyncio.to_thread,
     ) -> None:
-        self._file, self._dir, self._keep = state_file, directory, keep
+        self._file, self._dir, self._on = state_file, directory, on
         self._now, self._sleep, self._in_thread = now, sleep, run
         self._name = re.compile(rf"{re.escape(state_file.stem)}-{MARK}-(\d{{8}}T\d{{6}}Z)\.sqlite")
         self._last_at: datetime | None = None
@@ -65,11 +65,11 @@ class DailyCopies:
         self._task: asyncio.Task[None] | None = None
 
     def status(self) -> CopiesStatus:
-        return CopiesStatus(self._keep, self._last_at, self._failures, self._error)
+        return CopiesStatus(self._on, self._last_at, self._failures, self._error)
 
     def start(self) -> None:
-        """Make the copies, in a task of its own. Does nothing when none are wanted."""
-        if self._keep and self._task is None:
+        """Make the copies, in a task of its own. Does nothing when they are switched off."""
+        if self._on and self._task is None:
             self._task = asyncio.create_task(self._run(), name="daily-copies")
 
     async def aclose(self) -> None:
@@ -102,22 +102,18 @@ class DailyCopies:
 
     def _copy_if_due(self, now: datetime) -> datetime | None:
         # A copy from a time to come does not count: the clock was wrong when it was made.
-        newest = max((at for at, _ in self._copies() if at <= now), default=None)
+        newest = max((at for at in self._made() if at <= now), default=None)
         if newest is None or now - newest >= EVERY:
-            report = backup(self._file, self._dir / backup_name(self._file, now, MARK))
+            report = backup(self._file, copy_path(self._dir, self._file, now, MARK))
             LOG.info("state store: daily copy %s, %d bytes", report.path.name, report.size)
             newest = now
-            for _, path in self._copies()[: -self._keep]:
-                path.unlink()
         return newest
 
-    def _copies(self) -> list[tuple[datetime, Path]]:
-        """The daily copies that are there, the oldest first."""
-        found: list[tuple[datetime, Path]] = []
-        if self._dir.is_dir():
-            for path in self._dir.iterdir():
-                m = self._name.fullmatch(path.name)
-                if m is not None:
-                    at = datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
-                    found.append((at, path))
-        return sorted(found)
+    def _made(self) -> list[datetime]:
+        """When the daily copies that are there were made, in the folders of the years."""
+        found: list[datetime] = []
+        for path in self._dir.glob("[0-9][0-9][0-9][0-9]/*.sqlite"):
+            m = self._name.fullmatch(path.name)
+            if m is not None:
+                found.append(datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC))
+        return found

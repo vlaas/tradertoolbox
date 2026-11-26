@@ -278,12 +278,19 @@ def test_the_choice_of_broker_refused(tmp_path: Path, lines: str) -> None:
         load_config(write(tmp_path, text))
 
 
-def test_the_nickname_is_not_the_account_number(tmp_path: Path) -> None:
-    """GEN-03, against the likely mistake. The error does not repeat the value."""
-    text = VALID.format(address="127.0.0.1") + '[broker]\naccount_nickname = "5WZ99173"\n'
+@pytest.mark.parametrize("nickname", ["5WZ99173", "acct 12345", "1234567890"])
+def test_the_nickname_is_not_the_account_number(tmp_path: Path, nickname: str) -> None:
+    """GEN-03, against the likely mistake: five digits in a row. The error does not repeat it."""
+    text = VALID.format(address="127.0.0.1") + f'[broker]\naccount_nickname = "{nickname}"\n'
     with pytest.raises(ConfigError, match="not the account number") as info:
         load_config(write(tmp_path, text))
-    assert "5WZ99173" not in str(info.value)
+    assert nickname not in str(info.value)
+
+
+@pytest.mark.parametrize("nickname", ["Roth 2025", "IRA 12 34 56", "main", "Ärisaldo"])
+def test_a_nickname_may_have_some_digits(tmp_path: Path, nickname: str) -> None:
+    text = VALID.format(address="127.0.0.1") + f'[broker]\naccount_nickname = "{nickname}"\n'
+    assert load_config(write(tmp_path, text)).broker.account_nickname == nickname
 
 
 @pytest.mark.parametrize(
@@ -306,7 +313,10 @@ def test_the_origins_are_written_as_browsers_write_them(
     assert config.server.origins == origins
 
 
-@pytest.mark.parametrize("lines", ["[login]\nsession_days = 0", "[store]\ndaily_copies = -1"])
+@pytest.mark.parametrize(
+    "lines",
+    ["[login]\nsession_hours = 0", "[login]\nsession_hours = 8761", "[store]\ndaily_copy = 1"],
+)
 def test_login_and_store_sections_refused(tmp_path: Path, lines: str) -> None:
     with pytest.raises(ConfigError, match=r"login|store"):
         load_config(write(tmp_path, VALID.format(address="127.0.0.1") + lines + "\n"))

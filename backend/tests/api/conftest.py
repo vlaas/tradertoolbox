@@ -40,7 +40,7 @@ data_dir = "data"
 state_file = "data/state.sqlite"
 frontend_dir = "dist"
 [store]
-daily_copies = 0
+daily_copy = false
 [broker]
 account_nickname = "main"
 """

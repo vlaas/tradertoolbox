@@ -453,7 +453,7 @@ facts behind it are in note B, addendum "WP-0.6". The signatures are in `s3t.sto
 - **The backup** (STO-07) is SQLite's online backup: one consistent state, in one file that needs no
   other, checked before it gets its name. It is a command, `tools/state_backup.py`. Nothing is
   overwritten and nothing is deleted. There is no schedule; a daily copy fits the process of
-  WP-0.7 (it is proposed below, and deletes its own old copies). The wording of STO-07 was changed
+  WP-0.7 (decided 2026-11-26, below; it deletes nothing either). The wording of STO-07 was changed
   for it (4.9).
 - **The calendar** (REF-04) has the trading days and regular sessions of `exchange-calendars`, XNYS
   for stocks, ETFs and indexes and the days of CMES for futures. One module imports the library.
@@ -491,8 +491,37 @@ facts behind it are in note B, addendum "WP-0.6". The signatures are in `s3t.sto
   (compared 2026-11-25). It is a runtime dependency that nothing else uses. WP-0.2 had refused a
   development library that brings it.
 
-The API package (WP-0.7). **Proposed 2026-11-25, not confirmed yet.** The signatures are in
-`s3t.system` and `s3t.api`, the messages in `proto/s3t/wire/v1/channel.proto` and `status.proto`.
+The API package (WP-0.7). The signatures are in `s3t.system` and `s3t.api`, the messages in
+`proto/s3t/wire/v1/channel.proto` and `status.proto`.
+
+**Decided 2026-11-26 (owner, WP-0.7 review):**
+
+- **The password** is set by `tools/set_password.py` only, with 12 to 1,024 characters. It ends
+  every session. There is no set-up page and no form in the app. argon2id with 64 MiB and three
+  passes, one check at a time, in a thread.
+- **Wrong passwords.** Five are free; after that each one holds the login, from 1 s doubling to 60 s,
+  for everybody. The count is not kept over a restart.
+- **A session ends 48 hours after its last use** (`[login] session_hours`, 1 to 8,760, to raise it).
+  Changed from the proposal of a fixed 30 days. Use is what the browser does: a request to the API,
+  the opening of the WebSocket, a message it sends there. What the backend sends to an open page is
+  no use, so a page that nobody touches is logged out too. The end is moved at most once a minute,
+  because each move is a write to the state file. It also ends at a logout, and with a new password.
+  A session is 256 random bits in a cookie; the state file has their SHA-256.
+- **Copies of the state file.** The running backend makes one a day (`[store] daily_copy`), and
+  every copy is kept: nothing is deleted, as decided on 2026-11-25. Changed from the proposal of
+  keeping 14. All copies lie in a folder per year below `paths.backup_dir`, the daily ones, those of
+  `tools/state_backup.py` and those made before a migration. There are a few a day at most, so one
+  level is enough. A second copy of a day is not made after a restart.
+- **cffi** (MIT-0, through argon2-cffi) is a named exception, and MIT-0 is not on the allowed list.
+- **The account's nickname** refuses five digits in a row, which an account number has; "Roth 2025"
+  is a name. Changed from the proposal, which refused four digits anywhere.
+- **Topic `quotes`.** Stocks, ETFs and indexes, at most 100 symbols. Futures come with a call of the
+  broker interface that says what a symbol is (WP-1.8); nothing outside the broker module may read a
+  symbol.
+- **One state file for every broker** stays for now. Whether the fake and the replay get their own,
+  or a mark on what is stored, is decided before WP-1.3 stores tickets.
+
+**Proposed 2026-11-25, not confirmed yet:**
 
 - **Two new packages of modules.** `s3t.system` is the process as a whole: the composition, the
   login, the features and the health service. `s3t.api` is the edge. A service knows neither the
@@ -508,16 +537,12 @@ The API package (WP-0.7). **Proposed 2026-11-25, not confirmed yet.** The signat
   the origin of the listen address or of the host name, with the port. SameSite=Strict is not enough:
   a page on another port of the same host is the same site. Without the check it opened the WebSocket
   in all three browsers (measured 2026-11-25, `frontend/e2e/backend.spec.ts`).
-- **The password** is set by `tools/set_password.py` only, with 12 to 1,024 characters. It ends
-  every session. There is no set-up page. argon2id with 64 MiB and three passes, one check at a time,
-  in a thread. Five wrong passwords are free; after that each one holds the login, from 1 s doubling
-  to 60 s, for everybody. The count is not kept over a restart.
-- **A session** is 256 random bits in a cookie; the state file has their SHA-256. It ends after
-  `[login] session_days` (30). The cookie is HttpOnly and SameSite=Strict, for the path `/api`, and
-  has the port in its name, because cookies are shared between the ports of a host. It has no
-  `Secure` mark before the phone step brings TLS. A logout ends the open WebSockets of the session
-  at once; any other end is seen within 60 s.
 - **Migration 0002** brings the tables `login` and `session`.
+- **The cookie** lives as long as a browser keeps one (400 days; with the decision of 2026-11-26 on
+  the end of a session), because the backend decides when a session ends, and a cookie of a session
+  that has ended opens nothing. HttpOnly, SameSite=Strict, the path `/api`, the port in its name
+  (cookies are shared between the ports of a host). No `Secure` mark before the phone step brings
+  TLS.
 - **The message layer** (API-03, API-08). `ClientMessage` subscribes and unsubscribes under numbers
   that the client chooses; they rise and are used once. `ServerMessage` has the number, a snapshot
   mark and a body. To change a list, subscribe anew and then end the old subscription. A slow client
@@ -535,32 +560,26 @@ The API package (WP-0.7). **Proposed 2026-11-25, not confirmed yet.** The signat
   value of the day and is not judged by it.
 - **A stall is a mark** (BRK-06). The phase `stalled` lasts no time, so a state that is published
   could never show it. `StreamStatus.stalled` holds from a stall until data comes again.
-- **Topic `quotes`.** Stocks, ETFs and indexes, at most 100 symbols. The snapshot comes at once, with
-  empty rows for what is not known yet. The instruments are read one at a time, because the request
-  limit is shared with the token that a reconnect needs. A symbol without data has a note: unknown,
-  cut by the budget (SUB-03), or the broker could not be asked (tried again after 30 s). Futures come
-  with a call of the broker interface that says what a symbol is; nothing outside the broker module
-  may read a symbol.
 - **Tiers** (GEN-04). A feature is declared once with the tiers it needs and with what the app does
   without them (hidden or unavailable). Every route and topic names its feature or is listed as one of
   the process itself; a test holds it. T1 is absent when the broker refused the grant; T2 until R3
   records; T3 without its directory. One feature now: `quotes`.
 - **The health route** gives the status records of the parts as they are, and the counts that should
   be zero. It needs a session like every other route.
-- **The choice of broker** (GEN-11): `[broker] source`, `recording`, `fake_start`,
-  `account_nickname`. The nickname refuses four digits or more, against the account number by
-  mistake. `fake_start` sets the clock of the synthetic market, which moves in the regular session
-  only.
 - **Rates.** Only the live broker downloads. The fake uses the flat rate and reads no file. A replay
   reads the files, so that a run can be repeated.
-- **A daily copy of the state file,** `[store] daily_copies` (14). None is made while the newest is
-  under a day old. It deletes the oldest of its own copies, by their names, and no other file. This
-  changes "nothing is deleted" above for these copies alone.
-- **Dependencies:** uvicorn 0.54.0 (BSD-3-Clause) and argon2-cffi 25.1.0 (MIT). With them click,
-  argon2-cffi-bindings, cffi and pycparser. cffi is MIT-0, a named exception (QA-07).
 - **pyright** is strict for `api`, `system` and `__main__`: 4 findings when it was switched on, all
   fixed. It finds `s3t` in its source now (`extraPaths`), and no longer as an installed package.
 - **A content policy** lets the page load code and data from this backend only.
+- **What `quotes` sends.** The snapshot comes at once, with empty rows for what is not known yet.
+  The instruments are read one at a time, because the request limit is shared with the token that a
+  reconnect needs. A symbol without data has a note: unknown, cut by the budget (SUB-03), or the
+  broker could not be asked (tried again after 30 s).
+- **The choice of broker** (GEN-11): `[broker] source`, `recording`, `fake_start`,
+  `account_nickname`. `fake_start` sets the clock of the synthetic market, which moves in the
+  regular session only.
+- **Dependencies:** uvicorn 0.54.0 (BSD-3-Clause) and argon2-cffi 25.1.0 (MIT). With them click,
+  argon2-cffi-bindings, cffi and pycparser.
 
 ## 4. Requirements
 
@@ -948,7 +967,7 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 | lightningcss and its platform binaries | MPL-2.0 | A build tool of Vite, used unmodified, and not part of the built app | Decided 2026-11-22 |
 | spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only; not redistributed | Decided 2026-11-22 |
 | certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Decided 2026-11-22 (WP-0.3) |
-| cffi | MIT-0 | The binding of argon2-cffi to its C code, used unmodified; a runtime dependency. MIT-0 is MIT without the duty to name the author | Proposed 2026-11-25 (WP-0.7) |
+| cffi | MIT-0 | The binding of argon2-cffi to its C code, used unmodified; a runtime dependency. MIT-0 is MIT without the duty to name the author | Decided 2026-11-26 (WP-0.7) |
 
 ## 5. Open points
 

@@ -31,9 +31,9 @@ data_dir = "../data"
 # The SQLite state store: login, settings, tickets, watchlists, drawings (STO-01).
 state_file = "../data/state.sqlite"
 
-# Optional. Where copies of the state store go (STO-07): those of tools/state_backup.py and those
-# made before a migration. Without it: the directory "backups" beside the state store. Nothing
-# deletes old copies, except the daily ones ([store] below).
+# Optional. Where copies of the state store go (STO-07): the daily ones, those of
+# tools/state_backup.py and those made before a migration, in a folder per year. Without it: the
+# directory "backups" beside the state store. Nothing deletes a copy.
 # backup_dir = "../data/backups"
 
 # Optional. The read-only T3 store (STO-04). Features that need it are hidden or marked
@@ -100,11 +100,12 @@ state_file = "../data/state.sqlite"
 # flat_rate = 0.04
 
 [login]
-# Optional. Days from a login to the end of its session (SEC-01). The password is set with
-# tools/set_password.py.
-# session_days = 30
+# Optional. Hours from the last use of a browser's session to its end (SEC-01): a request, the
+# opening of the live connection, or a message the browser sends on it. Raise it to stay logged in
+# longer. The password is set with tools/set_password.py.
+# session_hours = 48
 
 [store]
-# Optional. Daily copies of the state store that are kept in backup_dir; 0 makes none. Only these
-# copies are ever deleted, the oldest first.
-# daily_copies = 14
+# Optional. Whether the running backend copies the state store once a day, into backup_dir. Every
+# copy is kept.
+# daily_copy = true

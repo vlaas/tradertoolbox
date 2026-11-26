@@ -34,7 +34,7 @@ source = "fake"
 fake_start = 2026-11-20T15:00:00Z
 account_nickname = "main"
 [store]
-daily_copies = 0
+daily_copy = false
 """
 
 

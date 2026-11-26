@@ -48,7 +48,7 @@ names its split point.
 | WP-0.4 | Stream, feed interface, subscriptions | L | done 2026-11-23 |
 | WP-0.5 | Market state and instruments | M | done 2026-11-24 |
 | WP-0.6 | Storage, configuration, reference data | M | done 2026-11-25 |
-| WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; its proposals are not confirmed; SEC-06 open for Linux |
+| WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; part of its proposals confirmed 2026-11-26; SEC-06 open for Linux |
 | WP-0.8 | Frontend shell | M | not started |
 | WP-0.9 | R0 live measurements and acceptance | S | not started |
 | WP-1.1 | Forwards and surface | M | not started |
@@ -694,9 +694,14 @@ Found but not planned into a package yet.
     fails in use, look there first. The status has the last error.
   - `exchange-calendars` holds the holidays as code. Its version is in `CalendarStatus`.
 - From WP-0.7 (2026-11-25):
-  - **To be confirmed by the owner:** the proposals in the requirements, section 3, "The API
-    package", and the exception for cffi under QA-07. Migration 0002 is fixed once a state file has
-    it; until then it can be changed.
+  - **Reviewed with the owner on 2026-11-26** (requirements, section 3, "The API package"): the
+    password, the wrong passwords, cffi, `quotes` and the state file as proposed; three changed.
+    A session ends 48 hours after its last use, and the time can be raised. Every copy of the state
+    file is kept, in a folder per year. The nickname refuses five digits in a row. The rest of the
+    proposals is **not confirmed yet**. Migration 0002 is fixed once a state file has it; until then
+    it can be changed. It works for a fixed and for a moving end alike.
+  - **For WP-0.8:** a page that is open and not touched is logged out after 48 hours. The connection
+    module should take `Bye` with `SESSION_ENDED` to the login screen, and say why.
   - **SEC-06 on Linux:** the backend was not run there. A unit file for a system service was not
     written, because it could not be tried. Do both when the target machine is there, or at WP-0.9.
   - **Not verified live:** nothing of this package ran against the real broker. The tests and the

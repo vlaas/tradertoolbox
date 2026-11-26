@@ -124,8 +124,9 @@ async def test_a_copy_made_by_the_tool_from_another_process(path: Path, tmp_path
     done = await asyncio.to_thread(subprocess.run, run, capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     assert f"schema version {len(load_migrations())}" in done.stdout
-    (copy,) = (path.parent / "backups").iterdir()
-    assert len(settings(copy)) == ROWS
+    (year,) = (path.parent / "backups").iterdir()
+    (copy,) = year.iterdir()
+    assert year.name == copy.name[6:10] and len(settings(copy)) == ROWS
     again = [*run, "--to", str(copy)]
     refused = await asyncio.to_thread(subprocess.run, again, capture_output=True, text=True)
     assert refused.returncode == 1 and "nothing is overwritten" in refused.stderr

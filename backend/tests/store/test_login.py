@@ -15,6 +15,7 @@ from s3t.store.login import (
     delete_session,
     find_session,
     get_password_hash,
+    renew_session,
     replace_password_hash,
     set_password_hash,
 )
@@ -49,7 +50,7 @@ async def test_the_migration_of_a_file_with_content(path: Path) -> None:
     assert await store.read(lambda conn: get_setting(conn, "zone")) == "UTC"
     assert await store.read(get_password_hash) is None  # nobody has set one yet
     await store.aclose()
-    copy = path.parent / "backups" / "state-v0001-20261125T101500Z.sqlite"
+    copy = path.parent / "backups" / "2026" / "state-v0001-20261125T101500Z.sqlite"
     with closing(sqlite3.connect(copy)) as conn:
         assert conn.execute("SELECT max(version) FROM schema_migration").fetchone() == (1,)
         assert get_setting(conn, "zone") == "UTC"
@@ -101,6 +102,16 @@ def test_a_session_ends(login: sqlite3.Connection) -> None:
     assert delete_expired(login, NOW + DAY) == 1
     assert delete_session(login, "b" * 64) and not delete_session(login, "b" * 64)
     assert find_session(login, "b" * 64, NOW) is None
+
+
+def test_a_session_that_has_ended_is_not_renewed(login: sqlite3.Connection) -> None:
+    """Also when it ended between the look and the renewal."""
+    assert add_session(login, row("a", days=1), HASH)
+    later = NOW + 2 * DAY
+    assert renew_session(login, "a" * 64, later + DAY, NOW + DAY - timedelta(microseconds=1))
+    assert find_session(login, "a" * 64, later) is not None
+    assert not renew_session(login, "a" * 64, later + 3 * DAY, later + DAY)
+    assert find_session(login, "a" * 64, later + DAY) is None
 
 
 def test_the_hash_of_a_token_and_nothing_else(login: sqlite3.Connection) -> None:

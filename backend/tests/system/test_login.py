@@ -48,7 +48,7 @@ class Rig:
 
     def login(self, **options: Any) -> Login:
         options.setdefault("hasher", CHEAP)
-        options.setdefault("lifetime", timedelta(days=30))
+        options.setdefault("lifetime", timedelta(hours=48))
         return Login(self.store, now=lambda: self.now, clock=lambda: self.mono, **options)
 
 
@@ -66,7 +66,7 @@ async def test_a_session_is_opened_found_and_ended(rig: Rig) -> None:
     opened = await login.log_in(PASSWORD)
     token = opened.token.get_secret_value()
     assert opened.session.created_at == NOW
-    assert opened.session.expires_at == NOW + timedelta(days=30)
+    assert opened.session.expires_at == NOW + timedelta(hours=48)
     assert await login.session(token) == opened.session == await login.check(opened.session.id)
     assert await login.session(token + "x") is None and await login.session("") is None
 
@@ -74,8 +74,48 @@ async def test_a_session_is_opened_found_and_ended(rig: Rig) -> None:
     await login.log_out(opened.session.id)
     assert await login.session(token) is None
     assert await login.check(other.session.id) == other.session
-    rig.now = NOW + timedelta(days=30)
+    rig.now = NOW + timedelta(hours=48)
     assert await login.check(other.session.id) is None
+
+
+async def test_a_session_ends_48_hours_after_its_last_use(rig: Rig) -> None:
+    await set_password(rig.store, PASSWORD, hasher=CHEAP)
+    login = rig.login()
+    opened = await login.log_in(PASSWORD)
+    token = opened.token.get_secret_value()
+    for day in range(1, 8):  # a week, used once a day
+        rig.now = NOW + timedelta(days=day)
+        used = await login.session(token)
+        assert used is not None and used.expires_at == rig.now + timedelta(hours=48)
+        assert used.created_at == NOW
+    rig.now += timedelta(hours=48)
+    assert await login.session(token) is None
+    assert await login.renew(opened.session.id) is None  # an ended one is not renewed
+
+
+async def test_looking_is_no_use_and_a_minute_is_one_use(rig: Rig) -> None:
+    """Each move of the end is a write: at most one a minute."""
+    await set_password(rig.store, PASSWORD, hasher=CHEAP)
+    login = rig.login()
+    opened = await login.log_in(PASSWORD)
+    rig.now = NOW + timedelta(hours=1)
+    assert await login.check(opened.session.id) == opened.session  # looked at, not moved
+    renewed = await login.renew(opened.session.id)
+    assert renewed is not None and renewed.expires_at == rig.now + timedelta(hours=48)
+    writes: list[str] = []
+    write = rig.store.write
+
+    async def counted(fn: Any) -> Any:
+        writes.append("write")
+        return await write(fn)
+
+    rig.store.write = counted  # type: ignore[method-assign]
+    for seconds in range(0, 59, 5):
+        rig.now = NOW + timedelta(hours=1, seconds=seconds)
+        assert await login.renew(opened.session.id) == renewed
+    assert writes == []
+    rig.now = NOW + timedelta(hours=1, minutes=1, seconds=1)
+    assert await login.renew(opened.session.id) != renewed and writes == ["write"]
 
 
 async def test_the_token_is_random_and_only_its_hash_is_stored(rig: Rig) -> None:

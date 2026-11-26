@@ -5,9 +5,10 @@ by the subprotocol which codec it speaks: ``s3t.v1.protobuf``, or ``s3t.v1.json`
 The version in it is the one of the messages. A page that speaks another is refused, before it is
 open, and reloads.
 
-The login session is looked at again while the connection is open. A logout ends the connection at
-once, because it happens in this process; a password that was changed by the tool is seen at the
-next look.
+The login session is looked at again while the connection is open, and a message of the client is
+a use of it. A logout ends the connection at once, because it happens in this process. A session
+that ends because it was not used, or a password that was changed by the tool, is seen at the next
+look.
 """
 
 import asyncio
@@ -41,6 +42,8 @@ LOG = logging.getLogger(__name__)
 class WebSocketCarrier:
     def __init__(self, websocket: WebSocket) -> None:
         self._ws = websocket
+        self.received = 0
+        """Messages of the client so far: a use of its login session."""
 
     async def receive(self) -> Data:
         try:
@@ -49,6 +52,7 @@ class WebSocketCarrier:
             raise CarrierClosed(str(e)) from None
         if message["type"] == "websocket.disconnect":
             raise CarrierClosed("closed by the client")
+        self.received += 1
         data: Data | None = message.get("bytes")
         if data is None:
             data = message.get("text")
@@ -76,8 +80,9 @@ async def websocket(websocket: WebSocket) -> None:
         return
     await websocket.accept(subprotocol=chosen)
     session = session_of(websocket)
+    carrier = WebSocketCarrier(websocket)
     connection = Connection(
-        WebSocketCarrier(websocket),
+        carrier,
         CODECS[chosen],
         make_topics(backend),
         number=connections.next_number(),
@@ -86,7 +91,7 @@ async def websocket(websocket: WebSocket) -> None:
         sleep=backend.time.sleep,
     )
     connections.add(session.id, connection)
-    watch = asyncio.create_task(_watch(backend, session.id, connection))
+    watch = asyncio.create_task(_watch(backend, session.id, connection, carrier))
     try:
         await connection.run()
     finally:
@@ -100,11 +105,18 @@ async def websocket(websocket: WebSocket) -> None:
                 await websocket.close()
 
 
-async def _watch(backend: Backend, session_id: str, connection: Connection) -> None:
+async def _watch(
+    backend: Backend, session_id: str, connection: Connection, carrier: WebSocketCarrier
+) -> None:
+    """The session ends for the connection too. What the client sent since the last look is a use
+    of the session; what was sent to it is not."""
+    seen = carrier.received
     while True:
         await backend.time.sleep(SESSION_LOOK_S)
+        used, seen = carrier.received != seen, carrier.received
+        login = backend.login
         try:
-            held = await backend.login.check(session_id)
+            held = await (login.renew(session_id) if used else login.check(session_id))
         except Exception:
             LOG.exception("the login session could not be looked at")
             held = None

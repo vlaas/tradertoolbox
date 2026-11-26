@@ -92,7 +92,7 @@ def config(tmp_path: Path) -> Iterator[Path]:
     file = tmp_path / "s3t.toml"
     text = CONFIG.replace("port = 8740", f"port = {free_port()}")
     text += 'source = "fake"\nfake_start = 2026-11-20T15:00:00Z\n'
-    file.write_text(text.replace("[store]\ndaily_copies = 0\n", ""))
+    file.write_text(text.replace("[store]\ndaily_copy = false\n", ""))
     yield file
 
 
@@ -186,7 +186,7 @@ async def test_the_process_from_start_to_end(config: Path) -> None:
     # The store was closed: nothing is left beside the file. And a daily copy was made.
     data = config.parent / "data"
     assert {f.name for f in data.iterdir()} == {"state.sqlite", "backups"}
-    assert len(list((data / "backups").glob("state-daily-*.sqlite"))) == 1
+    assert len(list((data / "backups").glob("20[0-9][0-9]/state-daily-*.sqlite"))) == 1
 
 
 @pytest.mark.parametrize(

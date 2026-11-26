@@ -1,12 +1,15 @@
-"""The login of the one user (SEC-01). Proposed 2026-11-25 (WP-0.7).
+"""The login of the one user (SEC-01). Decided 2026-11-26 (owner, WP-0.7 review).
 
 - **The password** is stored as an argon2id hash with the library's parameters (RFC 9106, the
   low-memory ones: 64 MiB, three passes). It is set by ``tools/set_password.py`` on the machine,
   never over the network, and setting it ends every session. A login with older parameters stores
   the hash anew.
 - **A session** is 256 random bits. The browser has them in a cookie, the state file has their
-  SHA-256, so a copy of the state file opens no session. It ends at a fixed time, at a logout, or
-  with the password.
+  SHA-256, so a copy of the state file opens no session. It ends a configured time after its last
+  use (48 hours), at a logout, or with the password. Use is what the browser does: a request, the
+  opening of the WebSocket, a message it sends there. What the backend sends to an open page is not
+  use, so a page that nobody touches is logged out too. The end is moved at most once a minute,
+  because each move is a write to the state file.
 - **Wrong passwords.** The first five cost nothing. After that each one holds every login, 1 s at
   first, twice as long each time, at most 60 s. The right password ends it. There is one user, so
   one count; it is not kept over a restart. One password is checked at a time, and the hold is
@@ -22,7 +25,7 @@ import secrets
 import time
 import unicodedata
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -39,6 +42,7 @@ from s3t.store.login import (
     delete_session,
     find_session,
     get_password_hash,
+    renew_session,
     replace_password_hash,
     set_password_hash,
 )
@@ -48,6 +52,8 @@ SHORTEST, LONGEST = 12, 1024
 FREE_TRIES = 5
 FIRST_HOLD_S, LONGEST_HOLD_S = 1.0, 60.0
 TOKEN_BYTES = 32
+RENEW_AFTER = timedelta(minutes=1)
+"""How long a session is used before its end is moved again."""
 
 LOG = logging.getLogger(__name__)
 
@@ -87,6 +93,7 @@ class Session:
     """The SHA-256 of the token. Not a secret that opens anything, but no reason to show it."""
     created_at: datetime
     expires_at: datetime
+    """It moves with each use."""
 
 
 @dataclass(frozen=True)
@@ -192,14 +199,31 @@ class Login:
         return NewSession(SecretStr(token), _session(row))
 
     async def session(self, token: str) -> Session | None:
-        """The session of a token, if it is one now."""
-        return await self.check(_id(token))
+        """The session of a token, if it is one now. This is a use of it."""
+        return await self.renew(_id(token))
 
     async def check(self, session_id: str) -> Session | None:
-        """The session, if it is still one."""
+        """The session, if it is still one. This is no use of it."""
         at = self._now()
         row = await self._store.read(lambda conn: find_session(conn, session_id, at))
         return None if row is None else _session(row)
+
+    async def renew(self, session_id: str) -> Session | None:
+        """A use of the session: its end moves, unless it has ended."""
+        found = await self.check(session_id)
+        if found is None:
+            return None
+        at = self._now()
+        if found.expires_at - at > self._lifetime - RENEW_AFTER:
+            return found  # used within the last minute: the end stays
+        return await self._renew(found, at)
+
+    async def _renew(self, found: Session, at: datetime) -> Session | None:
+        expires_at = at + self._lifetime
+        renewed = await self._store.write(
+            lambda conn: renew_session(conn, found.id, expires_at, at)
+        )
+        return replace(found, expires_at=expires_at) if renewed else None
 
     async def log_out(self, session_id: str) -> None:
         if await self._store.write(lambda conn: delete_session(conn, session_id)):

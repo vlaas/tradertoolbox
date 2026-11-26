@@ -166,7 +166,7 @@ async def test_a_copy_is_made_before_a_migration(path: Path) -> None:
     store = await opened(path, STEPS)
     assert (await store.status()).version == 3
     await store.aclose()
-    copy = path.parent / "backups" / "state-v0002-20261125T101500Z.sqlite"
+    copy = path.parent / "backups" / "2026" / "state-v0002-20261125T101500Z.sqlite"
     assert [f for f in copy.parent.iterdir()] == [copy]
     with closing(sqlite3.connect(copy, autocommit=True)) as conn:
         assert conn.execute("SELECT name, age FROM person").fetchall() == [("Ada", None)]

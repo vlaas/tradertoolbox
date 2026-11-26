@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from s3t.api.routes import COOKIE_MAX_AGE_S
 from s3t.api.ws import SESSION_LOOK_S
 from s3t.broker.fake.clock import VirtualClock
 from s3t.system.login import FREE_TRIES, set_password
 from s3t.wire.v1.channel_pb2 import BYE_KIND_SESSION_ENDED
 from system.conftest import CHEAP, PASSWORD
 
-from .conftest import COOKIE, ApiRig, make_config, running
+from .conftest import COOKIE, ApiRig, Socket, make_config, running
 
 pytestmark = pytest.mark.anyio
 
@@ -27,11 +28,12 @@ async def test_the_cookie(rig: ApiRig) -> None:
     assert list(cookie) == [COOKIE]
     morsel = cookie[COOKIE]
     assert (morsel["httponly"], morsel["samesite"], morsel["path"]) == (True, "strict", "/api")
-    assert morsel["max-age"] == str(30 * 86400) and morsel["domain"] == ""
+    # The backend decides when it ends; the cookie lives as long as a browser keeps one.
+    assert morsel["max-age"] == str(COOKIE_MAX_AGE_S) and morsel["domain"] == ""
     assert morsel["secure"] == ""  # no TLS before the phone step
     assert answer.json() == {
         "created_at": "2026-11-20T15:00:00Z",
-        "expires_at": "2026-12-20T15:00:00Z",
+        "expires_at": "2026-11-22T15:00:00Z",
     }
     assert morsel.value not in answer.text
     assert (await rig.http.get("/api/session")).json() == answer.json()
@@ -90,6 +92,44 @@ async def test_a_logout_ends_the_session_and_its_websockets(rig: ApiRig) -> None
     assert not theirs.received and theirs.closed is None  # another browser stays
 
 
+async def test_the_end_moves_with_each_use(rig: ApiRig) -> None:
+    await rig.log_in()
+    rig.clock.now += 3600
+    answer = await rig.http.get("/api/session")
+    assert answer.json()["expires_at"] == "2026-11-22T16:00:00Z"
+    rig.clock.now += 30  # within the minute: no write, and the same end
+    assert (await rig.http.get("/api/session")).json()["expires_at"] == "2026-11-22T16:00:00Z"
+
+
+async def until_closed(socket: Socket) -> None:
+    for _ in range(200):  # the look is in the store's thread
+        if socket.closed is not None:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_an_open_page_that_nobody_uses_is_logged_out(rig: ApiRig) -> None:
+    """What the backend sends is no use. What the browser sends is. Two browsers, two logins."""
+    left_alone = await rig.log_in()
+    rig.http.cookies.clear()
+    await rig.log_in()
+    left, used = await rig.socket(token=left_alone), await rig.socket()
+    for socket in (left, used):
+        socket.subscribe(status={})
+    await rig.clock.settle()
+    # Its own subscription was the last use of the page left alone, so it ends 48 hours later,
+    # at the fifth half day.
+    for _ in range(5):
+        rig.clock.now += 12 * 3600  # the time passes without waking anything
+        used.subscribe(quotes={"symbol": ["SPY"]})
+        await rig.clock.advance(61)  # and every look that is due comes once
+    await until_closed(left)
+    assert left.closed == 1000 and left.received[-1].bye.kind == BYE_KIND_SESSION_ENDED
+    assert len(left.of(1)) >= 4  # it was sent the status all the while
+    assert used.closed is None
+    assert (await rig.http.get("/api/session")).status_code == 200
+
+
 async def test_a_new_password_ends_the_open_websockets(rig: ApiRig) -> None:
     """It is set by another process, so it is seen at the next look."""
     await rig.log_in()
@@ -98,10 +138,7 @@ async def test_a_new_password_ends_the_open_websockets(rig: ApiRig) -> None:
     assert socket.closed is None
     await set_password(rig.backend.store, "another-password", hasher=CHEAP)
     await rig.pass_time(SESSION_LOOK_S + 1)
-    for _ in range(100):  # the look is in the store's thread
-        if socket.closed is not None:
-            break
-        await asyncio.sleep(0.01)
+    await until_closed(socket)
     assert socket.closed == 1000 and socket.received[-1].bye.kind == BYE_KIND_SESSION_ENDED
 
 

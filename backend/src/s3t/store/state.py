@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from s3t.store.backup import BUSY_MS, backup, backup_name
+from s3t.store.backup import BUSY_MS, backup, copy_path
 from s3t.store.migrate import Migration, StoreError, load_migrations, migrate, version_of
 
 LOG = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ def _open(
         # Refuse an unusable file first: WAL mode stays in a file's header.
         version = version_of(conn, migrations)
         if 0 < version < len(migrations):
-            report = backup(path, copies / backup_name(path, now(), f"v{version:04d}"))
+            report = backup(path, copy_path(copies, path, now(), f"v{version:04d}"))
             LOG.info("state store: copied to %s before its migration", report.path.name)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")

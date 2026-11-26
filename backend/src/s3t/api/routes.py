@@ -99,6 +99,10 @@ BAD_ORIGIN: dict[int | str, dict[str, Any]] = {403: _error("The page is not of t
 
 router = APIRouter(prefix=PREFIX)
 
+COOKIE_MAX_AGE_S = 400 * 86400
+"""As long as a browser keeps a cookie. The backend decides when a session ends: its end moves with
+each use, and a cookie that a browser has kept longer opens nothing."""
+
 
 @router.post(
     "/login",
@@ -127,7 +131,7 @@ async def login(body: LoginRequest, response: Response, backend: BackendDep) -> 
     response.set_cookie(
         cookie_name(backend.config.server.port),
         opened.token.get_secret_value(),
-        max_age=int((session.expires_at - session.created_at).total_seconds()),
+        max_age=COOKIE_MAX_AGE_S,
         path=PREFIX,
         httponly=True,
         samesite="strict",

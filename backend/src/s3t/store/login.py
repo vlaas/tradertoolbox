@@ -68,6 +68,17 @@ def find_session(conn: sqlite3.Connection, token_sha256: str, at: datetime) -> S
     return None if row is None else SessionRow(row[0], from_micros(row[1]), from_micros(row[2]))
 
 
+def renew_session(
+    conn: sqlite3.Connection, token_sha256: str, expires_at: datetime, at: datetime
+) -> bool:
+    """Move the end of a session that has not ended. False when it has."""
+    renewed = conn.execute(
+        "UPDATE session SET expires_at_us = ? WHERE token_sha256 = ? AND expires_at_us > ?",
+        (to_micros(expires_at), token_sha256, to_micros(at)),
+    )
+    return renewed.rowcount == 1
+
+
 def delete_session(conn: sqlite3.Connection, token_sha256: str) -> bool:
     """Whether there was one."""
     found = conn.execute("DELETE FROM session WHERE token_sha256 = ?", (token_sha256,))

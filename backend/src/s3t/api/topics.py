@@ -5,7 +5,8 @@ packages: ``chain``, ``ticket``, ``candles``.
 person would call a change, and otherwise every few seconds while the running figures move.
 
 **quotes.** A snapshot of all rows at once, then the rows that changed, at the flush of the market
-state (MKT-03). Proposed 2026-11-25 (WP-0.7):
+state (MKT-03). The kinds of symbol were decided on 2026-11-26 (owner, WP-0.7 review); the rest is
+proposed (2026-11-25):
 
 - The symbols are the application's. The instrument of each is read from the broker, one at a time:
   the request limit is shared with the token that a reconnect needs (BRK-02), and a long list must

@@ -57,7 +57,7 @@ async def test_what_it_reports(rig: ApiRig) -> None:
     assert market["values"]["quote"] == 1 and market["period"] == 0.5 and market["lost"] == 0
     # The stores.
     assert doc["store"]["version"] == 2 and doc["store"]["size"] > 0
-    assert doc["copies"] == {"keep": 0, "last_at": None, "failures": 0, "last_error": None}
+    assert doc["copies"] == {"on": False, "last_at": None, "failures": 0, "last_error": None}
     # The reference data in use (REF-01, REF-04).
     assert doc["calendar"]["source"].startswith("exchange-calendars")
     assert doc["calendar"]["last"] == "2033-12-31"

@@ -136,10 +136,6 @@
             "title": "Failures",
             "type": "integer"
           },
-          "keep": {
-            "title": "Keep",
-            "type": "integer"
-          },
           "last_at": {
             "anyOf": [
               {
@@ -162,10 +158,14 @@
               }
             ],
             "title": "Last Error"
+          },
+          "on": {
+            "title": "On",
+            "type": "boolean"
           }
         },
         "required": [
-          "keep",
+          "on",
           "last_at",
           "failures",
           "last_error"

@@ -150,14 +150,14 @@ async def open_backend(
 
         store = await StateStore.open(config.paths.state_file, backup_dir=config.paths.backups)
         closing.push_async_callback(store.aclose)
-        lifetime = timedelta(days=config.login.session_days)
+        lifetime = timedelta(hours=config.login.session_hours)
         login = Login(store, lifetime=lifetime, hasher=hasher, now=clocks.now, clock=clocks.clock)
         if not await login.has_password():
             LOG.warning("no password is set, so nobody can log in: use tools/set_password.py")
         copies = DailyCopies(
             config.paths.state_file,
             config.paths.backups,
-            config.store.daily_copies,
+            on=config.store.daily_copy,
             now=clocks.now,
             sleep=clocks.sleep,
         )
