@@ -12,7 +12,8 @@ and the fake adds them when a package needs them.
 Contents, decided 2026-11-22 (WP-0.3). The tickers are real and the values invented, so the
 app marks every screen as synthetic when it runs on this market (GEN-11):
 
-- SPY: an ETF. PM-settled options with `expires-at` at 16:15 ET, as `tt` saw it live.
+- SPY: an ETF with a quarterly dividend. PM-settled options with `expires-at` at 16:15 ET, as
+  `tt` saw it live.
 - SPX: an index. SPXW PM-settled dailies, weeklies and monthlies, SPX AM-settled monthlies,
   and SPXO AM-settled weeklies (one expiration here, two live on 2026-11-23), all European.
 - AAPL: a stock with an earnings date and a dividend. Its numbers are synthetic, like
@@ -30,6 +31,16 @@ of Christmas week 2026 is on Thursday (note B, addendum "WP-0.3"). `expires-at` 
 of the day. Assumed: a future whose third Friday has no session ends the trading day before, and
 the weekly options of /ES expire at 15:00 Chicago on an early close too.
 
+Dividends (WP-1.1). SPY and AAPL pay one every quarter. The metrics state them as the live
+documents do: the last ex-date and the cash of that payment, no next date and no frequency (note
+B, addendum "WP-1.1"). The market's own schedule is the last payment repeated every 91 days,
+which is also what the application projects, so a forward from the options' prices agrees with
+the application's schedule. The options are priced on it (``ticks.py``).
+
+The settlement instant (WP-1.1; decided 2026-11-24): a PM-settled option is priced to the close
+of its expiration day and an AM-settled one to the open (:meth:`SyntheticMarket.settles_at`),
+while `expires-at` in the documents stays what the broker says, 16:15 for SPY and AAPL.
+
 Quotes, Greeks, candles and the seeded paths are in ``ticks.py``, and the stream that serves
 them in ``stream.py`` (WP-0.4).
 """
@@ -42,6 +53,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from s3t.pricing import Dividend, dividend_schedule, pv_dividends
 from s3t.refdata.calendar import ExchangeCalendar, load_calendar
 
 NY = ZoneInfo("America/New_York")
@@ -83,7 +95,9 @@ class Underlying:
     (note B, addendum "WP-0.5")."""
     tick_sizes: tuple[Doc, ...] = ({"value": "0.01"},)
     dividend: float = 0.0
-    """Annual dividend per share."""
+    """Annual dividend per share, paid in four parts."""
+    dividend_days_ago: int = 60
+    """The last ex-date, in days before the market's as-of date."""
     earnings_in_days: int | None = None
 
 
@@ -128,6 +142,7 @@ UNDERLYINGS: dict[str, Underlying] = {
             atm_vol=0.26,
             tick_sizes=({"threshold": "3.0", "value": "0.01"}, {"value": "0.05"}),
             dividend=1.04,
+            dividend_days_ago=80,  # the next one in 11 days: inside the nearest expirations
             earnings_in_days=9,
         ),
     )
@@ -198,6 +213,7 @@ class SyntheticMarket:
         self.calendar = calendar or load_calendar(self.today)
         self._cache: dict[tuple[str, str], Doc | None] = {}
         self._expirations: dict[str, list[tuple[date, str]]] = {}
+        self._pv: dict[tuple[str, date, date, float], float] = {}
 
     def _cached(self, kind: str, key: str, build: Any) -> Doc | None:
         if (kind, key) not in self._cache:
@@ -265,6 +281,32 @@ class SyntheticMarket:
     def _expires_at(self, u: Underlying, root: Root, expiration: date) -> datetime:
         opens, closes = self.session(expiration)
         return opens if root.settlement == "AM" else closes + u.pm_after_close
+
+    def settles_at(self, root: Root, expiration: date) -> datetime:
+        """The settlement instant: the close of the day for a PM-settled option, its open for
+        an AM-settled one. The options are priced to it."""
+        opens, closes = self.session(expiration)
+        return opens if root.settlement == "AM" else closes
+
+    def last_dividend(self, u: Underlying) -> tuple[date, float] | None:
+        """The ex-date and the cash per share of the last dividend; None for a non-payer."""
+        if not u.dividend:
+            return None
+        return self.today - timedelta(days=u.dividend_days_ago), u.dividend / 4
+
+    def dividends(self, u: Underlying, day: date, until: date) -> list[Dividend]:
+        """The market's own schedule: the ex-dates after `day` up to `until`."""
+        last = self.last_dividend(u)
+        return [] if last is None else dividend_schedule([last], 4, day, until)
+
+    def pv_dividends(self, symbol: str, day: date, until: date, rate: float) -> float:
+        """PV on `day` of the dividends of an underlying that go ex up to `until`."""
+        key = (symbol, day, until, rate)
+        if key not in self._pv:
+            u = UNDERLYINGS.get(symbol)
+            sched = [] if u is None else self.dividends(u, day, until)
+            self._pv[key] = pv_dividends(sched, day, rate)
+        return self._pv[key]
 
     def _stops_trading_at(self, u: Underlying, root: Root, expiration: date) -> datetime:
         """An AM-settled option trades until the afternoon before (live, 2026-11-23: 16:15 for
@@ -721,16 +763,29 @@ class SyntheticMarket:
             "implied-volatility-updated-at": _iso(self.asof - timedelta(minutes=29)),
             "option-expiration-implied-volatilities": ivs,
         }
-        if u.dividend:
-            ex = self.today + timedelta(days=24)
+        last = self.last_dividend(u)
+        if last is not None:
+            ex, amount = last
             doc.update(
                 {
-                    "dividend-rate-per-share": _dec(u.dividend / 4, 6),
-                    "annual-dividend-per-share": _dec(u.dividend, 6),
+                    "dividend-rate-per-share": _dec(amount, 6),
+                    "annual-dividend-per-share": "0.0",
                     "dividend-yield": _dec(u.dividend / u.spot, 6),
                     "dividend-ex-date": ex.isoformat(),
-                    "dividend-next-date": ex.isoformat(),
+                    "dividend-next-date": "2022-12-16",  # live: a date years back, for every payer
                     "dividend-pay-date": (ex + timedelta(days=14)).isoformat(),
+                    "dividend-updated-at": _iso(self.asof - timedelta(hours=3)),
+                }
+            )
+        elif u.kind == "index":  # live, SPX: old dates and zeros, and no time of an update
+            doc.update(
+                {
+                    "dividend-rate-per-share": "0.0",
+                    "annual-dividend-per-share": "0.0",
+                    "dividend-yield": "0.0",
+                    "dividend-ex-date": "2020-05-30",
+                    "dividend-next-date": "2025-05-30",
+                    "dividend-pay-date": "2020-06-30",
                 }
             )
         if u.earnings_in_days is not None:

@@ -20,6 +20,7 @@ ALLOWED_IMPORTS = {
     "logging",
     "math",
     "numpy",
+    "scipy.optimize",  # since WP-1.1: the SVI and SSVI fits (least_squares)
     "scipy.special",
     "types",
     "typing",
@@ -64,6 +65,7 @@ MODULES = sorted(PRICING.glob("*.py"))
 def test_the_package_is_found():
     names = {p.stem for p in MODULES}
     assert {"bsm", "black76", "escrowed", "forward", "clocks", "rates"} <= names
+    assert {"parity", "svi", "ssvi", "surface", "carry"} <= names  # WP-1.1
 
 
 @pytest.mark.parametrize("path", MODULES, ids=lambda p: p.name)
@@ -78,6 +80,8 @@ def test_module_is_pure(path: Path):
         "from pathlib import Path",
         "import httpx",
         "from scipy import stats",
+        "from scipy import optimize",
+        "import scipy.interpolate",
         "from . import bsm",
         "def f():\n    open('x')",
         "def f():\n    global X",
@@ -97,4 +101,14 @@ def test_source_headers_name_the_origin():
         if "Source:" in head:
             assert "volcalc" in head and "f53be83" in head, path.name
     ported = {p.name for p in MODULES if "Source:" in p.read_text().split('"""')[1]}
-    assert ported == {"bsm.py", "black76.py", "forward.py", "clocks.py", "rates.py"}
+    assert ported == {
+        "bsm.py",
+        "black76.py",
+        "forward.py",
+        "clocks.py",
+        "rates.py",
+        "parity.py",  # WP-1.1, with the three below
+        "svi.py",
+        "ssvi.py",
+        "surface.py",
+    }

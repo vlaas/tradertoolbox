@@ -156,6 +156,8 @@ The broker package (WP-0.3). Decided 2026-11-22:
   and the IV per expiration. A package may type a document earlier when waiting would
   significantly increase the work to redo or lead to worse code. Checked at decision time:
   waiting costs about ten test assertions; typing now would mean guessing at the model.
+  Since WP-1.1 the metrics are a record, `MarketMetrics`, with the dividend fields; WP-1.2 adds
+  its fields to it.
 - **Broker keys stay in the broker module** (GEN-09). Once a document is typed, the
   interface returns only the typed record, and the broker's JSON stays inside
   `s3t.broker.tastytrade`. Until then, nothing outside `s3t.broker` reads broker keys, except
@@ -727,6 +729,118 @@ to `broker_check.py` and `stream_check.py`.
 - **QA-08 is closed by review:** every timing row of `docs/measurements.md` since WP-0.3 records
   the load average, and each package that took no timing says so.
 
+The surface package (WP-1.1), part 1: forwards, dividends, the surface and its distribution.
+**Proposed 2026-11-27 (WP-1.1) and decided the same day (owner): every item as proposed.** The
+facts on the broker's dividend fields are in note B, addendum "WP-1.1". The signatures are in `s3t.pricing.parity`,
+`svi`, `ssvi`, `surface` and `carry`, `s3t.broker.interface` and `s3t.refdata.dividends`.
+
+- **Which forward an expiration uses** (PRC-05). Put-call parity, wherever three or more strike
+  pairs pass the outlier screen: for stocks, ETFs and indexes alike. That is `volcalc`'s rule.
+  Else the model forward from the spot, the dividend schedule and the rate curve
+  (requirements 4.6). The option of a future takes the price of its future. Each expiration
+  records its source: `parity`, `model`, `future` or `none`.
+  - The discount factor is fixed from the rate curve. Pairs are the strikes within 5% of the
+    model forward; without a spot, of the strike where call and put mids are nearest.
+  - A quote counts when both sides are there and the bid is above zero.
+  - In-the-money calls are left out within 5 sessions before an ex-date that the expiration
+    spans: they are exercised early.
+  - Not handled: the early-exercise premium of American puts. It lowers the parity forward of
+    a long stock or ETF expiration a little. It goes with the American pricer (plan, section 8).
+- **The broker states the last dividend, not the next** (REF-02; measured, note B). The
+  metrics hold the latest ex-date the broker knows, which was a past date for every payer, the
+  cash of that payment, and no payment frequency. So the schedule is that payment repeated every
+  365 / frequency days. The frequency is configuration: `[dividends] default_frequency`, four a
+  year, and `frequency` per symbol. REF-02 and the product definition 11.1 said "the broker's
+  next ex-date" and are reworded with this decision.
+  - Parity does not need the schedule. The schedule centres the pair band, gives the forward
+    where parity has too few pairs and at dates that are no expiration, and says which
+    expirations span an ex-date. A parity forward that implies a dividend more than 10% off the
+    schedule's is flagged.
+  - The stream's Profile event has an ex-dividend amount, day and frequency. The session asks
+    for them and the conversion drops them. Whether the live feed fills them was not looked at
+    (a live check). They could replace the configured frequency.
+- **The metrics are a record** (GEN-09): `MarketMetrics` with the symbol and `DividendFacts`.
+  The broker's keys are in `s3t.broker.tastytrade.metrics`. A recording is format 3 and holds
+  the record; a recording of format 2 is still read, and its metrics documents are parsed at
+  the read.
+- **The fit of a surface** (PRC-06) is `volcalc`'s, unchanged: out-of-the-money mids inverted on
+  the forward; weights from the spread; raw SVI in IV space with the butterfly penalty; a
+  consistency filter with one refit; SSVI with a free gamma across the fitted expirations.
+  "Per snapshot" is read as: per fit run, all expirations of an underlying at one moment. An
+  expiration is a root and a date, so SPX (AM) and SPXW (PM) of one date are two slices.
+- **The status of a slice:** `ok` (its own SVI); `sparse` (fewer than 5 strikes, or fewer than 2
+  beyond 0.25 delta on a side: this is what "thin" means); `fail` (the SVI fit found no
+  arbitrage-free solution); `none` (no forward, or no quote with an IV). A sparse or failed
+  slice takes the SSVI smile where the surface has one. Each slice names the model of its smile:
+  `svi`, `ssvi` or none (GEN-06). It also carries the RMSE, the quotes offered, fitted and
+  dropped, and the range of moneyness the fit saw, so a value outside it can be marked as an
+  extrapolation.
+- **The arbitrage check** (PRC-06) runs on every final smile, SSVI ones too: the
+  Gatheral-Jacquier function g(k) at or above -0.001 on 61 points over 8 at-the-money
+  deviations each way, positive variance, and wing slopes within Lee's bound of 2. A second
+  check is a flag only: a slice whose total variance falls below the slice before it, at the
+  same forward moneyness.
+- **Density and cumulative probability** (PRC-07) are closed forms of the smile and its first
+  two derivatives: the density of ln(S_T / F) is g(k) n(d2) / sqrt(w), and
+  P(S_T < K) = N(-d2) + n(d2) w'(k) / (2 sqrt(w)). They hold for SVI, for SSVI, and for a mix
+  of two slices.
+- **Interpolation in time** (for PRB-15). Total variance is linear in time at fixed forward
+  moneyness between the two expirations around a date. Before the first expiration, that
+  slice's IV at the same moneyness is kept. There is nothing after the last one. The forward at
+  such a date is the model forward to it times the ratio of fitted to model forward, which is
+  1 today and log-linear between the expirations. Earnings days get no extra weight.
+  - It replaces the monotone PCHIP curve of `bt_dataset` that 11.1 named. Linear in total
+    variance is `volcalc`'s rule and the VIX's, and needs no further part of scipy.
+  - The two rules compared before the decision, on five invented term structures (computed,
+    not market data): the at-the-money IV differs by 0.05 vol points with expirations a week
+    apart, by 0.1 to 0.3 with monthly expirations, and by 0.85 around a month that holds an
+    event. The probability of a fall of one deviation differs by 0.1 to 0.9 points. Nothing at
+    an expiration differs.
+  - The mix of the two neighbouring smiles meets each expiration's own smile. The `bt_dataset`
+    rule puts one SSVI shape between them, which would jump at an expiration with its own SVI.
+  - Neither rule knows an earnings day. That is the larger error under both, and the
+    improvement worth making later (plan, section 8).
+  - The choice is one function, `Surface.marginal_at`. Nothing is stored from it.
+- **The other two `bt_dataset` items of 11.1 are not built.** A wing freeze would break the
+  closed form; the slice reports its fitted range instead. Smoothing in time is left to the warm
+  start from the previous fit. Both are in the plan, section 8.
+- **Delta and gamma of an index option** (carried from WP-0.2) are against the index level, by
+  the factor F / S: an index pays in proportion to its level, so the implied yield is held
+  fixed (`s3t.pricing.carry.proportional_greeks`, all eight Greeks). A stock or an ETF pays
+  cash: on a parity forward its spot Greeks are the escrowed ones with the dividend PV that
+  parity implies, S - F DF. WP-1.2 applies both.
+- **The purity rule of `pricing`** allows `scipy.optimize` since this package: the SVI and SSVI
+  fits use `least_squares`.
+- **Not ported from `volcalc`:** the free-discount-factor fit, the pairing of trade prints, the
+  leverage and the surface trade sign, the second level of a fallback slice (its plan F2),
+  model-free IV, the moments, the strikes at fixed deltas.
+- **The fake market** prices a PM-settled option to the close and an AM-settled one to the open
+  (decided 2026-11-24), while its `expires-at` stays 16:15 for SPY and AAPL. SPY and AAPL pay a
+  quarterly dividend, and their options are priced on the escrowed forward. The metrics state
+  the dividends as the live documents do.
+
+The surface package (WP-1.1), part 2, not built: the pool and the fit service. **Proposed
+2026-11-27 and decided the same day (owner), before it is built.** What the building shows to be
+wrong comes back as a new proposal. The configuration sections `[numerics]` and
+`[surface]` exist with these defaults and nothing reads them yet.
+
+- **The pool** (PRF-05): a `ProcessPoolExecutor` with the start method `spawn` on every
+  platform, `[numerics] workers = 2`, started by the first fit and not with the backend. Its
+  module is `s3t.system.pool`, which imports no numerics. Plain values cross the boundary:
+  `SliceInput` records in, a `Surface` back. Everything of a fit runs in the worker: parity,
+  the IV of the mids, SVI, SSVI, the checks. A worker gets a null log handler, or the ported
+  solver's warnings reach the terminal.
+- **The service** (`s3t.analysis.surface`): a view takes a watch on an underlying and releases
+  it. While watched, a fit every `[surface] refresh_s = 30`, skipped when no quote of its set
+  changed, and a fit on demand. Each fit starts warm from the one before.
+- **Its subscriptions:** one consumer, in the class of the views while watched. Every open
+  expiration gets `core_strikes = 6` each side of the money, calls and puts: a forward and an
+  at-the-money IV. Expirations within `max_dte = 90` also get the out-of-the-money strikes out
+  to `wing_deviations = 3`, thinned to `wing_strikes = 30` a side. That is about 2,300 pairs
+  for SPY (computed, not measured). A cut by the budget shows as `sparse` slices.
+- **Which quotes a fit uses:** stored values whether live or not; the result carries its data
+  time and the count of inputs that were not live. No slice after its settlement instant.
+
 ## 4. Requirements
 
 ### 4.1 General
@@ -791,7 +905,7 @@ decision of 2026-11-27: section 3, "The live measurements". The budget counts pa
 | ID | Requirement | Release | Verify |
 |---|---|---|---|
 | REF-01 | A continuous rate curve is built from SOFR and Treasury yields downloaded from FRED without a key; a flat configured rate is the fallback, and the app shows which is in use. | R0 | T |
-| REF-02 | Dividends are discrete: the broker's next ex-date and amount, later ones projected from the payment frequency. | R1 | T |
+| REF-02 | Dividends are discrete: the broker's last ex-date and amount, repeated by the payment frequency, which is configured (reworded 2026-11-27: the broker states the last dividend, not the next, and no frequency; section 3, "The surface package"). | R1 | T |
 | REF-03 | Earnings and ex-dividend dates come from the broker's market metrics. | R1 | T |
 | REF-04 | Sessions (overnight, early, regular, late), holidays and early closes come from an exchange calendar, per instrument class. | R0 | T |
 | REF-05 | Time to expiry is calendar time to the contract's settlement instant, in a 365-day year. | R0 | T |

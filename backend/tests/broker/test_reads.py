@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -10,7 +10,7 @@ import pytest
 
 from s3t.broker.fake.clock import FakeClock
 from s3t.broker.fake.rest import FakeTastytrade
-from s3t.broker.interface import BrokerProtocolError, ForbiddenCall, NotFound
+from s3t.broker.interface import BrokerProtocolError, DividendFacts, ForbiddenCall, NotFound
 from s3t.broker.tastytrade.broker import from_config
 from s3t.broker.tastytrade.rest import METRICS_BATCH, TastytradeRest
 from s3t.config import load_config
@@ -69,7 +69,11 @@ async def test_futures(client: TastytradeRest, fake: FakeTastytrade) -> None:
 async def test_market_metrics_are_batched(client: TastytradeRest, fake: FakeTastytrade) -> None:
     unknown = [f"X{i:03d}" for i in range(2 * METRICS_BATCH)]
     items = await client.market_metrics(["SPY", "AAPL", "SPY", *unknown, "SPX"])
-    assert [i["symbol"] for i in items] == ["SPY", "AAPL", "SPX"]
+    assert [i.symbol for i in items] == ["SPY", "AAPL", "SPX"]
+    spy, aapl, spx = items
+    assert spy.dividend == DividendFacts(date(2026, 9, 21), 1.75, date(2026, 10, 5))
+    assert aapl.dividend is not None and aapl.dividend.amount == 0.26
+    assert spx.dividend is None  # an index: dates of 2020 and an amount of zero
     batches = [dict(r.query)["symbols"].split(",") for r in fake.requests if r.query]
     assert [len(b) for b in batches] == [METRICS_BATCH, METRICS_BATCH, 3]
 

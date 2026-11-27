@@ -114,3 +114,30 @@ state_file = "../data/state.sqlite"
 # Optional. The bound of the backend's memory (PRF-09): the peak resident memory, in MiB. Above it the
 # backend logs a warning and the health route says since when. Nothing else happens.
 # memory_bound_mb = 1024
+
+[dividends]
+# Optional. The dividend schedule of a stock or an ETF (REF-02). The broker states the last
+# ex-date and its amount, and no payment frequency. Later ex-dates are that payment repeated.
+# Payments a year, for every symbol not named below.
+# default_frequency = 4
+# Payments a year by symbol, where it differs: a monthly payer is written as { O = 12 }.
+# frequency = {}
+
+[numerics]
+# Optional. The process pool for heavy numerics (PRF-05): the surface fits. The workers start
+# with the first fit, not with the backend.
+# workers = 2
+
+[surface]
+# Optional. The surface fit of an underlying that a view watches (PRC-06).
+# Seconds from one fit to the next. A fit is skipped when no quote of its set has changed.
+# refresh_s = 30.0
+# Expirations up to this many days ahead get their wings subscribed; later ones keep the strikes
+# around the money, which give a forward and the fallback smile.
+# max_dte = 90
+# Strikes each side of the money, calls and puts, of every expiration: for the forward.
+# core_strikes = 6
+# At most this many out-of-the-money strikes each side of an expiration within max_dte.
+# wing_strikes = 30
+# How far the wings reach, in at-the-money standard deviations to the expiration.
+# wing_deviations = 3.0

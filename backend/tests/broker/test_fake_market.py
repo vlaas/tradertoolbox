@@ -140,5 +140,49 @@ def test_shapes_follow_the_live_check(market: SyntheticMarket) -> None:
     future = market.future(chain["futures"][0]["symbol"])
     assert future is not None and "roll-target-symbol" not in future
     assert future["expires-at"].endswith(".000+00:00")
-    metrics = market.market_metrics("AAPL")
-    assert metrics is not None and "dividend-updated-at" not in metrics
+
+
+def test_dividends_are_stated_as_the_live_documents_state_them(market: SyntheticMarket) -> None:
+    """Note B, addendum "WP-1.1": the last ex-date and its cash, a next date of years ago, no
+    annual amount; an index has old dates and zeros and no time of an update. The check of
+    2026-11-22 had read SPX's document for SPY's, so it missed `dividend-updated-at`."""
+    for symbol, days_ago, cash in (("SPY", 60, "1.75"), ("AAPL", 80, "0.26")):
+        doc = market.market_metrics(symbol)
+        assert doc is not None
+        assert doc["dividend-ex-date"] == (TODAY - timedelta(days=days_ago)).isoformat()
+        assert float(doc["dividend-rate-per-share"]) == float(cash)
+        assert doc["annual-dividend-per-share"] == "0.0"
+        assert doc["dividend-next-date"] < "2023" and "dividend-updated-at" in doc
+    spx = market.market_metrics("SPX")
+    assert spx is not None and spx["dividend-rate-per-share"] == "0.0"
+    assert spx["dividend-ex-date"] == "2020-05-30" and "dividend-updated-at" not in spx
+
+
+def test_the_markets_own_schedule_repeats_the_last_dividend(market: SyntheticMarket) -> None:
+    spy = UNDERLYINGS["SPY"]
+    last = TODAY - timedelta(days=60)
+    assert market.last_dividend(spy) == (last, 1.75)
+    assert market.last_dividend(UNDERLYINGS["SPX"]) is None
+    sched = market.dividends(spy, TODAY, TODAY + timedelta(days=200))
+    assert [(d.ex_date, d.amount, d.projected) for d in sched] == [
+        (last + timedelta(days=91), 1.75, True),
+        (last + timedelta(days=182), 1.75, True),
+    ]
+    assert market.dividends(spy, TODAY, TODAY + timedelta(days=30)) == []
+    assert market.dividends(UNDERLYINGS["SPX"], TODAY, TODAY + timedelta(days=400)) == []
+    pv = market.pv_dividends("SPY", TODAY, TODAY + timedelta(days=200), 0.04)
+    assert 3.4 < pv < 3.5 and market.pv_dividends("NOSUCH", TODAY, TODAY, 0.04) == 0.0
+
+
+def test_an_option_settles_at_the_close_and_expires_when_the_broker_says(
+    market: SyntheticMarket,
+) -> None:
+    """Decided 2026-11-24: the price runs to the settlement instant; `expires-at` stays 16:15."""
+    spy, spx = UNDERLYINGS["SPY"], UNDERLYINGS["SPX"]
+    day = dates(market, "SPY", "SPY")[0]
+    close = market.session(day)[1]
+    assert market.settles_at(spy.roots[0], day) == close
+    assert market._expires_at(spy, spy.roots[0], day) == close + timedelta(minutes=15)
+    am = next(r for r in spx.roots if r.settlement == "AM" and r.monthlies_only)
+    monthly = dates(market, "SPX", "SPX")[0]
+    assert market.settles_at(am, monthly) == market.session(monthly)[0]

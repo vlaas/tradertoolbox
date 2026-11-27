@@ -17,10 +17,11 @@ Nothing in the interface places, changes or cancels an order or changes account 
 nothing may be added that does (GEN-01).
 
 Once a document is typed, this interface returns only the typed record and the broker's JSON
-stays inside ``s3t.broker.tastytrade`` (decided 2026-11-22). Only the market metrics are still
-the broker's JSON documents (read-only mappings). WP-1.1 and WP-1.2 type them; until then,
-nothing outside ``s3t.broker`` reads their keys, except the package typing them. A test of the
-repository holds the rule for the keys of the instruments and chains.
+stays inside ``s3t.broker.tastytrade`` (decided 2026-11-22). The market metrics are a record
+since WP-1.1 (:class:`MarketMetrics`), which typed the dividend fields. WP-1.2 adds the
+earnings and the IV per expiration to it; the other fields of the broker's document join when
+a package needs them. A test of the repository holds the rule for the keys of the instruments,
+the chains and the metrics.
 
 The stream is typed too (decided 2026-11-23): no field name of the broker's feed and no
 value "as received" crosses this interface. The broker module converts every event into the
@@ -40,6 +41,33 @@ from s3t.broker.instruments import Future, OptionChain, OptionContract, Security
 
 type JsonObject = Mapping[str, Any]
 """A JSON object as the broker sent it. Treat it as read-only."""
+
+
+@dataclass(frozen=True)
+class DividendFacts:
+    """What a broker states of the cash dividends of a stock or an ETF (REF-02): one payment.
+
+    Tastytrade states the latest ex-date it knows and the amount of that payment. In the 133
+    documents of 2026-11-11 to 2026-11-19 that ``tt`` captured, the date was a past one for
+    every payer: the last dividend, not the next (note B, addendum "WP-1.1"). It states no
+    payment frequency. Later ex-dates are projected from this one (``s3t.refdata.dividends``).
+    """
+
+    ex_date: date
+    """The ex-date of the payment: usually the last one, and the next one if the broker
+    states it once it is declared (not seen)."""
+    amount: float
+    """Cash per share of that payment. Above zero."""
+    pay_date: date | None = None
+
+
+@dataclass(frozen=True)
+class MarketMetrics:
+    """The market metrics of one underlying, as far as they are typed (WP-1.1: dividends)."""
+
+    symbol: str
+    dividend: DividendFacts | None = None
+    """None where the broker states no dividend: a stock that pays none, an index."""
 
 
 @dataclass(frozen=True)
@@ -539,9 +567,11 @@ class Broker(Protocol):
         ``/ES``."""
         ...
 
-    async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:
-        """IV index, rank and percentile, IV per expiration, historical volatility,
-        earnings and dividends, liquidity and beta, one item per known symbol."""
+    async def market_metrics(self, symbols: Sequence[str]) -> list[MarketMetrics]:
+        """The market metrics, one record per known symbol: the dividend the broker states
+        (WP-1.1). The broker's document also holds the IV index with its rank and percentile,
+        the IV per expiration, historical volatility, earnings, liquidity and beta; they
+        join the record with the packages that use them."""
         ...
 
     def rest_status(self) -> RestStatus:

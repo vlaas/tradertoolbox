@@ -125,3 +125,10 @@ are counts of a thin day, and its timings are not measurements. The day run of P
 
 QA-08 is closed by review on 2026-11-27: every timing row since WP-0.3 records the load average, and
 each package that took no timing says so.
+
+WP-1.1, part 1 (2026-11-27) took no timings. PRF-05, the surface fit in the process pool and the
+longest block of the event loop, is measured in part 2 (`tools/timings.py surface`, not written
+yet). The accuracy results of part 1 are in the tests, not here: the fit recovers a known smile and
+forward (`tests/pricing/test_surface.py`), and the density integrates to one within 1e-8 over 30
+at-the-money deviations. The 30 ms per SVI slice in the architecture note is from `volcalc`'s
+documents and is still not measured here.

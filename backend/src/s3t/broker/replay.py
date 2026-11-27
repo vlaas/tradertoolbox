@@ -51,7 +51,7 @@ from s3t.broker.interface import (
     EventBatch,
     EventType,
     Gap,
-    JsonObject,
+    MarketMetrics,
     NotFound,
     QuoteToken,
     RestStatus,
@@ -66,9 +66,9 @@ from s3t.broker.interface import (
 )
 from s3t.broker.limits import Sleep
 from s3t.broker.recording import (
-    FORMAT,
     KINDS,
     META,
+    READS,
     REST,
     STREAM,
     ColumnKind,
@@ -311,10 +311,12 @@ class ReplayBroker:
             raise BrokerError(f"no recording named {directory.name}") from None
         except ValueError:
             raise BrokerProtocolError(f"recording {directory.name}: unreadable") from None
-        if meta.get("format") != FORMAT:
+        if meta.get("format") not in READS:
             raise BrokerProtocolError(
-                f"recording {directory.name}: format {meta.get('format')}, this reads {FORMAT}"
+                f"recording {directory.name}: format {meta.get('format')}, this reads "
+                + " and ".join(str(v) for v in READS)
             )
+        self._format: int = meta["format"]
         self.meta: dict[str, Any] = meta
         self.started_at = datetime.fromisoformat(meta["started_at"])
         self.position = self.started_at
@@ -341,7 +343,7 @@ class ReplayBroker:
         line = self._rest.get((call, json.dumps(list(args))))
         if line is None or "result" not in line:
             raise NotFound(f"{call}: not in the recording {self.directory.name}", status=404)
-        return decode_result(call, line["result"])
+        return decode_result(call, line["result"], self._format)
 
     async def quote_token(self) -> QuoteToken:
         at = self.data_time()
@@ -365,7 +367,7 @@ class ReplayBroker:
     async def futures_option_chain(self, root: str) -> OptionChain:
         return self._read("futures_option_chain", root)
 
-    async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:
+    async def market_metrics(self, symbols: Sequence[str]) -> list[MarketMetrics]:
         return self._read("market_metrics", list(symbols))
 
     def rest_status(self) -> RestStatus:

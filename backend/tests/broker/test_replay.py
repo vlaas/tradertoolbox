@@ -19,6 +19,7 @@ from backports import zstd
 
 from s3t.broker.fake.broker import FakeBroker
 from s3t.broker.fake.clock import VirtualClock
+from s3t.broker.fake.market import SyntheticMarket
 from s3t.broker.interface import (
     Broker,
     BrokerError,
@@ -123,7 +124,7 @@ async def recorded(tmp_path: Path) -> Recorded:
 async def test_the_recording_holds_no_secret_and_no_broker_key(recorded: Recorded) -> None:
     directory, seen, _ = recorded
     meta = json.loads((directory / META).read_text())
-    assert meta["format"] == 2 and meta["source"] == "fake" and meta["lost"] == 0
+    assert meta["format"] == 3 and meta["source"] == "fake" and meta["lost"] == 0
     assert meta["recorded_on"] == "2026-11-20" and meta["name"] == "fake-session"
     assert meta["items"] > len(seen) and meta["complete"] is True
     assert (directory / STREAM).name == "stream.jsonl.zst"
@@ -136,6 +137,10 @@ async def test_the_recording_holds_no_secret_and_no_broker_key(recorded: Recorde
     rest = (directory / REST).read_text()
     for word in ("streamer-symbol", "strike-price", "is-etf", "shares-per-contract"):
         assert word not in rest, word
+    # So are the market metrics, since version 3 (WP-1.1).
+    for word in ("dividend-ex-date", "dividend-rate-per-share", "implied-volatility-index"):
+        assert word not in rest, word
+    assert '"ex_date":"2026-09-21"' in rest
     # The stream file holds the application's records: no dxFeed name, no NaN as text.
     for word in ("eventSymbol", "bidPrice", "eventFlags", "NaN", "{=m}", '"Quote"'):
         assert word not in stream_text, word
@@ -273,6 +278,30 @@ async def test_at_full_speed_the_replay_does_not_wait(recorded: Recorded) -> Non
     await broker.aclose()
 
 
+async def test_a_recording_of_version_2_is_still_read(recorded: Recorded, tmp_path: Path) -> None:
+    """Version 2 wrote the metrics as the broker's documents. They are parsed at the read, so
+    the recordings made before WP-1.1 stay of use."""
+    directory, _, docs = recorded
+    old = tmp_path / "old"
+    old.mkdir()
+    meta = json.loads((directory / META).read_text())
+    (old / META).write_text(json.dumps({**meta, "format": 2}))
+    (old / STREAM).write_bytes((directory / STREAM).read_bytes())
+    market = SyntheticMarket(ASOF, seed=1)
+    lines = []
+    for text in (directory / REST).read_text().splitlines():
+        line = json.loads(text)
+        if line["call"] == "market_metrics":
+            line["result"] = [market.market_metrics(s) for s in line["args"][0]]
+        lines.append(json.dumps(line))
+    (old / REST).write_text("\n".join(lines) + "\n")
+    assert "dividend-ex-date" in (old / REST).read_text()
+    broker = ReplayBroker(old, paused=True)
+    assert await broker.market_metrics(["SPY", "SPX"]) == docs["metrics"]
+    assert await broker.option_chain("AAPL") == docs["chain"]
+    await broker.aclose()
+
+
 async def test_a_recording_that_cannot_be_read(tmp_path: Path) -> None:
     with pytest.raises(BrokerError, match="no recording named absent"):
         ReplayBroker(tmp_path / "absent")
@@ -321,7 +350,7 @@ def test_the_writer_flushes_while_it_runs(tmp_path: Path) -> None:
     # Readable before it is closed, as after a process that was killed.
     assert [line["t"] for line in lines] == [0, 1, 2]
     meta = json.loads((tmp_path / "live" / META).read_text())
-    assert meta == {"name": "live", "format": 2, "complete": False}
+    assert meta == {"name": "live", "format": 3, "complete": False}
     time.sleep(0.2)  # idle: no flush without new lines
     writer.put(STREAM, {"k": "n", "t": 3, "kind": "error", "m": "x", "e": None})
     writer.close({"ended_at": "later"})

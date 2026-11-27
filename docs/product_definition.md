@@ -445,6 +445,10 @@ time-zone choice, daily anchors at the open, the resolution list and the bar-bui
 
 Decided on 2026-11-24: the settlement instant of an option (11.1).
 
+Decided on 2026-11-27: the dividend schedule from the broker's last dividend, parity forwards for
+every underlying, linear total variance between expiries, index Greeks against the index level
+(11.1).
+
 ### 11.1 Pricing conventions (decided 2026-11-20)
 
 `volcalc`'s methods are the default.
@@ -454,11 +458,11 @@ Decided on 2026-11-24: the settlement instant of an option (11.1).
 | Year length | 365 days (525,600 minutes) |
 | Time to expiry | Calendar time to the contract's settlement instant (changed 2026-11-24, below the table). A trading-time clock can be added later as an option |
 | Rates | Continuous curve built from SOFR and Treasury yields (keyless FRED download); a flat configured rate as fallback |
-| Dividends | Discrete cash dividends for stocks and ETFs: the broker's next ex-date and amount, later ones projected from the payment frequency. Indexes use the forward implied from put-call parity |
+| Dividends | Discrete cash dividends for stocks and ETFs: the broker's last ex-date and amount, repeated by a configured payment frequency, four a year by default. The forward of an expiration comes from put-call parity wherever it has three good strike pairs, for stocks and ETFs as for indexes; the schedule serves where parity cannot (changed 2026-11-27, below the table) |
 | Exercise style | European formula on the out-of-the-money side plus an assignment-risk rule. An American pricer comes later, so in-the-money put values of stocks and ETFs are slightly understated until then |
-| Greeks | Own values everywhere; the broker's are a cross-check and the fallback when the own inversion fails. Raw units inside, trader units on screen (theta per calendar day, vega per vol point, dollars per position) |
+| Greeks | Own values everywhere; the broker's are a cross-check and the fallback when the own inversion fails. Raw units inside, trader units on screen (theta per calendar day, vega per vol point, dollars per position). Delta and gamma of an index option are against the index level, with the implied yield held fixed (added 2026-11-27) |
 | What-if | Each contract keeps its own IV (confirmed 2026-11-22). One volatility slider shifts all contracts; with several expirations it can be opened into one slider per expiration. Other smile and term-structure behaviour is offered only after the studies of section 11.2 |
-| Surface | SVI per expiry as the main surface; free-gamma SSVI as the fallback for thin expiries. Added from `bt_dataset`: an interpolating ATM-variance curve between expiries, wing freeze with quality gates, optional smoothing in time |
+| Surface | SVI per expiry as the main surface; free-gamma SSVI as the fallback for thin expiries. Between expiries, total variance is linear in time at fixed forward moneyness; before the first one, its IV is kept (changed 2026-11-27, below the table). Not built: the wing freeze with quality gates and the smoothing in time of `bt_dataset` |
 | Platform mode | A separate, labelled set used only for the Tastytrade POP, P50 and CVaR replicas: flat 2.93% drift, calendar days over 365, expiry at 16:00 ET, expiry IV for POP, IV index for the simulation |
 
 **Changed 2026-11-24 (owner, WP-0.5 review): the settlement instant.** Until then the row "Time to
@@ -478,6 +482,20 @@ it was 09:30, the open (seen live 2026-11-23). Now:
 Effect (computed): counted to 16:15, the same price gives an IV 10.6% lower one hour before the
 close, 0.5% lower one day before and 0.07% lower seven days before. The platform mode has the same
 instant; it stays a separate set for its other conventions.
+
+**Changed 2026-11-27 (owner, WP-1.1 review): dividends, the surface between expiries, index
+Greeks.** The reasons and the details are in the technical requirements, section 3, "The surface
+package".
+
+- Dividends. Until then the row said "the broker's next ex-date and amount, later ones projected
+  from the payment frequency", and gave parity to indexes only. The broker states the last
+  ex-date and its amount, not the next one, and no frequency (measured on 135 of its documents).
+  Parity gives the forward wherever an expiration has the quotes for it, whatever the
+  underlying.
+- Surface. Until then the row named an interpolating ATM-variance curve from `bt_dataset`. On
+  five invented term structures the two rules differ by 0.05 to 0.85 vol points at the money
+  between expiries, and not at all at an expiry (computed). Neither rule knows an earnings day.
+- Greeks. The row did not say what the delta of an index option is taken against.
 
 ### 11.2 Studies on historical data (to do)
 

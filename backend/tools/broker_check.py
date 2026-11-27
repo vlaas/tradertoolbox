@@ -45,6 +45,7 @@ from s3t.broker.fake.market import SyntheticMarket
 from s3t.broker.instruments import Expiration, OptionChain, OptionContract
 from s3t.broker.interface import BrokerError
 from s3t.broker.tastytrade import instruments as parse
+from s3t.broker.tastytrade.metrics import parse_metrics
 from s3t.broker.tastytrade.rest import TastytradeRest
 from s3t.config import load_config
 from s3t.secrets import install_redaction, load_broker_secrets, redact
@@ -297,19 +298,34 @@ async def run(client: TastytradeRest, market: SyntheticMarket) -> int:
                         same = option == chosen
                         print(f"  the contract read alone equals the one of the chain: {same}")
 
-    metrics = await call("market metrics", lambda: client.market_metrics(["SPY", "SPX"]))
+    metrics = await call("market metrics", lambda: client._metrics_documents(["SPY", "SPX"]))
     failures += metrics is None
-    if metrics:
-        compare("market metrics SPY", metrics[0], market.market_metrics("SPY"))
+    # By symbol: the broker's order is its own. On 2026-11-27 SPX came before SPY, and the check
+    # of 2026-11-22 had taken the first document for SPY's (note B, addendum "WP-1.1").
+    by_symbol = {str(item.get("symbol")): item for item in metrics or []}
+    print(f"  order of the documents: {list(by_symbol)}")
+    for symbol in ("SPY", "SPX"):
+        found = by_symbol.get(symbol)
+        if found is None:
+            failures += 1
+            print(f"  no document for {symbol}")
+            continue
+        compare(f"market metrics {symbol}", found, market.market_metrics(symbol))
+        record = await parsed(f"market metrics {symbol}", lambda d=found: parse_metrics(d))
+        if record is not None:
+            stated = record.dividend
+            print(f"  {symbol} dividend, typed: {'none' if stated is None else stated.ex_date}")
+    spy = by_symbol.get("SPY")
+    if spy is not None:
         print("  SPY values whose units matter:")
         for field in UNIT_FIELDS:
-            print(f"    {field}: {metrics[0].get(field)!r}")
-        ivs = metrics[0].get("option-expiration-implied-volatilities") or [{}]
+            print(f"    {field}: {spy.get(field)!r}")
+        ivs = spy.get("option-expiration-implied-volatilities") or [{}]
         print(f"    option-expiration-implied-volatilities[0]: {ivs[0]!r}")
-    many = await call("market metrics of 50", lambda: client.market_metrics(list(FIFTY)))
+    many = await call("market metrics of 50", lambda: client._metrics_documents(list(FIFTY)))
     failures += many is None
     if many is not None:
-        got = {str(doc.get("symbol")) for doc in many}
+        got = {str(item.get("symbol")) for item in many}
         print(f"\n[market metrics of 50] {len(many)} documents in one request")
         print(f"  symbols without a document: {sorted(set(FIFTY) - got) or 'none'}")
 

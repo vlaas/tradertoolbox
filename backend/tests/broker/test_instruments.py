@@ -27,6 +27,7 @@ from s3t.broker.tastytrade.instruments import (
     parse_option_chain,
     parse_security,
 )
+from s3t.broker.tastytrade.metrics import parse_metrics
 
 TODAY = date(2026, 11, 20)
 
@@ -348,6 +349,9 @@ def test_records_survive_a_recording(market: SyntheticMarket, es: dict[str, Any]
     option = records["futures_option_chain"].expirations[0].contract(5, "put")
     assert option is not None
     records["future_option"] = option
+    records["market_metrics"] = [
+        parse_metrics(doc_of(market.market_metrics(symbol))) for symbol in ("SPY", "SPX")
+    ]
     assert set(records) == set(RESULTS)
     for call, record in records.items():
         again = decode_result(call, encode_result(call, record))

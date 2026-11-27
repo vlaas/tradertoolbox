@@ -273,6 +273,50 @@ class ProcessConfig(_Section):
     health route says since when; nothing else happens."""
 
 
+class DividendsConfig(_Section):
+    """The dividend schedule (REF-02). Decided 2026-11-27 (owner, WP-1.1)."""
+
+    default_frequency: int = Field(default=4, ge=1, le=12)
+    """Payments a year of a stock or an ETF that `frequency` does not name. The broker states
+    the last dividend and no frequency."""
+    frequency: dict[str, int] = Field(default_factory=dict)
+    """Payments a year by symbol, where it is not the default: 12 for a monthly payer."""
+
+    @field_validator("frequency")
+    @classmethod
+    def _payments(cls, value: dict[str, int]) -> dict[str, int]:
+        for symbol, payments in value.items():
+            if not symbol or symbol != symbol.strip():
+                raise ValueError("a symbol must not be empty or padded")
+            if not 1 <= payments <= 12:
+                raise ValueError(f"{symbol}: payments a year must be from 1 to 12")
+        return value
+
+
+class NumericsConfig(_Section):
+    """The process pool for heavy numerics (PRF-05). Decided 2026-11-27 (owner, WP-1.1)."""
+
+    workers: int = Field(default=2, ge=1, le=16)
+    """Worker processes. They start with the first surface fit, not with the backend."""
+
+
+class SurfaceConfig(_Section):
+    """The surface fit of the underlyings in view (PRC-06). Decided 2026-11-27 (owner, WP-1.1)."""
+
+    refresh_s: float = Field(default=30.0, ge=5, le=3600)
+    """Seconds from one fit of an underlying to the next, while a view watches it. A fit is
+    skipped when no quote of its set has changed."""
+    max_dte: int = Field(default=90, ge=1, le=1100)
+    """Expirations up to this many days ahead get their wings subscribed. Later ones keep the
+    strikes around the money: a forward, and the fallback smile."""
+    core_strikes: int = Field(default=6, ge=3, le=50)
+    """Strikes each side of the money, calls and puts, of every expiration: for the forward."""
+    wing_strikes: int = Field(default=30, ge=5, le=200)
+    """At most this many out-of-the-money strikes each side of an expiration within `max_dte`."""
+    wing_deviations: float = Field(default=3.0, ge=1, le=8)
+    """How far the wings reach, in at-the-money standard deviations to the expiration."""
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
@@ -284,6 +328,9 @@ class Config(_Section):
     login: LoginConfig = Field(default_factory=LoginConfig)
     store: StoreConfig = Field(default_factory=StoreConfig)
     process: ProcessConfig = Field(default_factory=ProcessConfig)
+    dividends: DividendsConfig = Field(default_factory=DividendsConfig)
+    numerics: NumericsConfig = Field(default_factory=NumericsConfig)
+    surface: SurfaceConfig = Field(default_factory=SurfaceConfig)
     source: Path
     """The file this configuration was read from."""
 

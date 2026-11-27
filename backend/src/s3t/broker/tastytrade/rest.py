@@ -54,6 +54,7 @@ from s3t.broker.interface import (
     BrokerUnavailable,
     ForbiddenCall,
     JsonObject,
+    MarketMetrics,
     NotFound,
     QuoteToken,
     RateLimited,
@@ -69,6 +70,7 @@ from s3t.broker.tastytrade.instruments import (
     parse_option_chain,
     parse_security,
 )
+from s3t.broker.tastytrade.metrics import parse_metrics
 from s3t.secrets import REDACTOR, BrokerSecrets, redact
 
 API_URL = "https://api.tastyworks.com"
@@ -187,7 +189,12 @@ class TastytradeRest:
         doc = await self._read("futures_option_chain", symbol=product)
         return parse_futures_option_chain(doc, f"/{product}")
 
-    async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:
+    async def market_metrics(self, symbols: Sequence[str]) -> list[MarketMetrics]:
+        return [parse_metrics(doc) for doc in await self._metrics_documents(symbols)]
+
+    async def _metrics_documents(self, symbols: Sequence[str]) -> list[JsonObject]:
+        """The metrics as the broker sent them, 50 symbols a request. Not in the interface: for
+        the parser above, and for the live check, which compares the documents' keys."""
         wanted = list(dict.fromkeys(symbols))
         items: list[JsonObject] = []
         for i in range(0, len(wanted), METRICS_BATCH):

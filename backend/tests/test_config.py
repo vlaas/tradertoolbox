@@ -64,7 +64,8 @@ def test_the_examples_commented_keys_are_the_defaults(tmp_path: Path) -> None:
     key that the example shows with its default has that default."""
     text = re.sub(r"^# (\w+ = )", r"\1", EXAMPLE.read_text(), flags=re.MULTILINE)
     shown, plain = load_config(write(tmp_path, text)), load_config(EXAMPLE)
-    for section in ("stream", "subscriptions", "rates", "login", "store", "process"):
+    sections = ("stream", "subscriptions", "rates", "login", "store", "process")
+    for section in (*sections, "dividends", "numerics", "surface"):
         assert getattr(shown, section) == getattr(plain, section), section
     # These three have no default to show.
     own = {"recording", "fake_start", "account_nickname"}
@@ -326,3 +327,51 @@ def test_the_origins_are_written_as_browsers_write_them(
 def test_login_store_and_process_sections_refused(tmp_path: Path, lines: str) -> None:
     with pytest.raises(ConfigError, match=r"login|store|process"):
         load_config(write(tmp_path, VALID.format(address="127.0.0.1") + lines + "\n"))
+
+
+def test_the_sections_of_the_surface_package(tmp_path: Path) -> None:
+    """WP-1.1: dividends, the pool and the surface fit."""
+    plain = load_config(write(tmp_path, VALID.format(address="127.0.0.1")))
+    assert (plain.dividends.default_frequency, plain.dividends.frequency) == (4, {})
+    assert plain.numerics.workers == 2
+    assert (plain.surface.refresh_s, plain.surface.max_dte) == (30.0, 90)
+    more = (
+        "[dividends]\ndefault_frequency = 2\nfrequency = { O = 12, SCHD = 4 }\n"
+        "[numerics]\nworkers = 4\n"
+        "[surface]\nrefresh_s = 60.0\nmax_dte = 45\ncore_strikes = 8\nwing_strikes = 40\n"
+        "wing_deviations = 2.5\n"
+    )
+    config = load_config(write(tmp_path, VALID.format(address="127.0.0.1") + more))
+    assert config.dividends.frequency == {"O": 12, "SCHD": 4}
+    assert config.dividends.default_frequency == 2 and config.numerics.workers == 4
+    assert config.surface.model_dump() == {
+        "refresh_s": 60.0,
+        "max_dte": 45,
+        "core_strikes": 8,
+        "wing_strikes": 40,
+        "wing_deviations": 2.5,
+    }
+
+
+@pytest.mark.parametrize(
+    ("text", "section"),
+    [
+        ("[dividends]\ndefault_frequency = 0", "dividends"),
+        ("[dividends]\nfrequency = { O = 13 }", "dividends"),
+        ("[dividends]\nfrequency = { O = 0 }", "dividends"),
+        ('[dividends]\nfrequency = { O = "12" }', "dividends"),
+        ('[dividends]\nfrequency = { " O" = 12 }', "dividends"),
+        ("[dividends]\nyield = 0.01", "dividends"),
+        ("[numerics]\nworkers = 0", "numerics"),
+        ("[numerics]\nworkers = 64", "numerics"),
+        ("[surface]\nrefresh_s = 1.0", "surface"),
+        ("[surface]\nmax_dte = 0", "surface"),
+        ("[surface]\ncore_strikes = 2", "surface"),
+        ("[surface]\nwing_deviations = 12.0", "surface"),
+    ],
+)
+def test_the_sections_of_the_surface_package_refuse(
+    tmp_path: Path, text: str, section: str
+) -> None:
+    with pytest.raises(ConfigError, match=section):
+        load_config(write(tmp_path, VALID.format(address="127.0.0.1") + text))

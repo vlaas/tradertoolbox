@@ -6,17 +6,19 @@ through the same interface. A recording is market data: it goes to the git-ignor
 directory named by the configuration and never into the repository (GEN-07). ``make check``
 records only the fake broker, into a temporary directory.
 
-The format, version 2. A directory with three files (decided 2026-11-23). Version 2 writes
+The format, version 3. A directory with three files (decided 2026-11-23). Version 2 wrote
 the typed records of the instruments and chains where version 1 wrote the broker's documents
-(2026-11-24, WP-0.5); no recording of version 1 existed. The files:
+(2026-11-24, WP-0.5); no recording of version 1 existed. Version 3 writes the market metrics as
+their record too (2026-11-27, WP-1.1). A recording of version 2 is still read: its metrics are
+Tastytrade's documents, of the live broker or of the fake, and are parsed when they are read
+(:func:`decode_result`). The files:
 
 - ``meta.json``: the format version, the name, the kind of broker recorded, the start in
   UTC and the New York date of the start (for the "REPLAY" mark, GEN-11). It is written at
   the start with ``complete`` false. Closing the recording adds the end and the number of
   items written and lost, and sets ``complete``, unless the writer had failed.
 - ``rest.jsonl``: one line per REST read: ``at``, ``call``, ``args`` and ``result``, or
-  ``error`` with the name of the error. The result is the record as JSON (:data:`RESULTS`);
-  the market metrics are the broker's documents until they are typed.
+  ``error`` with the name of the error. The result is the record as JSON (:data:`RESULTS`).
 - ``stream.jsonl.zst``: one line per stream item, in order, compressed with zstd. ``k`` says
   what the line is:
 
@@ -74,7 +76,7 @@ from s3t.broker.interface import (
     EventBatch,
     EventType,
     Gap,
-    JsonObject,
+    MarketMetrics,
     QuoteToken,
     RestStatus,
     Stream,
@@ -84,9 +86,12 @@ from s3t.broker.interface import (
     StreamStatus,
     Sub,
 )
+from s3t.broker.tastytrade.metrics import parse_metrics
 from s3t.instants import to_micros
 
-FORMAT = 2
+FORMAT = 3
+READS = (2, 3)
+"""The versions a replay reads."""
 META, REST, STREAM = "meta.json", "rest.jsonl", "stream.jsonl.zst"
 QUEUE_SIZE = 50_000
 FLUSH_SECONDS = 3.0
@@ -122,6 +127,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "future": TypeAdapter(Future),
     "future_option": TypeAdapter(OptionContract),
     "futures_option_chain": TypeAdapter(OptionChain),
+    "market_metrics": TypeAdapter(list[MarketMetrics]),
 }
 """How the result of a typed REST read is written and read back. A call that is not here has
 a result that is JSON already."""
@@ -132,7 +138,10 @@ def encode_result(call: str, result: Any) -> Any:
     return result if adapter is None else adapter.dump_python(result, mode="json")
 
 
-def decode_result(call: str, value: Any) -> Any:
+def decode_result(call: str, value: Any, version: int = FORMAT) -> Any:
+    """The result of a read as the interface gives it. `version` is that of the recording."""
+    if call == "market_metrics" and version < 3:
+        return [parse_metrics(doc) for doc in value]
     adapter = RESULTS.get(call)
     return value if adapter is None else adapter.validate_python(value)
 
@@ -392,7 +401,7 @@ class RecordingBroker:
     async def futures_option_chain(self, root: str) -> OptionChain:
         return await self._read("futures_option_chain", root)
 
-    async def market_metrics(self, symbols: Sequence[str]) -> list[JsonObject]:
+    async def market_metrics(self, symbols: Sequence[str]) -> list[MarketMetrics]:
         return await self._read("market_metrics", list(symbols))
 
     def rest_status(self) -> RestStatus:

@@ -27,8 +27,11 @@ The price model:
   the depth of 8,000 bars (note B, addendum of 2026-11-24). A reader drops events with the
   remove flag.
 - **Options.** One fixed smile per expiration: a raw SVI slice in total variance
-  (:func:`svi_params`), on the forward ``F = S exp(r tau)`` with a flat rate of 4% and no
-  dividends. Prices and Greeks come from ``s3t.pricing.black76``. The quote is the model
+  (:func:`svi_params`), on the forward ``F = (S - PV(div)) exp(r tau)`` with a flat rate of
+  4% and the market's own dividend schedule (SPY and AAPL; WP-1.1). ``tau`` runs to the
+  settlement instant, the close for a PM-settled option, while quotes come until the broker's
+  ``expires-at``, 15 minutes later for SPY and AAPL: in those minutes the price stands at one
+  minute to go. Prices and Greeks come from ``s3t.pricing.black76``. The quote is the model
   price rounded to the tick with a spread of one tick or 2% of the price. An option whose
   bid would be below one tick has no bid, which dxFeed sends as a price of 0 with the size
   ``"NaN"`` (note B, addendum "WP-0.5").
@@ -169,6 +172,9 @@ class _Instrument:
     description: str = ""
     dividend: float = 0.0
     expires: datetime | None = None
+    """When the broker says an option expires: it is quoted until then."""
+    settles: datetime | None = None
+    """The settlement instant, which an option is priced to. None: at ``expires``."""
     strike: float = 0.0
     is_call: bool = False
 
@@ -430,10 +436,17 @@ class Ticks:
                     self.market.atm_vol(u.atm_vol, expiration),
                     u.tick_sizes,
                     expires=self.market._expires_at(u, root, expiration),
+                    settles=self.market.settles_at(root, expiration),
                     strike=strike,
                     is_call=m[3] == "C",
                 )
         return None
+
+    def _ex_dividend_day(self, inst: _Instrument) -> int:
+        """The last ex-date as dxFeed's day number, the one the metrics state; 0 without."""
+        u = UNDERLYINGS.get(inst.symbol)
+        last = None if u is None else self.market.last_dividend(u)
+        return 0 if last is None else _day_id(last[0])
 
     def _underlying_of(self, inst: _Instrument) -> _Instrument:
         under = self.instrument(inst.path)
@@ -458,11 +471,19 @@ class Ticks:
             return {}
         spot = np.array([self._path(self._underlying_of(i)).price(at) for i in insts])
         on_future = np.array([self._underlying_of(i).kind == "future" for i in insts])
-        tau = np.array([tau_cal(at, i.expires) for i in insts if i.expires is not None])
+        settles = [i.settles or i.expires or at for i in insts]
+        tau = np.array([tau_cal(at, t) for t in settles])
         strike = np.array([i.strike for i in insts])
         is_call = np.array([i.is_call for i in insts])
         growth = np.where(on_future, 1.0, np.exp(RATE * tau))
-        forward = spot * growth
+        day = at.astimezone(NY).date()
+        pv_div = np.array(
+            [
+                self.market.pv_dividends(i.path, day, t.astimezone(NY).date(), RATE)
+                for i, t in zip(insts, settles, strict=True)
+            ]
+        )
+        forward = (spot - pv_div) * growth  # the escrowed model: cash dividends leave the spot
         df = np.exp(-RATE * tau)
         sigma = smile_vol(np.array([i.vol for i in insts]), tau, np.log(strike / forward))
         price = black_price(forward, strike, tau, df, sigma, is_call)
@@ -597,7 +618,7 @@ class Ticks:
                 "earningsPerShare": NAN,
                 "dividendFrequency": 4.0 if inst.dividend else NAN,
                 "exDividendAmount": round(inst.dividend / 4, 4) if inst.dividend else NAN,
-                "exDividendDayId": _day_id(self.market.today) + 30 if inst.dividend else 0,
+                "exDividendDayId": self._ex_dividend_day(inst),
                 "shares": NAN,
                 "freeFloat": NAN,
             }

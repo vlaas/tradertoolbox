@@ -2,8 +2,8 @@
 tests/test_forward.py at commit f53be83, with the source's dividend table given as the rows
 known on each day (the source filtered it by `known_at`).
 
-Not ported: the tests of the parity fit (TestFitForward, TestSliceForwards, test_pair_prints,
-test_slice_inputs, test_fwd_model_share). They come with the fit in WP-1.1."""
+The tests of the parity fit (TestFitForward, TestSliceForwards) are in test_parity.py since
+WP-1.1."""
 
 from datetime import date
 

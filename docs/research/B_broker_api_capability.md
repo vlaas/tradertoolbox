@@ -559,3 +559,45 @@ single contracts of 9 roots, 2026-11-11 to 2026-11-19; counts only):
 Not tested here: a full day, regular-hours rates on a normal day, a stall, a 429, the late session's
 end on an early close (the candle check, `stream_check.py --candles 2026-11-27`), and how the app
 looked during the run.
+
+
+## Addendum 2026-11-27 (WP-1.1): the dividend fields of the market metrics
+
+No live call was made. Read: the 133 `market_metrics` documents that `tt` captured from
+2026-11-11 to 2026-11-19 (AAPL 1, AMD 5, GLD 8, NVDA 11, QQQ 1, SPX 3, SPY 95, TSLA 6, XSP 3),
+and the two documents (SPY, SPX) of the recording made with `tools/capture.py` on 2026-11-27.
+The application's parser read all of them without an error (a one-off run, not a test of the
+suite: the repository holds no market data).
+
+- **`dividend-ex-date` is the last ex-date, not the next.** For every payer it was a past date:
+  SPY 2026-09-18 in all 95 documents and again on 2026-11-27, NVDA 2026-09-10, QQQ 2026-09-21,
+  AAPL 2026-11-12 in a document of 2026-11-19. Whether the field moves to a declared date
+  before that date arrives was not seen: no document was taken between a declaration and its
+  ex-date.
+- **`dividend-rate-per-share` is the cash of that payment,** above zero for the four payers.
+  `dividend-pay-date` belongs to the same payment.
+- **`dividend-next-date` is not a next date.** It held 2022-12-16 for SPY, 2022-09-07 for NVDA,
+  2022-12-19 for QQQ and 2022-08-05 for AAPL.
+- **`annual-dividend-per-share` was 0.0 for every symbol,** payers too. There is no key for
+  the payment frequency.
+- **A stock or ETF that pays none** (AMD, GLD, TSLA) has `dividend-ex-date` 1970-01-01 and a
+  rate of 0.0. XSP has a rate of 0.0 and no date keys at all.
+- **SPX** carries dates of 2020 (`dividend-ex-date` 2020-05-30), a rate of 0.0 and no
+  `dividend-updated-at`.
+- **The documents do not come in the order asked for.** On 2026-11-27 the request named SPY
+  and then SPX, and SPX's document came first.
+
+**A correction to the addendum "WP-0.3".** That check printed the first document of the
+answer as SPY's. With the order above it was most likely SPX's.
+
+- "SPY's `dividend-rate-per-share` and `dividend-yield` were 0.0" is SPX's. SPY's are above
+  zero.
+- "`dividend-updated-at` is in the fake and not in the live documents" is true of SPX only.
+  SPY and the other payers have the key. The fake has it again, for payers.
+- The other values listed there as SPY's units (the IV index, its rank above 1, the 30-day
+  IV, the first entry of the IV list) may be SPX's too. They are read again when WP-1.2 types
+  those fields. `tools/broker_check.py` now picks each document by its symbol.
+
+Projected from the last payment at four a year, SPY's next ex-dates are 2026-12-18,
+2027-03-19, 2027-06-18, 2027-09-17 and 2027-12-17 (computed). All are third Fridays, which is
+SPY's habit; the real dates are not known yet.

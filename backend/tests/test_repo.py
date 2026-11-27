@@ -120,12 +120,14 @@ def _keys(path: Path) -> set[str]:
 
 
 def test_broker_document_keys_stay_in_the_broker_module() -> None:
-    """GEN-09, for the documents that are typed (WP-0.5): instruments and chains. The market
-    metrics are still the broker's documents, so their keys are not in the list. The words
-    without a hyphen (``symbol``, ``strikes``) are ordinary words and are left to review."""
+    """GEN-09, for the documents that are typed: instruments and chains (WP-0.5), and the
+    market metrics (WP-1.1, as far as their keys are read). The words without a hyphen
+    (``symbol``, ``strikes``) are ordinary words and are left to review."""
     src = REPO / "backend" / "src" / "s3t"
     keys = _keys(src / "broker" / "tastytrade" / "instruments.py")
+    keys |= _keys(src / "broker" / "tastytrade" / "metrics.py")
     assert {"streamer-symbol", "strike-price", "option-chains", "expires-at"} <= keys
+    assert {"dividend-ex-date", "dividend-rate-per-share", "dividend-pay-date"} <= keys
     inside = (src / "broker" / "tastytrade", src / "broker" / "fake")
     leaks = {
         str(path.relative_to(src)): sorted(found)

@@ -6,11 +6,11 @@ and `model_forward`, with the rules unchanged (product definition 11.1, REF-02).
 Changed in the port (2026-11-22, WP-0.2):
 - `dividend_schedule` takes plain values instead of a polars table: the dividends known on day d
   and the payment frequency. Choosing what is known on d (the source's `known_by`) is the
-  caller's job; in the app the broker's market metrics give the next ex-date and amount.
+  caller's job; in the app the broker's market metrics give the last ex-date and its amount
+  (s3t.refdata.dividends; WP-1.1).
 - Added `pv_dividends_dr`, the rate derivative of the PV, which the spot rho of escrowed.py
   needs.
-- Not ported: the put-call parity fit (`pair_prints`, `fit_forward`, `slice_forwards`,
-  `slice_inputs`, `fwd_model_share`). It is PRC-05 and comes with WP-1.1.
+- The put-call parity fit (PRC-05) is in parity.py since WP-1.1.
 
 From the source docstring: ex-dates in (d, settle_date] known on d, plus the last known dividend
 projected every 365/frequency days where none is declared yet (SPY declares a year's ex-dates

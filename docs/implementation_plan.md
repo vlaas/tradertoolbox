@@ -51,7 +51,7 @@ names its split point.
 | WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; SEC-06 open for Linux |
 | WP-0.8 | Frontend shell | M | done 2026-11-27 |
 | WP-0.9 | R0 live measurements and acceptance | S | in progress: tools and rehearsal 2026-11-27; the day run 2026-11-30 |
-| WP-1.1 | Forwards and surface | M | not started |
+| WP-1.1 | Forwards and surface | L | in progress: part 1 (numerics, dividends, the fake) 2026-11-27; part 2 (pool, fit service, PRF-05) open |
 | WP-1.2 | Chain service | M | not started |
 | WP-1.3 | Ticket model and evaluation | L | not started |
 | WP-1.4 | Probabilities, stage a | L | not started |
@@ -442,13 +442,24 @@ WP-0.9 closes the release.
 
 ### R1 Trade workbench
 
-**WP-1.1 Forwards and surface** (M)
-- *Read first:* `volcalc` `iv/forward.py` and `surface/`; product definition, 11.1.
-- *Build:* the forward per expiry from quote mids; the dividend schedule from broker data;
-  SVI per expiry with the SSVI fallback, the arbitrage check and a fit status; density and
-  cumulative probability; interpolation in time; the fit service in the process pool with its
-  refresh timer.
-- *Closes:* PRC-05 to PRC-07, REF-02, PRF-05.
+**WP-1.1 Forwards and surface** (L; split after the numerics. It was sized M; the split was
+added on 2026-11-27, when part 1 filled a session)
+- *Read first:* `volcalc` `iv/forward.py` and `surface/`; product definition, 11.1. For part 2:
+  requirements, section 3, "The surface package" (both parts); `s3t/pricing/surface.py`;
+  `s3t/system/process.py` and `s3t/api/topics.py` (`_QuotesView`) as patterns.
+- *Build, part 1 (done 2026-11-27):* the forward per expiry from quote mids; the dividend
+  schedule from broker data; SVI per expiry with the SSVI fallback, the arbitrage check and a
+  fit status; density and cumulative probability; interpolation in time. All in `pricing`, as
+  one call that a worker process can run. The fake market with dividends and the settlement
+  clock.
+- *Build, part 2:* the process pool (`s3t.system.pool`); the fit service
+  (`s3t.analysis.surface`) with its watches, its refresh timer and its own subscriptions; both
+  in the backend's composition and in the health route; tests on the fake broker for SPY, SPX
+  and AAPL; one test through a real pool.
+- *Measure, part 2:* PRF-05 with a new `tools/timings.py surface`: a fit per underlying and
+  per slice in the pool, the steps on the event loop, and the lag of a short timer while fits
+  run.
+- *Closes:* PRC-05 to PRC-07 and REF-02 (part 1, by tests); PRF-05 (part 2).
 
 **WP-1.2 Chain service** (M)
 - *Build:* the chain view by expiration and strike window; own IV and Greeks per flush as one
@@ -607,7 +618,8 @@ Found but not planned into a package yet.
     is no IV (`enforce_iv_greeks_contract`). Two: PRC-13's fallback to the broker's Greeks. Both
     belong to the chain service (WP-1.2).
   - Index options priced on the parity forward get forward Greeks from `black76`. Delta and
-    gamma against the index level need the factor F/S. Decide it with the forward (WP-1.1).
+    gamma against the index level need the factor F/S. Decided at WP-1.1 (2026-11-27): the
+    factor F/S with the implied yield held fixed, `s3t.pricing.carry`; WP-1.2 applies it.
   - The trading-time clock (`volcalc` `tau_bus`) when it is wanted, on the WP-0.6 calendar.
   - The frozen `volcalc` values match bit for bit with numpy 2.5.4 and scipy 1.18.1. A numpy or
     scipy upgrade can break that; `tests/pricing/test_reference.py` says what to do then.
@@ -626,7 +638,8 @@ Found but not planned into a package yet.
       WP-0.8.
     - GEN-09: reviewed for the stream at WP-0.4 and for the instruments at WP-0.5. A test
       (`tests/test_repo.py`) holds the keys of the instrument documents inside the broker
-      module. The metrics are still broker JSON (WP-1.1, WP-1.2).
+      module. The metrics are a record since WP-1.1, with the dividend fields; the same test
+      holds their keys. WP-1.2 adds the earnings and the IV per expiration.
   - uvicorn's loggers: done at WP-0.7. The server gets no logging configuration of its own, so they
     reach the one handler of the process, which redacts.
   - The broker's REST limits are not known. The defaults (2 requests per second, burst 4) are
@@ -647,7 +660,8 @@ Found but not planned into a package yet.
     - The IV index rank can be above 1, and an entry of the IV list per expiration can lack
       its value (WP-1.1, WP-1.2).
     - SPY's dividend fields in the metrics were 0.0. The dividend schedule of an ETF may need
-      another source (WP-1.1).
+      another source (WP-1.1). **Corrected at WP-1.1:** that was SPX's document; SPY's amount
+      is above zero (note B, addendum "WP-1.1"). No other source is needed for the amount.
   - `../tt` is not a git repository. The ported files name `tt` version 1.6.0 instead of a
     commit.
   - GEN-11 was added in the review of the proposals (2026-11-22). The broker choice and the mark
@@ -709,8 +723,10 @@ Found but not planned into a package yet.
   - The fake stream:
     - moves only in the regular session; the live intraday feed runs around the clock on
       weekdays;
-    - prices options on a flat 4% rate without dividends (WP-1.1 extends it when it tests
-      dividends);
+    - prices options on a flat 4% rate; since WP-1.1 with the quarterly dividends of SPY and
+      AAPL, on the escrowed forward. The rate is a constant of the fake and equals the default
+      of `[rates] flat_rate`; a configuration with another flat rate makes the app's model
+      forward differ from the fake's;
     - states its Greeks in assumed units: theta per day, vega and rho per percentage point
       (WP-1.9 compares the live units);
     - serves candles in minutes, hours and days only, and needs about a second for the
@@ -750,10 +766,9 @@ Found but not planned into a package yet.
     year ahead), and configured closures. Holidays far ahead are rules, not announcements.
   - The items for WP-0.7 are done. The row carries no mark for a value that is not live: the
     `status` says from when on values are (decided 2026-11-27, requirements section 3).
-  - **For WP-1.1:** the synthetic market prices SPY options to 16:15, the broker's
-    `expires-at`, and the settlement rule says 16:00. A fit on the synthetic market does not
-    recover the smile to the last digit for short expirations. The rule is confirmed
-    (2026-11-24): change the fake's clock. AM-settled options are priced to 09:30 in both.
+  - **Done at WP-1.1:** the synthetic market priced SPY options to 16:15, the broker's
+    `expires-at`, and the settlement rule says 16:00. The fake now prices to the settlement
+    instant and quotes until `expires-at`, as the live feed does.
   - **Before the assignment flag (PRB-06):** correct the exercise style of /ES options per root.
     The broker states American for all of them, in the chain and in the document of one weekly
     (E2C). CME and CFTC documents have the weeklies and the end-of-month options as European
@@ -969,6 +984,67 @@ Found but not planned into a package yet.
     WP-1.2 stops their IV at the settlement instant.
   - `tools/timings.py reader` replays at multiples of the pace. Above about 300 times the replay
     itself cannot keep up, so the capacity found (about 49,000 events a second) is a lower bound.
+
+- From WP-1.1 (2026-11-27, part 1):
+  - **The proposals** of part 1 and of part 2 were decided by the owner on 2026-11-27, every
+    one as proposed (requirements, section 3, "The surface package"). REF-02 and the rows
+    "Dividends", "Greeks" and "Surface" of the product definition 11.1 were reworded with them.
+  - **Event days between expirations.** Total variance is spread evenly over the days between
+    two expirations. An earnings day holds more of it, so a date just before earnings gets too
+    much variance and one just after too little. It is the improvement worth making to the
+    interpolation in time (agreed 2026-11-27); the earnings date comes with WP-1.2.
+  - **Part 2 is open:** the pool, the fit service and PRF-05. `[numerics]` and `[surface]` are
+    in the configuration and nothing reads them. Nothing in the running backend uses the new
+    numerics yet, so the day run of WP-0.9 is not changed by part 1.
+  - **Not verified live, and not on real quotes.** The fit ran on quotes made from known
+    smiles only. Whether it is stable on thin real expirations (section 7) is not answered.
+    Ways to answer it without a live call: the streamer dumps of SPXW 0DTE quotes, fed to
+    `fit_surface` by a one-off script; or a recording that holds the wings.
+  - **A live look at a surface** needs about 2,300 subscriptions for SPY (computed), which is
+    more than "a few at a time". It is a stated check for the owner to allow, in part 2 or at
+    WP-1.9.
+  - **The dividend frequency is configuration,** four a year unless a symbol is named. A
+    monthly payer that is not named gets a wrong schedule; its parity forward is still right,
+    and the flag for an implied dividend off the schedule shows it. The Profile event of the
+    stream has an amount, a day and a frequency that the conversion drops; whether the live
+    feed fills them needs one Profile subscription to see.
+  - **An ex-date that is projected is an estimate.** Whether `dividend-ex-date` moves to a
+    declared date before it arrives was not seen. SPY's next one should be 2026-12-18: read the
+    metrics once in the weeks before it.
+  - **The values that note B lists as SPY's units** (addendum "WP-0.3") may be SPX's: the check
+    took the first document for SPY's, and the broker's order is its own. WP-1.2 reads them
+    again when it types them.
+  - **PRF-03 against PRF-05** (for WP-1.2). PRF-03 allows a flush of 100 ms and the flush runs
+    on the event loop; PRF-05 allows the loop no block above 50 ms. One of the two has to give,
+    or the flush leaves the loop.
+  - **For WP-1.2:**
+    - The forward of a fit belongs to the spot of that moment. Between fits, scale it by the
+      spot: the ratio F / S moves little in 30 s.
+    - `Slice.atm_iv` is there for a slice without a smile too (the quote nearest the money),
+      for the expected move.
+    - The spot Greeks of P9: `carry.proportional_greeks` for an index, `escrowed_greeks` with
+      `carry.implied_pv` for a stock or an ETF on a parity forward. The rate derivative of an
+      implied PV is not defined; rho then takes the schedule's or zero.
+  - **For WP-1.4:**
+    - `Surface.marginal_at(tau, forward)` needs the forward at the date: the model forward to
+      it times `Surface.basis_at(tau)`.
+    - A probability outside `k_min` to `k_max` of a slice is an extrapolation of the smile.
+      Mark it, or do not show it (PRB-13).
+    - A `Marginal` names its model: `svi`, `ssvi`, or both for a date between two slices.
+    - Probabilities are clipped to 0 and 1. A slice whose butterfly check fails can have a
+      negative density; its flag says so, the clip does not.
+  - **Not built, by the decision of 2026-11-27:** the wing freeze with quality gates and the
+    smoothing of the parameters in time (`bt_dataset`).
+  - **Not handled:** the early-exercise premium of American puts in the parity forward of a
+    long stock or ETF expiration. With the American pricer.
+  - **The SVI fit warns** through the ported IV solver's logger for quotes it cannot invert.
+    In a worker process without a handler these go to the terminal: part 2 gives the workers
+    a null handler.
+  - **The pytest markers `reference` and `captures`** of sections 3.1 and 3.2 do not exist.
+    Tests on real documents are still one-off runs: the metrics parser read the 133 captured
+    documents and the recording of 2026-11-27 that way.
+  - `tests/pricing` takes about 80 s of the suite's 140 s (seen, not measured on an idle
+    machine). Most of it was there before this package.
 
 ## 9. Starting a package in a fresh session
 
