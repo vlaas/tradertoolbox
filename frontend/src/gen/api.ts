@@ -246,6 +246,7 @@ export interface components {
              */
             data_time: string;
             market: components["schemas"]["MarketStatus"];
+            process: components["schemas"]["ProcessStatus"];
             rates: components["schemas"]["RatesStatus"];
             rest: components["schemas"]["RestStatus"];
             source: components["schemas"]["SourceReport"];
@@ -306,6 +307,20 @@ export interface components {
             values: {
                 [key: string]: number;
             };
+        };
+        /**
+         * ProcessStatus
+         * @description For the health route (SEC-08).
+         */
+        ProcessStatus: {
+            /** Bound Mb */
+            bound_mb: number;
+            /** Checked At */
+            checked_at: string | null;
+            /** Over Bound Since */
+            over_bound_since: string | null;
+            /** Peak Rss Mb */
+            peak_rss_mb: number;
         };
         /**
          * RatesStatus

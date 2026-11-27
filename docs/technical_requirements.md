@@ -274,7 +274,8 @@ The stream package, the rest. **Decided 2026-11-23 (owner, WP-0.4 review):**
     `streamer` (always running, 0DTE SPX) use the same account. They can be raised later.
   - Candles: 100 less a reserve of 5. Changes: 10,000 a minute less a reserve of 2,000.
   - The budget counts symbol and event pairs until WP-0.9 has measured how the broker
-    counts, and whether it counts per session (as published) or per account.
+    counts, and whether it counts per session (as published) or per account. (2026-11-27: not
+    measured, by decision; the budget keeps counting pairs. See "The live measurements" below.)
 - **Reduction inside a class** (SUB-03). The consumer that registered first keeps its pairs.
   A consumer gives its pairs in order of importance and is cut from the end.
 - **Replay** (BRK-05). REST reads return the recorded document or "not found". The stream
@@ -663,6 +664,69 @@ WP-0.8.
   `--stale-row`, in place of the viewer's 25%), and the status bar's figures of a connection that
   has gone were faded (they are in italics).
 
+The live measurements (WP-0.9). The facts are in note B, addendum "WP-0.9", and the figures in
+`docs/measurements.md`. The tools are `backend/tools/live_day.py`, `timings.py`, and the additions
+to `broker_check.py` and `stream_check.py`.
+
+**Decided 2026-11-27 (owner, WP-0.9 plan):**
+
+- **No probe past a published limit.** No subscription beyond the cap, no change rate beyond the
+  limit, no sixth session, no burst of REST requests. The account is the one the broker objected to
+  before, and the owner's `streamer` runs on it. So these are **not measured, by decision**:
+  - how the cap counts (symbols, or symbols and event types);
+  - whether it counts per session or per account;
+  - what the server answers beyond the cap or the change limit, and to a sixth session.
+- **The budget keeps counting symbol and event pairs,** the safe reading of a unit the broker does
+  not define (note B). The application grants at most 10,000, and the `streamer` holds about 7,500.
+  So even a cap of 25,000 per account is not reached by the two together. The broker's own app was
+  not counted.
+- **The REST limits are read from the documentation and the response headers.**
+  - The broker publishes no numbers for REST. No response states a limit, and a 429 carries no
+    header for it (note B).
+  - The client's default of 2 requests a second with a burst of 4 stays (BRK-04). No 429 has been
+    seen at it.
+- **PRF-09 is a run across every session, not a trading day.** Instruments trade at different
+  hours. Futures run from Sunday 18:00 to Friday 17:00 New York with a daily break, and stocks have
+  overnight, early, regular and late sessions, with 23-hour trading from 2026-12-06. Crypto (24/7)
+  and forex (24/5) may come later.
+  - At R0 it is measured over 25 hours: from Monday 2026-11-30, 08:45 New York, to Tuesday 09:45.
+    That crosses every session of stocks and futures, the futures' daily break, the 24-hour life of
+    the stream's quote token, two refreshes of the rates and a daily copy of the state file.
+  - The demand of the run adds the front /ES future and /ES options near the money, so that the
+    night has data.
+  - The machine is idle from 09:30 to 16:00 New York for the timings; memory and states need no
+    idle machine.
+  - A whole week is observed in normal use afterwards, not as a measured run.
+  - A rehearsal ran on 2026-11-27, the half day after Thanksgiving.
+- **Every timing records its CPU time and the machine** (QA-08), beside the wall time and the load.
+  The product moves to a dedicated machine later, which may have another capacity, so the headroom
+  has to be judged from the CPU time. The event loop is one thread, so its headroom is the share of
+  one core it uses. The owner expects the machine not to be the bottleneck; if it is, the code needs
+  optimising.
+- **The memory bound of PRF-09 is observed, not a limit.** It is the setting
+  `[process] memory_bound_mb`, 1,024 MB, which is enough; it is not set again from the day run.
+  - A watch in the backend (`s3t.system.process`) reads the peak resident memory once a minute and
+    logs one warning when it goes above the bound.
+  - The health route reports the peak, the bound and since when it was exceeded.
+  - Nothing else happens. The backend does not restart or refuse anything, and the app does not
+    show it yet.
+
+**Proposed 2026-11-27 (WP-0.9), to be confirmed:**
+
+- **The IV cost measured at R0 is that of a stand-in:** `escrowed_iv` on the event loop, at every
+  flush, for the options whose quote changed. The design of the flush is WP-1.2's. The capacity of
+  the reader is measured by replaying a recording at multiples of its pace, without the DXLink
+  decoding. A replay as fast as the loop runs measures nothing: it outruns every reader and ends
+  before the first flush.
+- **The rate error of the stream is a guess.** The session takes an error as a rate error when its
+  text contains "rate" (`dxlink.py`). No document names that text, and none says how an excess is
+  reported. The manager paces at 8,000 changes a minute, so it should not arise.
+  - Proposal: leave the session as it is.
+  - If an `ERROR` of the code `BAD_ACTION` or `UNKNOWN` is ever seen right after a chunk of
+    changes, treat it as a rate error too (plan, section 8).
+- **QA-08 is closed by review:** every timing row of `docs/measurements.md` since WP-0.3 records
+  the load average, and each package that took no timing says so.
+
 ## 4. Requirements
 
 ### 4.1 General
@@ -707,7 +771,8 @@ WP-0.8.
 | SUB-06 | Open interest is collected by a daily sweep and not held as a standing subscription. | R3 | T |
 | SUB-07 | The manager reports its use (per class and in total) to the app. | R0 | T |
 
-To measure in R0: whether the cap counts symbols or symbol-event pairs.
+To measure in R0: whether the cap counts symbols or symbol-event pairs. (Not measured, by
+decision of 2026-11-27: section 3, "The live measurements". The budget counts pairs.)
 
 ### 4.4 Market state and instruments
 
@@ -1011,7 +1076,7 @@ Targets unless marked measured. Each is measured in the release named and record
 | PRF-06 | The chart shows 8,000 bars with four moving averages and two indicator panes in under 300 ms after the data has arrived. Measured in the prototype: 50 to 145 ms across three browsers. | R2 | M |
 | PRF-07 | A live candle update costs under 10 ms in the browser and delays no frame at two updates a second. Measured in the prototype: 1 to 5 ms, no late frame. | R2 | M |
 | PRF-08 | The chain grid scrolls and updates without late frames at one update a second for 400 visible-or-buffered rows. | R1 | M |
-| PRF-09 | The backend runs a full trading day without restart and without growth of memory beyond a configured bound. | R0 | M |
+| PRF-09 | The backend runs without restart across every session and the weekend, without growth of memory beyond a configured bound. The bound is `[process] memory_bound_mb`, 1,024 MB, observed and not a limit. Measured at R0 over 25 hours (reworded from "a full trading day" and decided 2026-11-27, WP-0.9; section 3, "The live measurements"). | R0 | M |
 
 ### 4.19 Quality
 
@@ -1024,7 +1089,7 @@ Targets unless marked measured. Each is measured in the release named and record
 | QA-05 | Generated code (OpenAPI types, Protocol Buffers) is checked to be current. | R0 | T |
 | QA-06 | R1 and R2 are accepted against side-by-side checklists with OptionStrat and TradingView. | R1, R2 | S |
 | QA-07 | A licence check runs over all dependencies, runtime and development, of both projects. It uses an allow-list of permissive licences, and anything else must be a named exception with its reason. Decided 2026-11-22. The policy is under this table. | R0 | T |
-| QA-08 | Timing checks are run on an idle machine and record the machine load with the result. | R0 | R |
+| QA-08 | Timing checks are run on an idle machine and record the machine load with the result. They also record the CPU time beside the wall time, and the machine they ran on, so that the headroom can be judged for another machine (added 2026-11-27, owner, WP-0.9). | R0 | R |
 
 Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 
@@ -1058,9 +1123,15 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 
 To measure:
 
-- Whether the subscription cap counts symbols or symbol-event pairs (R0).
-- REST rate limits and stream behaviour in regular hours (R0).
-- Throughput of the stream reader together with per-flush IV inversion (R0).
+- ~~Whether the subscription cap counts symbols or symbol-event pairs (R0).~~ Not measured, by
+  decision of 2026-11-27; the budget counts pairs (section 3, "The live measurements").
+- ~~REST rate limits~~ (R0): not published and not stated in the headers; not probed, by decision
+  of 2026-11-27. Stream behaviour in regular hours (R0): seen in a rehearsal on 2026-11-27, a thin
+  half day (note B, addendum "WP-0.9"); the day run on 2026-11-30 measures it.
+- Throughput of the stream reader together with per-flush IV inversion (R0): a replay of a
+  regular-hours recording took about 49,000 events a second without a loss, against at most 590
+  seen live (`docs/measurements.md`, 2026-11-27, without the DXLink decoding). The day run on
+  2026-11-30 gives the live cost on an idle machine.
 - The grid round trip and the simulation time against PRF-01, PRF-02 and PRF-04 (R1, R1b).
 - Touch on a real tablet or phone (before the phone step).
 - Whether the IV index of the market metrics is the same series as the candle value, and at

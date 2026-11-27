@@ -1,6 +1,6 @@
 """Live read-only check of the streaming session against Tastytrade (BRK-02; WP-0.4).
 
-    uv run python tools/stream_check.py [--config PATH]
+    uv run python tools/stream_check.py [--config PATH] [--candles DAY]
 
 A stated check: one session, about ten subscriptions, about 100 seconds. It reads the SPY
 chain once (two REST requests with the token renewal, three with the quote token). Then it:
@@ -11,9 +11,16 @@ chain once (two REST requests with the token renewal, three with the quote token
 2. after 30 s removes the SPY quote and counts whether quotes still come;
 3. after 45 s closes its own socket, watches the session come back open and empty, and
    sends its subscriptions again itself, as the subscription manager does in the backend;
-4. prints what it saw: the granted aggregation period, the field lists the server set, the
-   counts per event type, the candle snapshot (order and marks), the phases, the gap, and
-   the key names of the quote-token response.
+4. prints what it saw: the granted aggregation period, the field lists the server set (and
+   which of them came before the first subscription), the counts per event type, the candle
+   snapshot (order and marks), the phases, the gap, and the key names of the quote-token
+   response.
+
+With ``--candles DAY`` it does something else: it asks for the 15-minute candles of SPY and of
+the front /ES future from that day on (two candle subscriptions, about 20 seconds) and prints
+the times of the bars of that day in New York, as runs of consecutive bars. It shows where the
+broker's sessions began and ended on an early close (WP-0.9; plan section 8, from WP-0.6). One
+REST request more: the /ES futures chain. Times only, no prices.
 
 It talks to the session directly, without the feed, because it checks the session alone.
 Nothing is written to disk and no value of the market is kept or printed. Logging goes
@@ -26,8 +33,9 @@ import logging
 import math
 import sys
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from s3t.broker.interface import (
     BrokerError,
@@ -81,6 +89,7 @@ async def run(config_path: str | None) -> int:
         chain = await broker.option_chain("SPY")
         stream.start()
         await connected(1)
+        before_subscribing = sorted(e.value for e in stream._fields)
         spy = [Sub("SPY", e) for e in (EventType.QUOTE, EventType.TRADE, EventType.SUMMARY)]
         day = CandlePeriod(1, "day")
         candle = Sub("SPY", EventType.CANDLE, day, started - timedelta(days=10))
@@ -131,6 +140,10 @@ async def run(config_path: str | None) -> int:
     for event, fields in stream._fields.items():
         same = "as asked" if fields == EVENT_FIELDS[event] else f"SERVER'S OWN: {fields}"
         print(f"fields of {event.value}: {same}")
+    print(
+        "field lists from the server before the first subscription: "
+        f"{', '.join(before_subscribing) or 'none'}"
+    )
     silent = [e.value for e in EventType if e not in stream._fields]
     print(f"event types without a field list from the server: {silent or 'none'}")
     counts: Counter[tuple[str, str]] = Counter()
@@ -192,15 +205,75 @@ async def run(config_path: str | None) -> int:
     return 0 if ok else 1
 
 
+NY = ZoneInfo("America/New_York")
+QUARTER = timedelta(minutes=15)
+
+
+def runs(times: list[datetime]) -> list[str]:
+    """Consecutive 15-minute bars as runs: ``04:00-16:45 (52 bars)``, in New York time."""
+    found: list[str] = []
+    ordered = sorted(times)
+    start = 0
+    for i in range(1, len(ordered) + 1):
+        if i == len(ordered) or ordered[i] - ordered[i - 1] != QUARTER:
+            first, last = ordered[start].astimezone(NY), ordered[i - 1].astimezone(NY)
+            found.append(f"{first:%H:%M}-{last:%H:%M} ({i - start} bars)")
+            start = i
+    return found
+
+
+async def candles(config_path: str | None, day: date) -> int:
+    """The 15-minute bars of SPY and the front /ES on one day, as runs of New York times."""
+    broker = from_config(load_config(config_path))
+    items: list[StreamItem] = []
+    stream = broker.stream(items.append)
+    try:
+        chain = await broker.futures_option_chain("ES")
+        front = next((f for f in chain.futures if f.active_month), chain.futures[0])
+        stream.start()
+        for _ in range(600):
+            if any(isinstance(i, StreamState) and i.phase == "connected" for i in items):
+                break
+            await asyncio.sleep(0.05)
+        else:
+            raise TimeoutError("not connected within 30 s")
+        start = datetime.combine(day, time(0, 0), NY)
+        period = CandlePeriod(15, "minute")
+        symbols = {"SPY": "SPY", front.stream_symbol: f"/ES front ({front.symbol})"}
+        await stream.subscribe([Sub(s, EventType.CANDLE, period, start) for s in symbols])
+        await asyncio.sleep(20)
+    except (BrokerError, TimeoutError) as e:
+        print(f"FAILED: {type(e).__name__}: {e}")
+        return 1
+    finally:
+        await broker.aclose()
+    bars: dict[str, set[datetime]] = {s: set() for s in symbols}
+    for item in items:
+        if isinstance(item, EventBatch) and item.event is EventType.CANDLE:
+            for bar in item.rows():
+                if isinstance(bar, Candle) and not bar.removed and bar.symbol in bars:
+                    if bar.time.astimezone(NY).date() == day:
+                        bars[bar.symbol].add(bar.time)
+    print(f"15-minute bars on {day}, New York time, by the start of each bar:")
+    for symbol, label in symbols.items():
+        print(f"  {label}: {', '.join(runs(list(bars[symbol]))) or 'none'}")
+    return 0 if all(bars.values()) else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Live read-only check of the streaming session.")
     parser.add_argument("--config", help="configuration file (default: S3T_CONFIG or config/)")
+    parser.add_argument(
+        "--candles", type=date.fromisoformat, metavar="DAY", help="the bars of a day instead"
+    )
     args = parser.parse_args()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     install_redaction(handler)
     logging.basicConfig(level=logging.INFO, handlers=[handler])
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.candles is not None:
+        return asyncio.run(candles(args.config, args.candles))
     return asyncio.run(run(args.config))
 
 

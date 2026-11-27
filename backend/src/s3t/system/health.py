@@ -1,5 +1,5 @@
 """The state of everything (SEC-08): the broker connection, the stream, the use of the
-subscriptions, the stores and the reference data in use.
+subscriptions, the stores, the reference data in use and the memory of the process.
 
 The records are the ones the parts give out about themselves, so there is no second definition of
 them. Only the use of the subscriptions is written anew, with the names of the classes in place of
@@ -22,6 +22,7 @@ from s3t.secrets import redact
 from s3t.store.daily import CopiesStatus
 from s3t.store.state import StoreStatus
 from s3t.subs.feed import ClassUse, ConsumerUse, FeedStatus, Priority
+from s3t.system.process import ProcessStatus
 
 if TYPE_CHECKING:
     from s3t.system.backend import Backend
@@ -95,6 +96,8 @@ class Health(BaseModel):
     copies: CopiesStatus
     calendar: CalendarStatus
     rates: RatesStatus
+    process: ProcessStatus
+    """The peak memory against its bound (PRF-09)."""
 
 
 def redacted[T](record: T) -> T:
@@ -181,4 +184,5 @@ async def health(backend: "Backend") -> Health:
         copies=redacted(backend.copies.status()),
         calendar=backend.calendar.status(),
         rates=redacted(backend.rates.status(data_time)),
+        process=backend.process.status(),
     )

@@ -121,6 +121,7 @@ async def test_two_replays_are_equal(recorded: Recorded) -> None:
         messages = [json_format.MessageToDict(m) for m in socket.received]
         assert len(messages) > 40
         del health["store"]["size"]  # the file holds the sessions of both
+        del health["process"]  # the memory of the process, which the first run grew
         outputs.append(json.dumps([messages, health, features], sort_keys=True))
     assert outputs[0] == outputs[1]
 

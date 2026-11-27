@@ -6,7 +6,9 @@ It reads the configuration and the environment file named there, and calls each
 allow-listed read about once, at one request per second. The reads are: the token renewal,
 the quote token, SPY and SPX, the SPY and SPX chains, one option of SPY and one of each SPX root
 but SPXW (whose terms are known), the /ES futures chain, one future, one future option, and
-the metrics of SPY and SPX. That is 13 requests.
+the metrics of SPY and SPX. Added at WP-0.9: the metrics of 50 symbols in one request (the
+client's batch), an AM-settled /ES option read alone, and the futures option chains of /NQ, /CL
+and /GC. That is 18 requests.
 
 It prints:
 
@@ -17,7 +19,11 @@ It prints:
   the roots, the expiration and settlement types, the exercise style, the instants of expiry
   and the dollars per point of a futures option;
 - the symbol formats, live beside fake;
-- the SPY metrics whose units matter (fraction or percent).
+- the SPY metrics whose units matter (fraction or percent);
+- the names of the response headers, and the values of those about a rate, a limit or a retry
+  (WP-0.9: whether the broker states its REST limits);
+- per futures product: the expirations read and left out, the dollars per point of its options
+  and the strike factors in the document.
 
 No price is printed and nothing is written to disk. Logging goes through the redaction filter.
 The tool places no order and changes nothing: the client can only send what the allow-list
@@ -113,6 +119,40 @@ async def call(label: str, fn: Callable[[], Awaitable[Any]]) -> Any:
 
 NY = ZoneInfo("America/New_York")
 
+FIFTY = (
+    "SPY QQQ IWM DIA AAPL MSFT NVDA AMZN GOOGL META TSLA AMD NFLX AVGO JPM BAC WFC GS XOM CVX "
+    "WMT COST HD KO PEP MCD DIS NKE INTC CSCO ORCL CRM ADBE QCOM TXN IBM BA CAT GE F "
+    "GM T VZ PFE MRK JNJ UNH LLY GLD TLT"
+).split()
+OTHER_FUTURES = ("NQ", "CL", "GC")
+HEADER_WORDS = ("rate", "limit", "retry", "throttl", "quota")
+
+
+class Headers:
+    """The response headers the client saw: every name, and the values of the few that could
+    state a limit. Attached to the client's own HTTP client as a response hook."""
+
+    def __init__(self) -> None:
+        self.names: set[str] = set()
+        self.limits: dict[str, set[str]] = {}
+        self.statuses: Counter[int] = Counter()
+
+    async def __call__(self, response: Any) -> None:
+        self.statuses[response.status_code] += 1
+        for name, value in response.headers.items():
+            name = name.lower()
+            self.names.add(name)
+            if any(word in name for word in HEADER_WORDS):
+                self.limits.setdefault(name, set()).add(redact(value)[:80])
+
+    def report(self) -> None:
+        print(f"\nresponse statuses: {dict(sorted(self.statuses.items()))}")
+        print(f"response header names: {', '.join(sorted(self.names))}")
+        if not self.limits:
+            print("headers about a rate, a limit or a retry: none")
+        for name, values in sorted(self.limits.items()):
+            print(f"header {name}: {', '.join(sorted(values))}")
+
 
 def ny(instant: datetime | None) -> str:
     return "none" if instant is None else f"{instant.astimezone(NY):%Y-%m-%d %H:%M} New York"
@@ -207,12 +247,14 @@ async def run(client: TastytradeRest, market: SyntheticMarket) -> int:
             if option is not None:
                 describe_contract(option)
 
+    es_chain: OptionChain | None = None
     fchain = await raw("futures_option_chain", "futures chain /ES", symbol="ES")
     if fchain is not None:
         compare("futures chain /ES", fchain, market.futures_option_chain("ES"))
         chain = await parsed(
             "futures chain /ES", lambda: parse.parse_futures_option_chain(fchain, "/ES")
         )
+        es_chain = chain
         listed = sum(len(i.get("expirations", [])) for i in fchain.get("option-chains", []))
         factors = Counter(
             str(e.get("strike-factor"))
@@ -264,6 +306,57 @@ async def run(client: TastytradeRest, market: SyntheticMarket) -> int:
             print(f"    {field}: {metrics[0].get(field)!r}")
         ivs = metrics[0].get("option-expiration-implied-volatilities") or [{}]
         print(f"    option-expiration-implied-volatilities[0]: {ivs[0]!r}")
+    many = await call("market metrics of 50", lambda: client.market_metrics(list(FIFTY)))
+    failures += many is None
+    if many is not None:
+        got = {str(doc.get("symbol")) for doc in many}
+        print(f"\n[market metrics of 50] {len(many)} documents in one request")
+        print(f"  symbols without a document: {sorted(set(FIFTY) - got) or 'none'}")
+
+    if es_chain is not None:
+        am = [e for e in es_chain.expirations if e.settlement == "am"]
+        chosen = middle(am[min(len(am) - 1, 1)]) if am else None
+        print(f"\n[AM-settled /ES option] {len(am)} AM expirations in the chain")
+        if chosen is not None:
+            doc = await raw("future_option", "AM-settled /ES option", symbol=chosen.symbol)
+            if doc is not None:
+                product = doc.get("future-option-product") or {}
+                print(
+                    f"  in the document: settlement-type {doc.get('settlement-type')!r}, "
+                    f"is-am-settled {product.get('is-am-settled')!r}, exercise-style "
+                    f"{doc.get('exercise-style')!r}"
+                )
+                option = await parsed(
+                    "AM-settled /ES option", lambda: parse.parse_future_option(doc)
+                )
+                if option is not None:
+                    describe_contract(option)
+                    print(
+                        f"  the contract read alone equals the one of the chain: {option == chosen}"
+                    )
+
+    for root in OTHER_FUTURES:
+        doc = await raw("futures_option_chain", f"futures chain /{root}", symbol=root)
+        if doc is None:
+            continue
+        factors = Counter(
+            str(e.get("strike-factor"))
+            for i in doc.get("option-chains", [])
+            for e in i.get("expirations", [])
+        )
+        print(f"\n[futures chain /{root}] strike factors in the document: {dict(factors)}")
+        other = await parsed(
+            f"futures chain /{root}",
+            lambda d=doc, r=root: parse.parse_futures_option_chain(d, f"/{r}"),
+        )
+        if other is not None:
+            points = Counter(f"{e.multiplier:g}" for e in other.expirations)
+            print(
+                f"  model: {len(other.expirations)} expirations read, {len(other.left_out)} left "
+                f"out; dollars per point of the options: {dict(points)}"
+            )
+            describe_chain(other)
+
     status = client.rest_status()
     print(
         f"\nstatus: token {status.auth}, renews from {status.renews_from:%H:%M:%S} UTC"
@@ -293,8 +386,14 @@ def main(argv: list[str] | None = None) -> int:
 
     async def go() -> int:
         client = TastytradeRest(secrets, rate=1.0, burst=1)
+        headers = Headers()
+        hooks = client._http.event_hooks
+        hooks["response"] = [*hooks.get("response", []), headers]
+        client._http.event_hooks = hooks
         try:
-            return await run(client, market)
+            failures = await run(client, market)
+            headers.report()
+            return failures
         finally:
             await client.aclose()
 

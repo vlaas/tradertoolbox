@@ -50,7 +50,7 @@ names its split point.
 | WP-0.6 | Storage, configuration, reference data | M | done 2026-11-25 |
 | WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; SEC-06 open for Linux |
 | WP-0.8 | Frontend shell | M | done 2026-11-27 |
-| WP-0.9 | R0 live measurements and acceptance | S | not started |
+| WP-0.9 | R0 live measurements and acceptance | S | in progress: tools and rehearsal 2026-11-27; the day run 2026-11-30 |
 | WP-1.1 | Forwards and surface | M | not started |
 | WP-1.2 | Chain service | M | not started |
 | WP-1.3 | Ticket model and evaluation | L | not started |
@@ -148,7 +148,9 @@ Taken from `tt/tests/fake_tt.py` and extended. It must be able to play these on 
 ### 3.7 Performance protocol
 
 Timing runs are made on an idle machine, record the load average, use the synthetic market or
-a named local recording, and report median, 95th percentile and maximum. The chart prototype
+a named local recording, and report median, 95th percentile and maximum. Since 2026-11-27 they also
+record the CPU time beside the wall time and the machine they ran on (QA-08), so that the headroom
+can be judged for the dedicated machine the product moves to later. The chart prototype
 showed that a loaded machine inflates results several times over.
 
 ### 3.8 What is not automated
@@ -374,6 +376,61 @@ the real broker in regular hours. Each has a checklist and a named point in the 
 - *Write:* the results into the broker capability note and `docs/measurements.md`; changes to
   budgets or limits into the requirements.
 - *Closes:* PRF-09, QA-08, and the "to measure" points of the requirements for R0.
+- *Decided at the start, 2026-11-27, by the owner:*
+  - Nothing goes past a published limit: no probe of the cap, of the change limit or of a sixth
+    session, and no burst of REST requests. How the cap counts is not measured, by decision, and
+    the budget keeps counting pairs (requirements, section 3, "The live measurements").
+  - The REST limits come from the documentation and the response headers.
+  - A rehearsal on 2026-11-27, the half day after Thanksgiving; the measured day on Monday
+    2026-11-30, with the machine idle.
+  - The owner looks at the app during a run.
+- *Decided later the same day, by the owner:*
+  - The memory bound is observed, not a limit, and 1,024 MB stays.
+  - PRF-09 is a run across every session, not a trading day: 25 hours from Monday 08:45 New York,
+    with /ES in the demand.
+  - Every timing records its CPU time and the machine, for the headroom on another machine.
+- *Split:* part 1 builds the tools and the memory bound and makes the short checks and a rehearsal.
+  Part 2 is the day run of 2026-11-30 and its write-up.
+- *Part 1, done 2026-11-27:*
+  - **The memory bound of PRF-09,** which did not exist: `[process] memory_bound_mb`, a watch in
+    `s3t.system.process` and `process` in the health route. Decided by the owner the same day: the
+    bound is observed and limits nothing, and 1,024 MB stays.
+  - **The day run,** `backend/tools/live_day.py`, with `tools/day_measures.py`. It runs the backend
+    with a consumer of about 2,200 pairs (2,008 in the rehearsal, before /ES was added) and
+    measures every minute. It forces drops at set times,
+    takes a pair out of the demand once, and summarises a run (`--summary`).
+  - **`tools/timings.py`:** the calendar, the parse of the chains, and the capacity of the reader by
+    replaying a recording at multiples of its pace.
+  - **Additions to the checks:** `broker_check.py` (the headers, 50 symbols of metrics, an AM /ES
+    option, the chains of /NQ, /CL and /GC) and `stream_check.py` (the field lists before a
+    subscription, `--candles DAY`).
+  - **Read live** (note B, addendum "WP-0.9"):
+    - the extended broker check (18 requests, no 429, no header that states a limit);
+    - the stream check in regular hours;
+    - a recording of 10 minutes;
+    - the rehearsal from 10:00 to 13:30 New York: 2,008 pairs, two forced drops, one removal; no
+      loss, no stall, no rate error. Memory 140 to 163 MB.
+  - **Read in documents:** the broker's published limits, and the DXLink errors, which name no rate
+    or cap error.
+  - **Timed at 13:30 New York, idle by the 1-minute load:** the calendar, the chains (15 ms at most
+    for SPX, against PRF-05's 50 ms) and the reader (about 49,000 events a second without a loss).
+  - The rehearsal's timings were taken under load and are not measurements.
+  - **Not done yet:**
+    - PRF-09 itself (a full day);
+    - the candle check of the early close;
+    - the owner's look at the app on the live broker.
+- *Part 2, for 2026-11-30:*
+  - **The owner** starts the run at about 08:45 New York (15:45 local), for 25 hours (the default):
+    `cd backend && uv run python tools/live_day.py --config ../config/s3t.toml`.
+    - The machine is idle from 09:30 to 16:00 New York; the night needs no idle machine.
+    - The owner looks at the app at the drops, 10:30 and 14:30, and once in the late session.
+  - **The follow-up session:**
+    - `live_day.py --summary` over the whole run and over 09:30 to 16:00, with the CPU per event
+      and the loop's share of a core;
+    - `timings.py` again, with CPU time, on an idle machine;
+    - `stream_check.py --candles 2026-11-27`;
+    - the rows of `docs/measurements.md`;
+    - PRF-09 and QA-08 closed, and the status set to done.
 
 Order: WP-0.1 first. Then WP-0.2, WP-0.3 and WP-0.6 are independent of each other. WP-0.4
 needs WP-0.3; WP-0.5 needs WP-0.4; WP-0.7 needs WP-0.5 and WP-0.6; WP-0.8 needs WP-0.7;
@@ -486,7 +543,7 @@ the release starts with.
 | Milestone | Reached when | What it proves |
 |---|---|---|
 | M0 Live path | WP-0.8 done | A quote travels from the broker to a browser through every layer |
-| M1 R0 accepted | WP-0.9 done | The foundation holds for a trading day and the limits are known |
+| M1 R0 accepted | WP-0.9 done | The foundation runs across every session without a restart, and the limits are known |
 | M2 First ticket | WP-1.3 and WP-1.7 done | A ticket can be built by hand and its payoff seen |
 | M3 R1 accepted | WP-1.9 done | The workbench replaces OptionStrat for daily use |
 | M4 R2 accepted | R2 acceptance | The chart replaces the TradingView subset |
@@ -840,6 +897,74 @@ Found but not planned into a package yet.
     both for the browser suite. The test control is in the tool, not in the application.
   - The information box is a native popover. It needs about Chromium 114, Firefox 125 and Safari 17
     or later (from memory, not looked up); the three engines of the suite have it.
+- From WP-0.9 (2026-11-27, part 1). What happened to the items above that were marked "for WP-0.9":
+  - **Done:**
+    - The batch of 50 symbols per metrics call (from WP-0.3).
+    - The session in regular hours, and removal on a ticking symbol in regular hours (from WP-0.4).
+    - The manager against the live server: the first fill, and the refill after two forced drops,
+      with 2,008 pairs (from WP-0.4).
+    - Whether the server states its field lists before the first subscription of a channel: it does
+      not (from WP-0.4).
+    - The queue of 2,000 batches against real rates: far from full on a thin day. Monday judges it
+      on a normal one (from WP-0.4).
+    - The AM-settled /ES quarterly read alone; one exercise style per equity root; the dollars per
+      point and strike factors of /NQ, /CL and /GC (from WP-0.5).
+    - The parse of the chains against the 50 ms of PRF-05: 15 ms at most for SPX (from WP-0.5).
+    - The calendar's start and memory: 1.1 s and 67 MB (from WP-0.6).
+    - A daily copy of the state file in a running backend (from WP-0.7).
+  - **Not measured, by decision of 2026-11-27:**
+    - how the cap counts, per session or per account;
+    - the server's answer beyond the cap, beyond the change limit, and to a sixth session;
+    - the real REST limits.
+    The client's defaults stay (requirements, section 3, "The live measurements").
+  - **For part 2 (2026-11-30):**
+    - PRF-09, the full day;
+    - the stall rule on real silence, if any comes;
+    - `MarketStatus.lost` over a day;
+    - rates on a normal day;
+    - the owner's look at the status bar and the status screen on the live broker, with a browser
+      open during a forced drop (from WP-0.7 and WP-0.8);
+    - the early close of 2026-11-27 from the 15-minute candles: whether the late session ends at
+      17:00, and the futures at 13:15 (from WP-0.6);
+    - the GEN-11 mark seen absent on the live broker (from WP-0.8).
+  - **Carried, with their dates:**
+    - The broker's feed from 2026-12-06 on: whether the hour from 20:00 to 21:00 keeps its bars,
+      and a holiday evening (2026-12-25, 2027-01-01). For R2, or a check after the first of them
+      (from WP-0.6).
+    - SEC-06 on Linux and its unit file, when the target machine is there (from WP-0.7).
+    - A page that stops taking data, a suspended laptop: seen in tests only (from WP-0.7).
+  - **The rate error of the stream is a guess.**
+    - The session treats an error as a rate error when its text holds "rate" (`dxlink.py`). Neither
+      dxFeed's protocol nor Tastytrade's documents name a text or a code for an excess. The
+      broker says only that an excess "fails rather than throttles".
+    - Proposal: leave it. If an `ERROR` with `BAD_ACTION` or `UNKNOWN` is ever seen right after a
+      chunk of changes, treat it as a rate error too. The manager stays at 8,000 changes a minute,
+      below the published 10,000.
+  - **The refill after a drop** takes the manager's pace: 2,008 pairs in 14 s. The budget of
+    10,000 would take about 67 s at 150 a second (computed). If that is too slow for a view, the
+    pace can rise towards the published 10,000 a minute; the recorder class goes first anyway.
+  - **The app does not show the process's memory against its bound.** The health route has it.
+    Showing it in the status screen needs a field in the wire's status message: with R1's status
+    work, or WP-1.9.
+  - **The owner's state file was created by the rehearsal** of 2026-11-27, without a password. Set
+    one with `tools/set_password.py`, also while the backend runs.
+  - **Instruments that trade around the clock** (crypto, 24/7) or nearly so (forex, 24/5) are not
+    in the product definition. Whether the broker serves them through this API was not checked.
+    If they come:
+    - the calendar needs a class without closed hours, or with only the weekend closed;
+    - the stall rule needs "open" per class of what is subscribed (today it asks the stock market's
+      regular session only, `ExchangeCalendar.market_open`);
+    - nothing may assume a quiet night. Nothing does now: the daily copy works while the backend
+      runs, the rates refresh every 12 hours, and the calendar reaches seven years ahead.
+  - **A whole week** of the backend is observed in normal use after the day run, not measured
+    (decided 2026-11-27).
+  - The IV stand-in fails for 35% of the contracts, because it prices on the spot without
+    dividends. That says nothing of R1. WP-1.2 measures its own flush against PRF-03.
+  - On an early close the options of SPY and SPXW are quoted until 13:15 New York, the close plus
+    15 minutes. The settlement rule settles them at 13:00, the close, as decided on 2026-11-24.
+    WP-1.2 stops their IV at the settlement instant.
+  - `tools/timings.py reader` replays at multiples of the pace. Above about 300 times the replay
+    itself cannot keep up, so the capacity found (about 49,000 events a second) is a lower bound.
 
 ## 9. Starting a package in a fresh session
 

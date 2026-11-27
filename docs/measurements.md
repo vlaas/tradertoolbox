@@ -12,7 +12,14 @@ implementation plan section 1; QA-08). Results from the research notes stay in t
   prototype showed that load inflates results several times over (plan 3.7).
 - Report the median, the 95th percentile and the maximum, and say whether the data was the
   synthetic market or a named local recording.
-- A figure that was estimated, not measured, does not belong here.
+- Record the CPU time beside the wall time, and the machine (added 2026-11-27, QA-08). The product
+  moves to a dedicated machine later, so the headroom is judged from the CPU time: the event loop is
+  one thread, and its headroom is the share of one core it uses.
+- A figure that was estimated, not measured, does not belong here. A headroom computed from a
+  measured CPU time is marked "computed".
+
+**The machine** of every row, unless the row says otherwise: the development machine, an Intel Core
+i9-10850K at 3.6 GHz, 10 cores and 20 threads, 64 GB, macOS 15.7 (recorded 2026-11-27).
 
 ## Results
 
@@ -26,6 +33,16 @@ implementation plan section 1; QA-08). Results from the research notes stay in t
 | 2026-11-24 | WP-0.4 | Recording: the same sizes after the change to a block flush (decided 2026-11-24). Sizes, not timings | 493 subscriptions, 10 minutes, lines 5,232,559 bytes. As built now, one frame with a block flush every 3 s: 528,330 bytes, 9.9 times smaller, 0.84 of gzip's size. The other figures are those of the row of 2026-11-23: the data is the same | not taken (sizes do not depend on it) | `tools/recording_size.py`, one run. The tool computes each variant from the recorded lines, with a flush every 3 s of the data's time |
 | 2026-11-27 | WP-0.8 | The built frontend (`npm run build`, Vite 8.3.6). Sizes, not timings | Script 181.74 kB (57.58 kB gzip), stylesheet 7.60 kB (2.35 kB gzip), page 0.39 kB. What the script is made of was not looked at | 24.42, 25.56, 21.20 (sizes do not depend on it) | Vite's own report of one build, 2026-11-27 01:30 local time |
 | 2026-11-27 | WP-0.8 | The built frontend after the review: the font of prices and the choice of time zone. Sizes, not timings | Script 187.71 kB (59.71 kB gzip), stylesheet 8.21 kB (2.53 kB gzip), font file 21.16 kB (JetBrains Mono, Latin, regular), page 0.39 kB | 20.38, 22.80, 18.73 (sizes do not depend on it) | Vite's own report of one build, 2026-11-27 02:08 local time |
+| 2026-11-27 | WP-0.9 | Live stream in regular hours, **rehearsal under load**: events and batches a second, for 2,008 pairs (SPY and SPX; Quote and Greeks of 1,000 options near the money: SPY 2026-11-27 and 2026-11-30, SPXW 2026-11-27). Counts, not timings | All events: median 471, p95 556, max 588 a second. Quote 454, 540, 576; Greeks 12, 17, 30; Trade 3.0. Batches: 7.9, 8.9, 9.3 a second. Each pair's quote comes at most every 0.5 s (the aggregation period) | 1-minute load median 14.2, p95 80.7, max 91.2; above 70 from 10:24 to 10:45 and 12:56 to 13:13 | `tools/live_day.py --until 13:30 --drops 11:00,12:30 --removal-at 11:30`, production API, the half day after Thanksgiving, 182 minutes from 10:01 to 12:59 New York; one run. A thin day: Monday's run is the measurement |
+| 2026-11-27 | WP-0.9 | The same run: the reader, the event loop, IV per flush and the CPU. **Under load: not a measurement** | Wait of a batch from receipt to take: median 0.4, p95 1.9, max 16.7 ms (84,018 batches). Lag of a 100 ms timer: median 0.4, p95 2.3, max 248 ms (the maximum at 10:35, load 72). IV per flush (stand-in for MKT-04): median 214 contracts in 4.2 ms, p95 569 in 8.7 ms, max 876 contracts and 31.7 ms (20,205 flushes). CPU: median 1.7%, max 2.6% of one core. No batch lost by any reader | as above | Same run |
+| 2026-11-27 | WP-0.9 | The same run: CPU per event, for the headroom. **Under load** | CPU time of the process per event, all its work included (decoding, the market state, IV per flush, the server): median 36, p95 50, max 67 µs. At the median one core takes about 28,000 events a second (computed), against at most 588 seen. The share of the event loop's thread alone was not recorded in this run | as above | Same run, `live_day.py --summary`; minutes with events (179 of 182) |
+| 2026-11-27 | WP-0.9 | The same run: memory (PRF-09). Not a full day | Resident memory: median 143, p95 163, max 163 MB. Peak (the high-water mark): 157 MB at the start, 159 MB after a minute, 163 MB at the end. The bound is 1,024 MB | as above (memory does not depend on it) | `ps` and `getrusage` once a minute; 3.5 hours, not a day |
+| 2026-11-27 | WP-0.9 | Live: two forced drops of the backend's session, with the manager filling it again (2,008 pairs) | 11:00: connected again 1.29 s after the close, first data 1.42 s, everything sent again 14.02 s. 12:30: 1.99 s, 2.12 s, 14.71 s. The refill is the manager's pace of 150 changes a second (2,008 / 150 = 13.4 s, computed) | 1-minute load about 20 at 11:00 and 25 at 12:30 | Same run; the tool closes the session's socket. Two runs, so no percentile |
+| 2026-11-27 | WP-0.9 | Live stream in regular hours, the session alone: recovery after a forced drop | Connected again, and empty, 1.56 s after the close; 8 subscriptions sent again at 1.58 s; first data 1.70 s after the close | 17.46, 17.56, 18.52 before; 18.79, 18.06, 18.62 after | `tools/stream_check.py`, production API, 09:35 New York. One run |
+| 2026-11-27 | WP-0.9 | The calendar: import and build in a fresh process, and its memory | Import of `s3t.refdata.calendar`: median 54, p95 64, max 64 ms. `load_calendar` with the import of the library: median 1,132, p95 1,225, max 1,225 ms. Peak memory 10 MB before; growth median 67, max 68 MB | 2.35, 7.40, 23.21 before; 2.99, 7.37, 23.01 after. Idle by the 1-minute figure; the 15-minute one still holds the load of the day | `tools/timings.py calendar`, 5 processes, 13:30 New York |
+| 2026-11-27 | WP-0.9 | Parsing a live option chain on the event loop, against the 50 ms of PRF-05 | SPY, 12,726 contracts: median 5.3, p95 5.6, max 5.8 ms. SPX, 32,296 contracts (SPXW, SPXO, SPX): median 13.8, p95 14.3, max 15.2 ms | 2.99, 7.37, 23.01 before and after | `tools/timings.py chains`, one live read of each chain (3 requests), 20 parses each |
+| 2026-11-27 | WP-0.9 | Capacity of the reader with IV per flush: a regular-hours recording replayed at multiples of its pace through the feed, the market state and the IV taker. Without the DXLink decoding | The recording: 488 pairs, 70,608 events in 603 s (117 a second). No batch lost at any multiple. 10 times: 1,135 events a second, 2% of a core; 100 times: 9,145, 6%; 300 times: 19,880, 12%; 1,000 times: 35,246, 19%; 10,000 times: 49,399, 24%. Above 300 times the replay does not keep its pace, so about 49,000 a second is the replay's limit, not the reader's. IV per flush: 160 contracts, median 2.6 ms, max 3.1 ms | 3.15, 7.33, 22.90 before; 2.65, 5.60, 20.08 after | `tools/timings.py reader rh-20261127`, a local recording of `tools/capture.py` (10 minutes from 09:40 New York, SPY and SPX, 40 strikes of one expiration). One run per multiple |
+| 2026-11-27 | WP-0.9 | Recording: size of a regular-hours stream file. Sizes, not timings | 488 subscriptions, 10 minutes, 3,123 batches: 880,780 bytes in zstd; `rest.jsonl` 2.1 MB (the two chains) | 16.21, 16.83, 17.96 before (sizes do not depend on it) | `tools/capture.py rh-20261127 --symbols SPY,SPX --expirations 1 --strikes 40 --minutes 10`, production API |
 
 WP-0.1 has no performance requirement and took no timings.
 
@@ -90,3 +107,21 @@ section 7). The two size rows are on synthetic data: a real session can compress
 differently. They show that a frame every 3 s costs about a third of the compression. The
 recorder was changed to a block flush on 2026-11-24 for that reason; "as built" in the rows
 of 2026-11-23 means the frames of that day.
+
+WP-0.9 is the package of the live measurements. Its rehearsal of 2026-11-27 ran on the half day after
+Thanksgiving, with the machine loaded by other work (the rows above say how much). Its stream figures
+are counts of a thin day, and its timings are not measurements. The day run of PRF-09 is on Monday
+2026-11-30 with the machine idle (requirements, section 3, "The live measurements"). Also seen on
+2026-11-27:
+
+- On the half day the options of SPY and SPXW were quoted until 13:15 New York. From 13:16 almost no
+  option quote came. Trades and the broker's Greeks went on, so no stall was declared.
+- The IV of the stand-in failed for 35% of the contracts: 851,303 below the intrinsic value, 32,625
+  above the cap, 359,644 not identifiable, 473,199 invalid (an input that is not finite, most likely a missing bid or
+  ask; not looked at), of 4,864,627. Its
+  forward is the spot without dividends, so this says nothing of R1's IV; the cost is the same for a
+  failed contract.
+- The day run writes only counts, times and states, into the git-ignored data directory.
+
+QA-08 is closed by review on 2026-11-27: every timing row since WP-0.3 records the load average, and
+each package that took no timing says so.

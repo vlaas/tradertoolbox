@@ -73,11 +73,22 @@ cd backend && uv run python -m s3t --config ../config/s3t.toml
 # the page's address makes its WebSocket speak readable JSON
 cd frontend && S3T_BACKEND=http://<listen address>:<port> npm run dev
 
-# live read-only check of the broker client: a stated check, 13 requests at 1 per second
+# live read-only check of the broker client: a stated check, 18 requests at 1 per second
 cd backend && uv run python tools/broker_check.py --config ../config/s3t.toml
 
-# live read-only check of the stream: a stated check, one session, 9 subscriptions, 90 seconds
+# live read-only check of the stream: a stated check, one session, 9 subscriptions, 90 seconds;
+# --candles DAY instead gives the 15-minute bars of SPY and the front /ES of a day (2 candles, 20 s)
 cd backend && uv run python tools/stream_check.py --config ../config/s3t.toml
+
+# the day run (WP-0.9): the backend on the live broker for 25 hours with a measured demand of about
+# 2,200 pairs, forced drops and a removal at New York times; writes to <data_dir>/measurements
+# (git-ignored). --fake tries it on the synthetic market; --summary FILE summarises a run
+cd backend && uv run python tools/live_day.py --config ../config/s3t.toml
+
+# timings for an idle machine: the calendar, the chains (3 live requests), a recording replayed
+cd backend && uv run python tools/timings.py calendar
+cd backend && uv run python tools/timings.py chains --config ../config/s3t.toml
+cd backend && uv run python tools/timings.py reader NAME --config ../config/s3t.toml
 
 # record a session into <data_dir>/recordings/NAME (git-ignored); --fake needs no broker
 cd backend && uv run python tools/capture.py NAME --fake --minutes 1 --config ../config/s3t.toml

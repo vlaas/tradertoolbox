@@ -265,6 +265,14 @@ class StoreConfig(_Section):
     """Whether the running backend copies the state file once a day. Every copy is kept."""
 
 
+class ProcessConfig(_Section):
+    """The process (PRF-09). Decided 2026-11-27 (owner, WP-0.9): observed, not limited."""
+
+    memory_bound_mb: int = Field(default=1024, ge=64, le=1_048_576)
+    """The bound of the peak resident memory, in MiB. Above it the backend logs a warning and the
+    health route says since when; nothing else happens."""
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
@@ -275,6 +283,7 @@ class Config(_Section):
     rates: RatesConfig = Field(default_factory=RatesConfig)
     login: LoginConfig = Field(default_factory=LoginConfig)
     store: StoreConfig = Field(default_factory=StoreConfig)
+    process: ProcessConfig = Field(default_factory=ProcessConfig)
     source: Path
     """The file this configuration was read from."""
 

@@ -64,7 +64,7 @@ def test_the_examples_commented_keys_are_the_defaults(tmp_path: Path) -> None:
     key that the example shows with its default has that default."""
     text = re.sub(r"^# (\w+ = )", r"\1", EXAMPLE.read_text(), flags=re.MULTILINE)
     shown, plain = load_config(write(tmp_path, text)), load_config(EXAMPLE)
-    for section in ("stream", "subscriptions", "rates", "login", "store"):
+    for section in ("stream", "subscriptions", "rates", "login", "store", "process"):
         assert getattr(shown, section) == getattr(plain, section), section
     # These three have no default to show.
     own = {"recording", "fake_start", "account_nickname"}
@@ -315,8 +315,14 @@ def test_the_origins_are_written_as_browsers_write_them(
 
 @pytest.mark.parametrize(
     "lines",
-    ["[login]\nsession_hours = 0", "[login]\nsession_hours = 8761", "[store]\ndaily_copy = 1"],
+    [
+        "[login]\nsession_hours = 0",
+        "[login]\nsession_hours = 8761",
+        "[store]\ndaily_copy = 1",
+        "[process]\nmemory_bound_mb = 63",
+        '[process]\nmemory_bound_mb = "1024"',
+    ],
 )
-def test_login_and_store_sections_refused(tmp_path: Path, lines: str) -> None:
-    with pytest.raises(ConfigError, match=r"login|store"):
+def test_login_store_and_process_sections_refused(tmp_path: Path, lines: str) -> None:
+    with pytest.raises(ConfigError, match=r"login|store|process"):
         load_config(write(tmp_path, VALID.format(address="127.0.0.1") + lines + "\n"))

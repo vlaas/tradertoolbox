@@ -425,3 +425,137 @@ client, was answered in 0.1 s: the first column is `observation_date`, 97 days a
 dot. Between the two, two requests of `curl` for DGS1 from another start date failed: an HTTP/2 stream
 error, and a timeout of 30 s over HTTP/1.1. Whether the client or the start date made the difference
 was not looked at. Not tested: a refusal with a status code, and repeated complete downloads.
+
+## Addendum 2026-11-27 (WP-0.9): REST limits, more documents, and what the broker publishes
+
+**Owner decisions of 2026-11-27** (requirements, section 3): no request and no subscription goes past
+a published limit. There is no probe of the subscription cap, of the change limit or of a sixth
+session, and no burst of REST requests. What the limits are is read from the broker's documentation
+and the response headers.
+
+**The broker's documentation, read 2026-11-27** (web, no broker call):
+
+- From Tastytrade's guide "Rate limits and backoff" (`developer.tastytrade.com/docs/guides/rate-limits-and-backoff/`)
+  and its streaming concepts page:
+  - The streamer's limits: 5 concurrent sessions, 25,000 subscriptions per session, 100 each for
+    Candle, Order and Series, and 10,000 subscription changes per minute.
+  - The 5 sessions are "per set of credentials", and the 25,000 are "per session".
+  - The pages do not define the unit of a subscription: a symbol, or a symbol and an event type.
+  - "Exceeding them fails rather than throttles." How the failure is reported is not stated.
+- REST:
+  - There are no published numbers. The broker throttles at "reasonable thresholds".
+  - A 429 carries "no rate-limit headers", so the bare status is "the only signal".
+  - The guide asks for exponential back-off with jitter and a capped number of attempts, which is
+    what the client does (BRK-04).
+  - `market-data/by-type` takes up to 100 symbols (not on the allow-list).
+  - Too many failed logins block the IP address for about 8 hours (the token endpoint).
+- dxFeed's DXLink protocol (`github.com/dxFeed/dxLink`, `dxlink-specification/asyncapi.yml`):
+  - An `ERROR` message has `channel`, `type`, `error` and `message`.
+  - The codes are `UNSUPPORTED_PROTOCOL`, `TIMEOUT`, `UNAUTHORIZED`, `INVALID_MESSAGE`, `BAD_ACTION`
+    and `UNKNOWN`. The message is "for informational purposes only".
+  - **No code or text is given for a subscription cap or a change rate.** Tastytrade's own
+    streaming AsyncAPI lists no `ERROR` message at all.
+  - So the word "rate" that the session looks for in an error's text (`dxlink.py`) is not
+    confirmed by any document. It was never seen live either (requirements, section 3, the
+    decision of 2026-11-27; plan section 8).
+
+**One run of `backend/tools/broker_check.py`,** Friday 2026-11-27, 08:05 New York (13:05 UTC),
+before the open on the half day after Thanksgiving.
+- Production API, one request per second, 18 requests with one token renewal. All answered 200; no 429.
+- Load average 21.12, 22.57, 21.45 before and 24.16, 23.16, 21.69 after.
+- All measured, on one run.
+
+- **No response header states a limit.** The names seen on all 18 answers were the CORS headers,
+  `cache-control`, `connection`, `content-encoding`, `content-length`, `content-type`, `date`,
+  `expires`, `pragma`, `referrer-policy`, `set-cookie`, `strict-transport-security`,
+  `transfer-encoding`, `vary`, `x-amz-cf-id`, `x-amz-cf-pop`, `x-content-type-options`,
+  `x-frame-options`, `x-request-id` and `x-xss-protection`. None names a rate, a limit or a retry.
+  That agrees with the guide.
+- **The metrics of 50 symbols came in one request,** one document per symbol, none missing. This is
+  the client's batch (`METRICS_BATCH`), tried for the first time.
+- **An AM-settled /ES quarterly, read alone** (root ES, expiring 2027-03-19):
+  - `settlement-type` is `Future`, `future-option-product.is-am-settled` is true, and
+    `exercise-style` is `American`.
+  - The model reads it as AM, with `expires-at` 09:30 New York, and the record equals the one of
+    the chain.
+  - The /ES chain has 5 AM-settled expirations, all of the root ES.
+- **Three more futures products** parse into the model, with nothing left out. Each has a strike
+  factor of 1.0 on every expiration, and the broker states American for all of them:
+
+  | Product | Expirations | Dollars per point of the options |
+  |---|---|---|
+  | /NQ | 25 | 20 |
+  | /CL | 25 | 1,000 |
+  | /GC | 44 | 100 |
+
+  The roots are many. /NQ and /CL each have a Regular root (NQ AM-settled, LO PM-settled) and
+  weekly roots; /NQ also has an end-of-month root.
+- The counts of the day: SPY 32 expirations (12,726 contracts); SPXW 39 (22,042), SPXO 2 (862) and
+  SPX 19 (9,392); /ES 53, all with strike factor 1.0.
+
+**Exercise style within a root,** read offline from the owner's `tt` captures (174 documents of
+single contracts of 9 roots, 2026-11-11 to 2026-11-19; counts only):
+
+- Every root has one style:
+  - American for AAPL, AMD, GLD, NVDA, QQQ, SPY and TSLA;
+  - European for SPXW and XSP.
+- The 133 expirations of the captures' expiry table agree.
+- So the assumption of `Instruments.exercise`, one style per equity root, held on everything read.
+  Futures were not in the captures.
+
+**The stream in regular hours, the session alone:** one run of `backend/tools/stream_check.py`,
+2026-11-27, 09:35 New York.
+- One session, 9 pairs, 87 s. Load average 17.46, 17.56, 18.52 before and 18.79, 18.06, 18.62 after.
+- No parse error, no ignored event, no error message. All measured, on one run.
+
+- The server granted 0.5 s and accepted the six field lists as asked, as in the late session.
+- **The server states no field list before the first subscription.** Right after the six channels
+  were open, no channel had one. The session needs a list only before the first data, so this
+  costs nothing.
+- **Removal on a ticking symbol in regular hours works.** No SPY quote came in the 55 s after its
+  removal; before it, SPY sent 61 quotes in about 32 s.
+- **A pair's quotes come at most every 0.5 s.** 61 quotes in 32 s is about two a second, the
+  aggregation period. Seen for one pair, and again for 2,008 pairs below.
+- A forced drop came back as in the late session: connected and empty 1.56 s after the close, first
+  data at 1.70 s (`docs/measurements.md`).
+- The daily candle of SPY sent 181 events in the run: the snapshot of 8 (7 bars and the marker), then
+  updates of the day's bar.
+
+**The backend on the live broker, a rehearsal of the day run:** `backend/tools/live_day.py`,
+2026-11-27, 10:00 to 13:30 New York.
+- One session, with the demand of the tool's consumer only: 2,008 pairs.
+  - Quote, Trade, Summary and Profile of SPY and SPX.
+  - Quote and Greeks of 1,000 options near the money: SPY 2026-11-27 and 2026-11-30, and SPXW
+    2026-11-27, which expired at the early close.
+- The machine was loaded (load average up to 91), so its timings are not measurements. The figures
+  are in `docs/measurements.md`. Counts and states measured, on one run.
+
+- **The subscription manager against the live server, for the first time.**
+  - It sent the 2,008 pairs in 12.7 s at its pace of 150 a second.
+  - It filled the session again after each of two forced drops, in 14.0 s and 14.7 s. Granted, sent
+    and subscribed were 2,008 after each.
+  - No rate error, no cap refusal, no failure. Of the change limit, 2,008 changes in 13 s is the most
+    that was asked.
+- **Removal through the manager in regular hours:** with the SPY quote out of the demand, no SPY
+  quote came in 60 s. Taken in again, 20 came in 10 s.
+- **No batch was lost** by any reader, the market state's included (`MarketStatus.lost` stayed 0).
+  The queue of 2,000 batches was far from full: about 8 batches a second came, and the wait of the
+  slowest batch was 17 ms.
+- **No stall,** and no loss other than the two forced. Since there was none, whether the feed should
+  subscribe again after a loss (decided 2026-11-24) did not arise.
+- **Rates of a thin day:** about 470 events a second at the median and 590 at most, 97% of them
+  quotes, for 2,008 pairs. Each option quote is aggregated to 0.5 s, so 2,008 pairs can give at most
+  about 4,000 events a second (computed, not seen).
+- **The early close:** the options of SPY and SPXW were quoted until 13:15 New York, the regular
+  close of 13:00 plus the 15 minutes they trade after it on any day. From 13:16 almost no option
+  quote came. Trades and the broker's Greeks went on, so the stall rule did not fire.
+  - The trades: SPY and SPX, 0.2 to 1.6 a second.
+  - The Greeks: those of the options of 2026-11-30, about 5 a second.
+- **The REST client:** one token renewal at the start. Then nothing was read for 3.5 hours, and the
+  token lapsed, as built (BRK-01, renewal on demand). No 429.
+- **The daily copy** of the state file was made at the start: the state file was new, made by this
+  run.
+
+Not tested here: a full day, regular-hours rates on a normal day, a stall, a 429, the late session's
+end on an early close (the candle check, `stream_check.py --candles 2026-11-27`), and how the app
+looked during the run.

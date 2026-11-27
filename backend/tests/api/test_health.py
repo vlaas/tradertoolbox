@@ -63,6 +63,10 @@ async def test_what_it_reports(rig: ApiRig) -> None:
     assert doc["calendar"]["last"] == "2033-12-31"
     assert doc["rates"]["source"] == "flat" and doc["rates"]["flat_rate"] == 0.04
     assert doc["rates"]["reason"] and doc["rates"]["downloads"] is False
+    # The memory against its bound (PRF-09).
+    process = doc["process"]
+    assert process["bound_mb"] == 1024 and process["over_bound_since"] is None
+    assert 10 < process["peak_rss_mb"] < 10_000 and process["checked_at"] is not None
 
 
 async def test_the_route_is_the_service(rig: ApiRig) -> None:

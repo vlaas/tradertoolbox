@@ -326,6 +326,9 @@
           "market": {
             "$ref": "#/components/schemas/MarketStatus"
           },
+          "process": {
+            "$ref": "#/components/schemas/ProcessStatus"
+          },
           "rates": {
             "$ref": "#/components/schemas/RatesStatus"
           },
@@ -367,7 +370,8 @@
           "store",
           "copies",
           "calendar",
-          "rates"
+          "rates",
+          "process"
         ],
         "title": "Health",
         "type": "object"
@@ -482,6 +486,51 @@
           "failures"
         ],
         "title": "MarketStatus",
+        "type": "object"
+      },
+      "ProcessStatus": {
+        "description": "For the health route (SEC-08).",
+        "properties": {
+          "bound_mb": {
+            "title": "Bound Mb",
+            "type": "integer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "over_bound_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Over Bound Since"
+          },
+          "peak_rss_mb": {
+            "title": "Peak Rss Mb",
+            "type": "number"
+          }
+        },
+        "required": [
+          "peak_rss_mb",
+          "bound_mb",
+          "over_bound_since",
+          "checked_at"
+        ],
+        "title": "ProcessStatus",
         "type": "object"
       },
       "RatesStatus": {

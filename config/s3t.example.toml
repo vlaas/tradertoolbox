@@ -109,3 +109,8 @@ state_file = "../data/state.sqlite"
 # Optional. Whether the running backend copies the state store once a day, into backup_dir. Every
 # copy is kept.
 # daily_copy = true
+
+[process]
+# Optional. The bound of the backend's memory (PRF-09): the peak resident memory, in MiB. Above it the
+# backend logs a warning and the health route says since when. Nothing else happens.
+# memory_bound_mb = 1024

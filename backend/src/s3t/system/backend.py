@@ -47,6 +47,7 @@ from s3t.store.state import StateStore
 from s3t.subs.local import LocalFeed
 from s3t.system.features import Features
 from s3t.system.login import Login
+from s3t.system.process import ProcessWatch
 
 NY = ZoneInfo("America/New_York")
 
@@ -88,6 +89,7 @@ class Backend:
     market: MarketState
     instruments: Instruments
     features: Features
+    process: ProcessWatch
 
 
 async def _calendar(config: Config, at: datetime) -> ExchangeCalendar:
@@ -182,6 +184,10 @@ async def open_backend(
             ticker = asyncio.create_task(broker.dxlink.run(clocks.sleep), name="fake-ticker")
             closing.push_async_callback(_cancel, ticker)
 
+        process = ProcessWatch(config.process.memory_bound_mb, now=clocks.now, sleep=clocks.sleep)
+        closing.push_async_callback(process.aclose)
+
+        process.start()
         copies.start()
         rates.start()
         feed.start()
@@ -200,6 +206,7 @@ async def open_backend(
             market=market,
             instruments=Instruments(broker),
             features=Features(broker, config.paths.t3_root),
+            process=process,
         )
 
 
