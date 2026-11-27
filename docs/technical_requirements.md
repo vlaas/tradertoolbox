@@ -598,7 +598,7 @@ WP-0.8.
   words, so no state is told by colour alone. Every figure is also on the status screen. The
   mock-ups are not changed.
 - **Live values** (UI-05). A row whose values are not all live is greyed as a whole (the token
-  `--stale`) and says "stale" in its last column. The top bar of every screen says that the
+  `--stale-row`) and says "stale" in its last column. The top bar of every screen says that the
   connection is lost, with the reason and the wait. Live is the rule of 2026-11-27 (above), and
   only while the connection is open and the `status` came on it.
 - **Times** (UI-12). The default is the exchange time of the instrument; the user can choose local
@@ -611,7 +611,7 @@ WP-0.8.
 - **The font of prices** is JetBrains Mono, as in the mock-ups: OFL-1.1, a named exception under
   QA-07 (`@fontsource/jetbrains-mono` 5.3.0).
 
-**Proposed 2026-11-27, not confirmed by the owner:**
+**Decided 2026-11-27 (owner, WP-0.8 review), as proposed:**
 
 - **The login is a state, not an address.** Without a session the login screen stands in for the
   screen of the address, and the address stays. A session that ends while a page is open (`Bye`
@@ -627,10 +627,12 @@ WP-0.8.
 - **The JSON form** (API-04) is `?wire=json` in the page's address.
 - **The mark of GEN-11** sits in the top bar, which is the header of every screen window (as in the
   mock-ups), and in the status bar. Its text is the backend's.
-- **The exchange zone of an instrument** is the zone of the calendar its sessions come from: New
-  York (XNYS) for stocks, ETFs, indexes and their options; Chicago (CMES) for futures and their
-  options. Open: the owner's example of VIX and SPXW, both listed by Cboe, which states its hours
-  in Chicago time (from memory, not looked up), while the sessions of SPX options are those of New York in the calendar.
+- **The exchange zone of an instrument** (UI-12) is the zone of the calendar its sessions come
+  from: New York (XNYS) for stocks, ETFs, indexes and their options; Chicago (CMES) for futures and
+  their options. It is not the home of the exchange: Cboe lists VIX and SPXW and states its hours
+  in Chicago time (from memory, not looked up), and both are New York's here. The backend publishes
+  the zone of an instrument when one of another zone comes (WP-1.8, R2); the app does not guess it
+  from the symbol.
 - **The status screen** lists SPY, SPX and AAPL, which the fake and the live broker know. The list
   can be edited and is kept in the browser. The health and the features routes are asked at each
   connection and every 30 s, for the rates (REF-01), the calendar (REF-04), the state file and the
@@ -648,8 +650,18 @@ WP-0.8.
   restart in one engine breaks no test of another. Its tool (`backend/tools/e2e_backend.py`) has a
   control on the next port for the tests: restart the backend, drop the stream, set a quote. It is
   not part of the application.
-- **Accessibility checks** (plan 3.5) come with the first screen of R1; `axe-core` is MPL-2.0 and
-  needs a named exception.
+
+**Decided 2026-11-27 (owner, WP-0.8 review), changed from the proposal:**
+
+- **Accessibility checks** (plan 3.5) now, not with the first screen of R1: the viewer's checks,
+  WCAG 2 A and AA with a contrast of 4.5:1, in both themes, on the login screen, the status screen
+  with the explanation of its status bar open, and the status screen while the connection is lost
+  (`frontend/e2e/a11y.spec.ts`). `@axe-core/playwright` 4.13.0 and `axe-core` 4.13.0, the viewer's
+  version, are MPL-2.0 and a named exception under QA-07. Their first run found three faults, all
+  fixed: a panel that scrolls could not be reached by the keyboard (it is a stop of the Tab key
+  while it overflows), the grey of a stale row left too little contrast (a tint of 10%,
+  `--stale-row`, in place of the viewer's 25%), and the status bar's figures of a connection that
+  has gone were faded (they are in italics).
 
 ## 4. Requirements
 
@@ -1039,6 +1051,7 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 | spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only; not redistributed | Decided 2026-11-22 |
 | certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Decided 2026-11-22 (WP-0.3) |
 | cffi | MIT-0 | The binding of argon2-cffi to its C code, used unmodified; a runtime dependency. MIT-0 is MIT without the duty to name the author | Decided 2026-11-26 (WP-0.7) |
+| @axe-core/playwright, axe-core | MPL-2.0 | The accessibility checks of the browser suite (plan 3.5), as the backtester viewer has them; development only, used unmodified, not part of the built app | Decided 2026-11-27 (owner, WP-0.8 review) |
 | @fontsource/jetbrains-mono | OFL-1.1 | The font of prices, as in the mock-ups. Its files are part of the built app, used unmodified. OFL-1.1 lets a font be shipped with software, and asks that every copy carries the copyright notice and the licence. Whether the metadata of the font files is enough for that was not checked: before publication (plan section 8) | Decided 2026-11-27 (owner, WP-0.8 review) |
 
 ## 5. Open points

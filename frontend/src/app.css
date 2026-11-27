@@ -31,6 +31,9 @@
   --tile-value: 18px;
   --tile-gap: 2px;
   --ok: var(--profit);
+  /* A row that is not live (UI-05): a grey tint light enough that muted text keeps 4.5:1 on it in
+     both themes (the viewer's --stale, 25%, does not). */
+  --stale-row: rgb(139 145 156 / 10%);
   --popup: #1c2029;
 
   --space-1: 2px;

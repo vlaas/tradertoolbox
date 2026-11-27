@@ -56,6 +56,7 @@ _MPL_LIGHTNINGCSS = Exception_(
     "MPL-2.0", "build tool of Vite, used unmodified, not part of the built app"
 )
 _CC_BY_DATA = "licence-list data inside the licence checker itself; development only"
+_MPL_AXE = "accessibility checks of the browser suite; development only, used unmodified"
 
 EXCEPTIONS: dict[str, dict[str, Exception_]] = {
     "python": {
@@ -85,6 +86,10 @@ EXCEPTIONS: dict[str, dict[str, Exception_]] = {
         },
         "spdx-exceptions": Exception_("CC-BY-3.0", _CC_BY_DATA),
         "spdx-ranges": Exception_("(MIT AND CC-BY-3.0)", _CC_BY_DATA),
+        # Decided 2026-11-27 (owner, WP-0.8 review): the accessibility checks of the browser suite
+        # (plan 3.5), as the backtester viewer has them.
+        "@axe-core/playwright": Exception_("MPL-2.0", _MPL_AXE),
+        "axe-core": Exception_("MPL-2.0", _MPL_AXE),
         # Decided 2026-11-27 (owner, WP-0.8 review): the font of prices, as in the mock-ups.
         "@fontsource/jetbrains-mono": Exception_(
             "OFL-1.1", "the font of prices, in the built app, used unmodified"

@@ -49,7 +49,7 @@ names its split point.
 | WP-0.5 | Market state and instruments | M | done 2026-11-24 |
 | WP-0.6 | Storage, configuration, reference data | M | done 2026-11-25 |
 | WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; SEC-06 open for Linux |
-| WP-0.8 | Frontend shell | M | done 2026-11-27; proposals open |
+| WP-0.8 | Frontend shell | M | done 2026-11-27 |
 | WP-0.9 | R0 live measurements and acceptance | S | not started |
 | WP-1.1 | Forwards and surface | M | not started |
 | WP-1.2 | Chain service | M | not started |
@@ -324,9 +324,8 @@ the real broker in regular hours. Each has a checklist and a named point in the 
 - *Done when:* a quote changed in the fake broker appears in the browser, the connection
   loss is shown and recovered from, in three browsers.
 - *Closes:* UI-03, UI-05, BRK-06, BRK-09, SUB-07 and GEN-11 (shown); the base for UI-01,
-  UI-04, UI-08 and UI-10. UI-12, added in the review (2026-11-27), for the screens of R0.
-  **Proposed** (2026-11-27, not confirmed): REF-01, REF-04 and GEN-03 (shown) as well. WP-0.6
-  and section 8 say that WP-0.8 shows them, and it does.
+  UI-04, UI-08 and UI-10. Added in the review (2026-11-27): UI-12 for the screens of R0, and
+  REF-01, REF-04 and GEN-03 (shown), which WP-0.6 and section 8 had given to WP-0.8.
 - *Review of UI-03 (R), 2026-11-27, by Claude:* one module opens the WebSocket,
   `frontend/src/lib/connection.ts`, and only `src/stores/connection.svelte.ts` uses it. A store of
   a topic subscribes there and never sees the socket: `status.svelte.ts` for `status`,
@@ -360,8 +359,12 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   UTC or a zone by its name (UI-12, new; CH-06 widened). JetBrains Mono is the font of prices, a
   named exception for OFL-1.1. Built the same day: the time choice in the top bar, every time with
   its zone, and tests for each in three engines. In WebKit, Enter in the field of a zone went to
-  the open list of suggestions, so a listed name applies as soon as it is typed or picked. The
-  other proposals are still open.
+  the open list of suggestions, so a listed name applies as soon as it is typed or picked. Later
+  the same day the other proposals were decided as proposed, the exchange zone of an instrument
+  among them, except one: the accessibility checks came now (`frontend/e2e/a11y.spec.ts`, WCAG 2 A
+  and AA, both themes, three engines), with `axe-core` as a named exception. They found three
+  faults, all fixed: a panel that scrolls was out of the keyboard's reach, the grey of a stale row
+  and the faded old figures of the status bar had too little contrast.
 
 **WP-0.9 R0 live measurements and acceptance** (S)
 - *Do, read-only and rate-limited, on a trading day:* how the subscription cap counts; REST
@@ -799,14 +802,14 @@ Found but not planned into a package yet.
   - `json_format` takes an empty JSON list for an empty message. It is ignored, as every message
     without a known body is.
 - From WP-0.8 (2026-11-27):
-  - **Proposals, not confirmed:** the requirements, section 3, "The frontend shell (WP-0.8)", the
-    part "Proposed", and REF-01, REF-04 and GEN-03 in WP-0.8's "Closes". Decided in the review of
-    2026-11-27: the status bar, stale rows, times, the font.
-  - **The exchange zone of an instrument** (UI-12) is proposed as the zone of its calendar: New York
-    for stocks, ETFs, indexes and their options, Chicago for futures. The owner named VIX and SPXW
-    as living in different zones; which zone each takes is open. The topic `quotes` has New York
-    symbols only, so nothing shows the difference yet. **For WP-1.8** (futures in `quotes`) and R2:
-    the backend publishes the zone of an instrument; the app does not guess it from the symbol.
+  - **Reviewed with the owner on 2026-11-27** (requirements, section 3, "The frontend shell"):
+    every proposal decided. Changed: a compact status bar, a stale row greyed as a whole, times by
+    zone with the choice of the user (UI-12, new), JetBrains Mono, and the accessibility checks now.
+  - **The exchange zone of an instrument** (UI-12) is the zone of its calendar: New York for stocks,
+    ETFs, indexes and their options, Chicago for futures (decided 2026-11-27). The topic `quotes`
+    has New York symbols only, so nothing shows a difference yet. **For WP-1.8** (futures in
+    `quotes`) and R2: the backend publishes the zone of an instrument; the app does not guess it
+    from the symbol.
   - **OFL-1.1 before publication:** the licence asks that every copy of the font carries its
     copyright notice and the licence. Whether the font file's own metadata is enough was not
     checked; else ship the licence text beside it.
@@ -821,8 +824,9 @@ Found but not planned into a package yet.
     dark theme, connected and during a restart of the backend. Firefox, WebKit and windows below
     1024 by 600 were not looked at. The compact status bar fits one line at 1440 px; at smaller
     widths it was not seen.
-  - **Accessibility checks** (plan 3.5, the viewer's axe): not added. `axe-core` is MPL-2.0, a named
-    exception like hypothesis. Add them with the first screen of R1 (WP-1.5 or WP-1.6).
+  - **Accessibility checks** (plan 3.5) run in the browser suite since the review: every new screen
+    or state adds itself to `frontend/e2e/a11y.spec.ts`. A panel that scrolls is a stop of the Tab
+    key while it overflows; the chain grid of WP-1.5 needs its own answer for the keyboard.
   - **For WP-1.8:** the symbols of the status screen's quote list are kept in the browser (local
     storage). Watchlists replace them. A row received before a reconnect stays stale until its next
     event, by the live rule; a symbol that rarely trades says "stale" for a long time.

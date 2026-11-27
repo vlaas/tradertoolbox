@@ -380,7 +380,7 @@
      "stale"; the top bar says that the connection is lost. */
   tr.stale td {
     color: var(--muted);
-    background: var(--stale);
+    background: var(--stale-row);
   }
   .symbols {
     display: flex;

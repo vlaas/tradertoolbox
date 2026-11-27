@@ -41,7 +41,7 @@
     <span
       class="level {part.level}"
       class:old={id !== 'connection' && !status.fresh}
-      title={part.title}
+      title={id !== 'connection' && !status.fresh ? `Before the loss: ${part.title}` : part.title}
       data-testid="status-{id}">{part.text}</span
     >
   {/each}
@@ -95,7 +95,8 @@
     background: var(--panel);
     border-top: 1px solid var(--border);
   }
+  /* Of a connection that has gone: in italics, not faded, so the contrast stays. */
   .old {
-    opacity: 0.6;
+    font-style: italic;
   }
 </style>

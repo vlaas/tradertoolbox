@@ -2,6 +2,7 @@
   // A panel of a screen: a header with its title and, where it needs one, the information icon;
   // a body that scrolls on its own when it does not fit (UI-08 base).
   import type { Snippet } from 'svelte'
+  import type { Attachment } from 'svelte/attachments'
   import InfoButton from './InfoButton.svelte'
 
   let {
@@ -19,6 +20,25 @@
     old?: boolean
   } = $props()
   const id = $props.id()
+
+  /** A body that scrolls can be reached and scrolled by the keyboard (WCAG 2.1.1): it is a stop of
+   * the Tab key while its content overflows, and only then. */
+  const scrollable: Attachment<HTMLElement> = (body) => {
+    const look = () => {
+      const over = body.scrollHeight > body.clientHeight || body.scrollWidth > body.clientWidth
+      if (over) body.setAttribute('tabindex', '0')
+      else body.removeAttribute('tabindex')
+    }
+    const sizes = new ResizeObserver(look)
+    sizes.observe(body)
+    const content = new MutationObserver(look)
+    content.observe(body, { childList: true, subtree: true, characterData: true })
+    look()
+    return () => {
+      sizes.disconnect()
+      content.disconnect()
+    }
+  }
 </script>
 
 <section class="panel" aria-labelledby="panel-{id}" data-old={old || undefined}>
@@ -29,7 +49,9 @@
     {@render tools?.()}
     {#if info}<InfoButton label="About {title}">{@render info()}</InfoButton>{/if}
   </header>
-  <div class="body">{@render children()}</div>
+  <div class="body" {@attach scrollable}>
+    {@render children()}
+  </div>
 </section>
 
 <style>
