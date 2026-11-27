@@ -19,3 +19,4 @@ frontend/playwright-report/
 # local configuration and data (GEN-07, GEN-08)
 config/s3t.toml
 /data/
+tmp/
