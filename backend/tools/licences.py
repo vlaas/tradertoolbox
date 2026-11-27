@@ -85,6 +85,10 @@ EXCEPTIONS: dict[str, dict[str, Exception_]] = {
         },
         "spdx-exceptions": Exception_("CC-BY-3.0", _CC_BY_DATA),
         "spdx-ranges": Exception_("(MIT AND CC-BY-3.0)", _CC_BY_DATA),
+        # Decided 2026-11-27 (owner, WP-0.8 review): the font of prices, as in the mock-ups.
+        "@fontsource/jetbrains-mono": Exception_(
+            "OFL-1.1", "the font of prices, in the built app, used unmodified"
+        ),
     },
 }
 

@@ -1,18 +1,20 @@
 <script lang="ts">
   // The status screen: every figure of the `status` topic (BRK-06, BRK-09, SUB-07, GEN-11), the
   // reference data and the data tiers of the health and features routes (REF-01, REF-04, GEN-04),
-  // and a live quote list (UI-05: stale values are marked).
+  // and a live quote list (UI-05: a row that is not live is greyed and says "stale").
   import { onDestroy, untrack } from 'svelte'
   import Panel from '../components/Panel.svelte'
   import { NoteKind, RefusalKind } from '../gen/s3t/wire/v1/channel_pb'
   import { DemandClass } from '../gen/s3t/wire/v1/status_pb'
   import { CallFailed, features, type Features, health, type Health } from '../lib/api'
   import { count, dateTime, decimal, micros, time } from '../lib/format'
-  import { isLive, rowState } from '../lib/live'
+  import { rowState } from '../lib/live'
   import { symbolsOf } from '../lib/quoterows'
   import { authName, connectionPart, phaseName } from '../lib/statusline'
+  import { exchangeZone, MARKET_ZONE, zoneName } from '../lib/zones'
   import { connection } from '../stores/connection.svelte'
   import { QuoteList } from '../stores/quotes.svelte'
+  import { shownZone } from '../stores/settings.svelte'
   import { liveBasis, status } from '../stores/status.svelte'
 
   const SYMBOLS_KEY = 's3t.status.symbols'
@@ -82,8 +84,11 @@
   const old = $derived(s !== null && !status.fresh)
   const basis = $derived(liveBasis())
   const yesNo = (x: boolean) => (x ? 'yes' : 'no')
-  const instant = (us: number | undefined) => dateTime(us ?? null)
-  const iso = (text: string | null | undefined) => dateTime(micros(text))
+  // UI-12: the times of the backend take the market's zone in exchange time; a quote its own.
+  const zone = $derived(shownZone())
+  const quoteZone = $derived(shownZone(MARKET_ZONE))
+  const instant = (us: number | undefined | null) => dateTime(us ?? null, zone)
+  const iso = (text: string | null | undefined) => dateTime(micros(text), zone)
 </script>
 
 {#snippet fact(name: string, value: string, testid?: string)}
@@ -96,7 +101,7 @@
     <dl class="facts">
       {@render fact('Connection', connectionPart(connection.state, Date.now()).text)}
       {@render fact('Connections opened', count(connection.state.opened), 'connections-opened')}
-      {@render fact('Since', dateTime(connection.state.since * 1000))}
+      {@render fact('Since', instant(connection.state.since * 1000))}
       {@render fact('Data time', instant(connection.state.dataTimeUs ?? s?.dataTimeUs))}
       {@render fact('Live since', instant(status.fresh ? s?.liveSinceUs : undefined))}
       {@render fact('Source', s?.source?.mark || (s ? 'the live broker' : '—'))}
@@ -132,7 +137,7 @@
       {@render fact(
         'Last gap',
         s?.stream?.lastGap
-          ? `${time(s.stream.lastGap.sinceUs)}–${time(s.stream.lastGap.untilUs)} ET, ${s.stream.lastGap.reason}`
+          ? `${time(s.stream.lastGap.sinceUs, zone)}–${time(s.stream.lastGap.untilUs, zone)} ${zoneName(zone)}, ${s.stream.lastGap.reason}`
           : 'none',
         'stream-gap',
       )}
@@ -240,8 +245,8 @@
           <th>Last size</th>
           <th>Volume</th>
           <th>Prev close</th>
-          <th>Quote at</th>
-          <th>Trade at</th>
+          <th>Quote at ({zoneName(quoteZone)})</th>
+          <th>Trade at ({zoneName(quoteZone)})</th>
           <th class="text">State</th>
         </tr>
       </thead>
@@ -249,24 +254,23 @@
         {#each quotes.view.symbols as symbol (symbol)}
           {@const q = quotes.view.rows.get(symbol)}
           {#if q}
-            {@const quoteOld = q.quoteReceivedUs !== null && !isLive(q.quoteReceivedUs, basis)}
-            {@const tradeOld = q.tradeReceivedUs !== null && !isLive(q.tradeReceivedUs, basis)}
+            <!-- Every symbol of the topic is of the market's zone (lib/zones.ts), so the columns
+                 name the zone once. -->
+            {@const qz = shownZone(exchangeZone(symbol))}
             {@const state = rowState([q.quoteReceivedUs, q.tradeReceivedUs], basis)}
-            <tr data-testid="quote-{symbol}" data-state={state}>
+            <tr data-testid="quote-{symbol}" data-state={state} class:stale={state === 'stale'}>
               <td class="text">{symbol}</td>
-              <td class="price" class:stale={quoteOld} data-col="bid">{decimal(q.bid)}</td>
-              <td class="price" class:stale={quoteOld} data-col="ask">{decimal(q.ask)}</td>
-              <td class:stale={quoteOld}>{count(q.bidSize)}</td>
-              <td class:stale={quoteOld}>{count(q.askSize)}</td>
-              <td class="price" class:stale={tradeOld} data-col="last">{decimal(q.last)}</td>
-              <td class:stale={tradeOld}>{count(q.lastSize)}</td>
-              <td class:stale={tradeOld}>{count(q.dayVolume)}</td>
+              <td class="price" data-col="bid">{decimal(q.bid)}</td>
+              <td class="price" data-col="ask">{decimal(q.ask)}</td>
+              <td>{count(q.bidSize)}</td>
+              <td>{count(q.askSize)}</td>
+              <td class="price" data-col="last">{decimal(q.last)}</td>
+              <td>{count(q.lastSize)}</td>
+              <td>{count(q.dayVolume)}</td>
               <td class="price">{decimal(q.prevClose)}</td>
-              <td class:stale={quoteOld}>{time(q.quoteReceivedUs)}</td>
-              <td class:stale={tradeOld}>{time(q.tradeReceivedUs)}</td>
-              <td class="text" class:stale={state !== 'live'} data-col="state"
-                >{state === 'none' ? 'no data' : state}</td
-              >
+              <td>{time(q.quoteReceivedUs, qz)}</td>
+              <td>{time(q.tradeReceivedUs, qz)}</td>
+              <td class="text" data-col="state">{state === 'none' ? 'no data' : state}</td>
             </tr>
           {/if}
         {/each}
@@ -371,6 +375,12 @@
   }
   .status > :global(:nth-child(5)) {
     grid-column: span 3;
+  }
+  /* UI-05, decided 2026-11-27 (owner): a row that is not live is greyed as a whole and says
+     "stale"; the top bar says that the connection is lost. */
+  tr.stale td {
+    color: var(--muted);
+    background: var(--stale);
   }
   .symbols {
     display: flex;

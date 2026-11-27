@@ -324,8 +324,9 @@ the real broker in regular hours. Each has a checklist and a named point in the 
 - *Done when:* a quote changed in the fake broker appears in the browser, the connection
   loss is shown and recovered from, in three browsers.
 - *Closes:* UI-03, UI-05, BRK-06, BRK-09, SUB-07 and GEN-11 (shown); the base for UI-01,
-  UI-04, UI-08 and UI-10. **Proposed** (2026-11-27, not confirmed): REF-01, REF-04 and GEN-03
-  (shown) as well. WP-0.6 and section 8 say that WP-0.8 shows them, and it does.
+  UI-04, UI-08 and UI-10. UI-12, added in the review (2026-11-27), for the screens of R0.
+  **Proposed** (2026-11-27, not confirmed): REF-01, REF-04 and GEN-03 (shown) as well. WP-0.6
+  and section 8 say that WP-0.8 shows them, and it does.
 - *Review of UI-03 (R), 2026-11-27, by Claude:* one module opens the WebSocket,
   `frontend/src/lib/connection.ts`, and only `src/stores/connection.svelte.ts` uses it. A store of
   a topic subscribes there and never sees the socket: `status.svelte.ts` for `status`,
@@ -352,6 +353,15 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   edge, which is fixed and is now a test. M0 holds on the fake broker: **nothing of this package
   ran against the live broker** (WP-0.9). The proposals are in the requirements, section 3, "The
   frontend shell".
+- *Review, 2026-11-27, with the owner:* four proposals decided, two of them changed (requirements,
+  section 3, and product definition 6.3). The status bar keeps its order and is compact: short
+  texts, each with its whole sentence when pointed at. A row that is not live is greyed as a whole.
+  Times are the exchange time of the instrument by default, and the user can choose local time,
+  UTC or a zone by its name (UI-12, new; CH-06 widened). JetBrains Mono is the font of prices, a
+  named exception for OFL-1.1. Built the same day: the time choice in the top bar, every time with
+  its zone, and tests for each in three engines. In WebKit, Enter in the field of a zone went to
+  the open list of suggestions, so a listed name applies as soon as it is typed or picked. The
+  other proposals are still open.
 
 **WP-0.9 R0 live measurements and acceptance** (S)
 - *Do, read-only and rate-limited, on a trading day:* how the subscription cap counts; REST
@@ -789,8 +799,17 @@ Found but not planned into a package yet.
   - `json_format` takes an empty JSON list for an empty message. It is ignored, as every message
     without a known body is.
 - From WP-0.8 (2026-11-27):
-  - **Proposals, not confirmed:** the requirements, section 3, "The frontend shell (WP-0.8)", and
-    REF-01, REF-04 and GEN-03 in WP-0.8's "Closes".
+  - **Proposals, not confirmed:** the requirements, section 3, "The frontend shell (WP-0.8)", the
+    part "Proposed", and REF-01, REF-04 and GEN-03 in WP-0.8's "Closes". Decided in the review of
+    2026-11-27: the status bar, stale rows, times, the font.
+  - **The exchange zone of an instrument** (UI-12) is proposed as the zone of its calendar: New York
+    for stocks, ETFs, indexes and their options, Chicago for futures. The owner named VIX and SPXW
+    as living in different zones; which zone each takes is open. The topic `quotes` has New York
+    symbols only, so nothing shows the difference yet. **For WP-1.8** (futures in `quotes`) and R2:
+    the backend publishes the zone of an instrument; the app does not guess it from the symbol.
+  - **OFL-1.1 before publication:** the licence asks that every copy of the font carries its
+    copyright notice and the licence. Whether the font file's own metadata is enough was not
+    checked; else ship the licence text beside it.
   - **Not verified live:** the app never ran against the live broker. The mark of GEN-11 is absent
     on the live broker by a unit test only. WP-0.9 runs the backend for a day: look at the status
     bar and the status screen then, in regular hours.
@@ -798,12 +817,10 @@ Found but not planned into a package yet.
     (unit tests on fake timers): a stall in the status bar, a hold after a 429, a refused grant, the
     reload when the backend speaks another version, a silent connection, a topic refused with
     `UNAVAILABLE` (GEN-04; the fake has every tier). The replay broker's mark was not seen.
-  - **The look** was seen once: Chromium, 1440 by 900, the light theme (the headless default). The
-    dark theme, Firefox, WebKit and windows below 1024 by 600 were not looked at. Below about 1300
-    px the status bar probably takes two lines (estimated from the one look, not seen).
-  - **For WP-1.5:** the mock-ups use JetBrains Mono for prices. Its licence is OFL-1.1, which is not
-    on the allow-list; it needs a named exception or the system's monospace stays (proposal of
-    WP-0.8).
+  - **The look** was seen in Chromium at 1440 by 900: the light theme once, and after the review the
+    dark theme, connected and during a restart of the backend. Firefox, WebKit and windows below
+    1024 by 600 were not looked at. The compact status bar fits one line at 1440 px; at smaller
+    widths it was not seen.
   - **Accessibility checks** (plan 3.5, the viewer's axe): not added. `axe-core` is MPL-2.0, a named
     exception like hypothesis. Add them with the first screen of R1 (WP-1.5 or WP-1.6).
   - **For WP-1.8:** the symbols of the status screen's quote list are kept in the browser (local
@@ -811,7 +828,7 @@ Found but not planned into a package yet.
     event, by the live rule; a symbol that rarely trades says "stale" for a long time.
   - The status screen shows two clocks: the browser's and the backend's wall clock (the connection,
     the start) and the time of the data (everything of the market). On the fake broker they are days
-    apart; both are written in New York time.
+    apart; both are written in the zone the user chose (UI-12).
   - **The browser suite** runs one backend per engine (ports 4178, 4180, 4182, each with its control
     on the next port) and one test at a time per engine. A restart of the e2e backend starts the
     fake market's clock again at `fake_start`.

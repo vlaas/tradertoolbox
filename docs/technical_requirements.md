@@ -586,15 +586,33 @@ The API package (WP-0.7). The signatures are in `s3t.system` and `s3t.api`, the 
 The frontend shell (WP-0.8). The code is in `frontend/src`; its parts are named in the plan,
 WP-0.8.
 
+**Decided 2026-11-27 (owner, WP-0.8 review):**
+
+- **The status bar** (BRK-09's layout, left open at WP-0.3) is compact and easy to grasp: short
+  texts, abbreviated where they can be, in this order: the browser's connection ("Backend ok",
+  "Backend lost · retry 3 s"), the stream ("Stream ok · 0.5 s", resubscribing, stalled, down, and
+  "gap 2 s" for ten minutes after a gap), the subscriptions ("Subs 9/10,000", with what is pending
+  or lost), REST ("REST 5/min ≤2/s · token renews 10:14", and "held 10:00 (429)"), the mark of
+  GEN-11; then the time of the data, "Read-only" and an information icon that explains the
+  figures. Each part shows its whole sentence when pointed at (its `title`). A part is a dot and
+  words, so no state is told by colour alone. Every figure is also on the status screen. The
+  mock-ups are not changed.
+- **Live values** (UI-05). A row whose values are not all live is greyed as a whole (the token
+  `--stale`) and says "stale" in its last column. The top bar of every screen says that the
+  connection is lost, with the reason and the wait. Live is the rule of 2026-11-27 (above), and
+  only while the connection is open and the `status` came on it.
+- **Times** (UI-12). The default is the exchange time of the instrument; the user can choose local
+  time, UTC or a zone by its name, in the top bar. Every time names its zone: ET and CT for the
+  two exchange zones, else the browser's short name (UTC, EET). The choice is kept in the browser.
+  The backend's times that belong to no instrument (the token, the stream, the time of the data)
+  are in the market's zone, New York, in exchange time. Every symbol of the topic `quotes` is of
+  New York (stocks, ETFs, indexes); the zone of an instrument has to come from the backend when
+  futures come (plan section 8).
+- **The font of prices** is JetBrains Mono, as in the mock-ups: OFL-1.1, a named exception under
+  QA-07 (`@fontsource/jetbrains-mono` 5.3.0).
+
 **Proposed 2026-11-27, not confirmed by the owner:**
 
-- **The status bar** (BRK-09's layout, left open at WP-0.3): left to right, the browser's
-  connection; the stream (phase, "quotes every 0.5 s", resubscribing, stalled, the last gap); the
-  subscriptions ("Subscriptions 1,046 of 25,000", what is pending, batches lost); REST ("token
-  valid, renews from 10:14:01 ET · 5 req/min, limit 2/s burst 4", a hold "after a 429"); the mark
-  of GEN-11; the time of the data; "Read-only: no orders are sent"; an information icon that says
-  what the figures are. Each part is a dot and words, so no state is told by colour alone. Every
-  figure is also on the status screen. The mock-ups are not changed.
 - **The login is a state, not an address.** Without a session the login screen stands in for the
   screen of the address, and the address stays. A session that ends while a page is open (`Bye`
   with `SESSION_ENDED`) takes it to the login screen with the reason.
@@ -607,14 +625,12 @@ WP-0.8.
   messages, and the page reloads, at most once a minute. Close 1012 reads "the backend restarts".
   The numbers of the subscriptions rise over the life of the page, not only of a connection.
 - **The JSON form** (API-04) is `?wire=json` in the page's address.
-- **Live values** (UI-05). A quote is live by the rule of 2026-11-27 (above), and only while the
-  connection is open and the `status` came on it. A row that is not live is dimmed and says
-  "stale" in its own column; `prev_close` is not judged. The loss of the connection is a mark in
-  the top bar of every screen, with the reason and the wait, and the first part of the status bar.
 - **The mark of GEN-11** sits in the top bar, which is the header of every screen window (as in the
   mock-ups), and in the status bar. Its text is the backend's.
-- **Times** are New York time, written with "ET" (CH-06's default is exchange time). The backend's
-  instants are compared with the time of its data, which is the fake broker's own clock there.
+- **The exchange zone of an instrument** is the zone of the calendar its sessions come from: New
+  York (XNYS) for stocks, ETFs, indexes and their options; Chicago (CMES) for futures and their
+  options. Open: the owner's example of VIX and SPXW, both listed by Cboe, which states its hours
+  in Chicago time (from memory, not looked up), while the sessions of SPX options are those of New York in the calendar.
 - **The status screen** lists SPY, SPX and AAPL, which the fake and the live broker know. The list
   can be edited and is kept in the browser. The health and the features routes are asked at each
   connection and every 30 s, for the rates (REF-01), the calendar (REF-04), the state file and the
@@ -624,15 +640,16 @@ WP-0.8.
   and at the window's edges (UI-10).
 - **The information icon** (UI-11 base) is one component on a native popover, so its box is drawn
   above every scrolling area (UI-09 base). It opens towards the side of the window with room.
-- **Tokens and fonts.** The viewer's tokens as they are, dark by default and light by the system's
-  setting, with no switch yet. No web font: the system's monospace stack for prices. JetBrains Mono,
-  which the mock-ups use, is OFL-1.1 and not on the allow-list (plan section 8, WP-1.5).
+- **Theme.** The viewer's tokens as they are, dark by default and light by the system's setting,
+  with no switch yet.
 - **The dev server.** `S3T_BACKEND=http://<address>:<port> npm run dev` sends `/api` and the
   WebSocket to that backend and states the backend's origin (SEC-02). No address is in the code.
 - **The browser suite** runs one backend per engine, and one test at a time in each, so that a
   restart in one engine breaks no test of another. Its tool (`backend/tools/e2e_backend.py`) has a
   control on the next port for the tests: restart the backend, drop the stream, set a quote. It is
   not part of the application.
+- **Accessibility checks** (plan 3.5) come with the first screen of R1; `axe-core` is MPL-2.0 and
+  needs a named exception.
 
 ## 4. Requirements
 
@@ -874,6 +891,7 @@ State after WP-0.7 (2026-11-25):
 | UI-09 | Pop-ups and menus are drawn above the scrolling areas and are never cut off by them. | R1 | T |
 | UI-10 | Gaps between panels and margins at the window edges are small and come from one spacing scale. | R1 | R |
 | UI-11 | Instructions and explanations open from an information icon in the header of their panel, one component used everywhere. A legend needed to read a view stays visible and follows the view (graph or table). | R1 | T, R |
+| UI-12 | A time is shown by default in the exchange time of its instrument. The user can choose local time, UTC or a time zone by its name instead, and every time says its zone. Times are compared as instants, never as written. Decided 2026-11-27 (owner, WP-0.8 review). | R0 | T |
 
 ### 4.13 Trade workbench
 
@@ -911,7 +929,7 @@ charting note, section 11.
 | CH-03 | Drawing tools: trendline, horizontal line, vertical line, ruler (price, percent, bars, elapsed time). Select, move, delete and undo. | R2 | T |
 | CH-04 | The ruler's elapsed time is computed from the instants, not from chart times. | R2 | T |
 | CH-05 | Drawings are saved per symbol and shown on every resolution. A drawing made on the daily chart is anchored at the regular open. | R2 | T |
-| CH-06 | The time axis shows exchange time by default and can be switched to UTC or local time. Daily charts always show the trading date. | R2 | T |
+| CH-06 | The time axis shows exchange time by default and can be switched to UTC, local time or a time zone by its name (UI-12, 2026-11-27). Daily charts always show the trading date. | R2 | T |
 | CH-07 | Chart times rise strictly in every zone. Where a zone sets its clocks back while bars keep coming, the earlier offset is carried until the data has a gap. | R2 | T |
 | CH-08 | Sessions outside regular hours are tinted: early and late hours lightly, overnight a little more. | R2 | T |
 | CH-09 | Future time exists on the axis as whitespace in a series of its own, far enough for the longest expiration of the shown ticket. | R2 | T |
@@ -1021,6 +1039,7 @@ Licence policy of QA-07, implemented in `backend/tools/licences.py`:
 | spdx-exceptions, spdx-ranges | CC-BY-3.0 | Licence-list data inside the licence checker itself; development only; not redistributed | Decided 2026-11-22 |
 | certifi | MPL-2.0 (reported as `Mozilla Public License 2.0 (MPL 2.0)`) | The CA certificate bundle of httpx, data used unmodified; a runtime dependency | Decided 2026-11-22 (WP-0.3) |
 | cffi | MIT-0 | The binding of argon2-cffi to its C code, used unmodified; a runtime dependency. MIT-0 is MIT without the duty to name the author | Decided 2026-11-26 (WP-0.7) |
+| @fontsource/jetbrains-mono | OFL-1.1 | The font of prices, as in the mock-ups. Its files are part of the built app, used unmodified. OFL-1.1 lets a font be shipped with software, and asks that every copy carries the copyright notice and the licence. Whether the metadata of the font files is enough for that was not checked: before publication (plan section 8) | Decided 2026-11-27 (owner, WP-0.8 review) |
 
 ## 5. Open points
 
@@ -1046,7 +1065,7 @@ margin dry-run test; the studies of the product definition, section 11.2.
 
 | Release | Requirement groups that start there |
 |---|---|
-| R0 Foundation | GEN, BRK, SUB-01 to 03 and 07, MKT-01 to 03 and 07, REF-01, 04 and 05, PRC-01 to 04, STO-01, 02 and 07, API-01 to 05 and 08, SEC (except 04), UI-03 and 05, PRF-09, QA (except 03 and 06) |
+| R0 Foundation | GEN, BRK, SUB-01 to 03 and 07, MKT-01 to 03 and 07, REF-01, 04 and 05, PRC-01 to 04, STO-01, 02 and 07, API-01 to 05 and 08, SEC (except 04), UI-03, 05 and 12, PRF-09, QA (except 03 and 06) |
 | R1 Trade workbench | SUB-04 and 05, MKT-04 to 06, REF-02 and 03, PRC-05 to 13, PRB-01 to 06, 12, 13 and 15, STO-05, API-06 and 07, UI, WB, PRF-01 to 03, 05 and 08, QA-03 and 06 |
 | R1b Path numbers and stress | PRB-07 to 11, PRF-04 |
 | R2 Chart | REF-06, CND-01 to 10, STO-06, CH (except 13), PRF-06 and 07 |

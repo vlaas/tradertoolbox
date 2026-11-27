@@ -22,11 +22,16 @@ test('the login screen, then the status screen with its marks, and no page scrol
   await expect(page.getByTestId('source-mark-top')).toHaveText('SYNTHETIC DATA')
   await expect(page.getByTestId('source-mark-status')).toHaveText('SYNTHETIC DATA')
   await expect(page.getByTestId('account')).toHaveText('main')
-  await expect(page.getByTestId('status-connection')).toHaveText('Backend connected')
-  await expect(page.getByTestId('status-stream')).toContainText('Stream connected')
-  await expect(page.getByTestId('status-subscriptions')).toHaveText(/^Subscriptions \d+ of [\d,]+/)
-  await expect(page.getByTestId('status-rest')).toContainText('REST: token valid')
-  await expect(page.getByTestId('status-rest')).toContainText('limit 2/s burst 4')
+  // The status bar is compact; each part has its whole sentence as its title.
+  await expect(page.getByTestId('status-connection')).toHaveText('Backend ok')
+  // A gap of an earlier test of this engine's backend may be in the bar for ten minutes.
+  await expect(page.getByTestId('status-stream')).toHaveText(/^Stream ok · 0\.5 s( · gap \d+ s)?$/)
+  await expect(page.getByTestId('status-stream')).toHaveAttribute('title', /quotes every 0.5 s/)
+  await expect(page.getByTestId('status-subscriptions')).toHaveText(/^Subs \d+\/[\d,]+$/)
+  await expect(page.getByTestId('status-rest')).toHaveText(
+    /^REST \d+\/min ≤2\/s · token renews \d\d:\d\d$/,
+  )
+  await expect(page.getByTestId('status-rest')).toHaveAttribute('title', /2\.0 a second, 4 at once/)
   await expect(page.getByTestId('connection-lost')).toHaveCount(0)
   await expect(page.getByTestId('rates-source')).toHaveText('the flat rate, 4.00%')
   await expect(page.getByTestId('calendar-source')).toContainText('exchange-calendars')
@@ -40,7 +45,7 @@ test('the login screen, then the status screen with its marks, and no page scrol
 
   // UI-09 base: an explanation opens above everything and inside the window.
   await page.getByRole('button', { name: 'What the status bar says' }).click()
-  const box = page.getByText("this page's connection").locator('xpath=ancestor::*[@popover]')
+  const box = page.getByText('Point at a part of the bar').locator('xpath=ancestor::*[@popover]')
   await expect(box).toBeVisible()
   const at = await box.boundingBox()
   expect(at).not.toBeNull()
@@ -70,7 +75,7 @@ test('a logout ends the session here and in the other page of the browser', asyn
   const other = await page.context().newPage()
   await other.goto('/')
   await expect(other.getByRole('main', { name: 'Status' })).toBeVisible() // the same session
-  await expect(other.getByTestId('status-connection')).toHaveText('Backend connected')
+  await expect(other.getByTestId('status-connection')).toHaveText('Backend ok')
 
   await other.getByRole('button', { name: 'Log out' }).click()
   await expect(other.getByTestId('login-reason')).toHaveText('You have logged out.')
@@ -80,4 +85,34 @@ test('a logout ends the session here and in the other page of the browser', asyn
   )
   await page.reload()
   await expect(page.getByLabel('Password')).toBeVisible()
+})
+
+test('the times follow the chosen zone, and the choice is kept in the browser', async ({
+  page,
+}) => {
+  // UI-12: exchange time by default; local, UTC or a zone by its name. The fake market starts at
+  // 10:00 New York, so its time of data is 10 hours something ET for the minutes of a test.
+  await logIn(page)
+  const time = page.getByTestId('data-time')
+  await expect(time).toHaveText(/^10:\d\d ET$/)
+  await expect(page.getByRole('columnheader', { name: 'Quote at (ET)' })).toBeVisible()
+
+  await page.getByTestId('times').selectOption('UTC')
+  await expect(time).toHaveText(/^15:\d\d UTC$/)
+  await expect(page.getByRole('columnheader', { name: 'Quote at (UTC)' })).toBeVisible()
+  await page.reload()
+  await expect(time).toHaveText(/^15:\d\d UTC$/)
+
+  await page.getByTestId('times').selectOption('zone')
+  const zone = page.getByTestId('time-zone')
+  await zone.fill('Mars/Base')
+  await zone.press('Enter')
+  await expect(zone).toHaveAttribute('aria-invalid', 'true')
+  await expect(time).toHaveText(/UTC$/) // nothing changed
+  await zone.fill('America/Chicago')
+  await zone.press('Enter')
+  await expect(time).toHaveText(/^09:\d\d CT$/)
+
+  await page.getByTestId('times').selectOption('exchange')
+  await expect(time).toHaveText(/^10:\d\d ET$/)
 })

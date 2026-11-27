@@ -1,9 +1,9 @@
 /** How numbers and instants are written (UI-07 base). Tabular figures come from the stylesheet.
- * A missing value is a dash, never zero. Instants are New York time, the exchange time (CH-06's
- * default), and say so with "ET". */
+ * A missing value is a dash, never zero. An instant is written in a zone and says which
+ * (UI-12): the zone comes from the person's choice (`lib/zones.ts`); New York when none is given. */
+import { MARKET_ZONE, zoneName } from './zones'
 
 export const MISSING = '—'
-const ZONE = 'America/New_York'
 
 const fixed = new Map<number, Intl.NumberFormat>()
 
@@ -26,34 +26,55 @@ export function count(x: number | null | undefined): string {
   return decimal(x, 0)
 }
 
-const clock = new Intl.DateTimeFormat('en-US', {
-  timeZone: ZONE,
-  hourCycle: 'h23',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-})
-const day = new Intl.DateTimeFormat('en-CA', {
-  timeZone: ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
+const formats = new Map<string, Intl.DateTimeFormat>()
+
+function formatIn(zone: string, kind: 'seconds' | 'minutes' | 'day'): Intl.DateTimeFormat {
+  const key = `${kind} ${zone}`
+  let format = formats.get(key)
+  if (format === undefined) {
+    format =
+      kind === 'day'
+        ? new Intl.DateTimeFormat('en-CA', {
+            timeZone: zone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          })
+        : new Intl.DateTimeFormat('en-US', {
+            timeZone: zone,
+            hourCycle: 'h23',
+            hour: '2-digit',
+            minute: '2-digit',
+            ...(kind === 'seconds' ? { second: '2-digit' } : {}),
+          })
+    formats.set(key, format)
+  }
+  return format
+}
 
 function date(us: number | null | undefined): Date | null {
   return us === null || us === undefined || Number.isNaN(us) ? null : new Date(us / 1000)
 }
 
-/** The New York time of an instant in microseconds: 14:05:09. */
-export function time(us: number | null | undefined): string {
+/** The time of an instant in microseconds, in a zone: 14:05:09. Without the zone's name, for
+ * columns and lines that name it once. */
+export function time(us: number | null | undefined, zone: string = MARKET_ZONE): string {
   const d = date(us)
-  return d === null ? MISSING : clock.format(d)
+  return d === null ? MISSING : formatIn(zone, 'seconds').format(d)
 }
 
-/** The New York date and time of an instant in microseconds: 2026-11-20 10:00:00 ET. */
-export function dateTime(us: number | null | undefined): string {
+/** Hours and minutes only, for the status bar: 14:05. */
+export function hm(us: number | null | undefined, zone: string = MARKET_ZONE): string {
   const d = date(us)
-  return d === null ? MISSING : `${day.format(d)} ${clock.format(d)} ET`
+  return d === null ? MISSING : formatIn(zone, 'minutes').format(d)
+}
+
+/** The date and time of an instant in microseconds, with the zone's name:
+ * 2026-11-20 10:00:00 ET. */
+export function dateTime(us: number | null | undefined, zone: string = MARKET_ZONE): string {
+  const d = date(us)
+  if (d === null) return MISSING
+  return `${formatIn(zone, 'day').format(d)} ${formatIn(zone, 'seconds').format(d)} ${zoneName(zone, d)}`
 }
 
 /** An ISO instant of the REST answers, in microseconds; null for none. */

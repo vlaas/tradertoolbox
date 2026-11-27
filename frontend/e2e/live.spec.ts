@@ -34,15 +34,17 @@ test('the loss of the connection is shown on the screen, and the app recovers', 
   // UI-05: the loss on the screen, and the values marked stale until the connection returns.
   await expect(page.getByTestId('connection-lost')).toBeVisible()
   await expect(page.getByTestId('connection-lost')).toContainText('Connection lost')
-  await expect(page.getByTestId('status-connection')).toContainText('Connection lost')
+  await expect(page.getByTestId('status-connection')).toContainText('Backend lost')
   await expect(spy).toHaveAttribute('data-state', 'stale')
   await expect(spy.locator('[data-col=state]')).toHaveText('stale')
+  await expect(spy).toHaveClass(/stale/) // the whole row is greyed
 
   // Back: a fresh connection with fresh snapshots, on the backend that started again.
   await expect(page.getByTestId('connection-lost')).toHaveCount(0, { timeout: 30_000 })
-  await expect(page.getByTestId('status-connection')).toHaveText('Backend connected')
+  await expect(page.getByTestId('status-connection')).toHaveText('Backend ok')
   await expect(page.getByTestId('connections-opened')).toHaveText('2')
   await expect(spy).toHaveAttribute('data-state', 'live')
+  await expect(spy).not.toHaveClass(/stale/)
   await control.quote('SPY', 222.22, 222.24)
   await expect(spy.locator('[data-col=bid]')).toHaveText('222.22')
 })
@@ -56,7 +58,8 @@ test('a drop of the broker stream is shown, with its gap', async ({ page, contro
   await expect(page.getByTestId('stream-reconnects')).toHaveText('1')
   await expect(page.getByTestId('stream-gap')).toHaveText(/ET, /)
   await expect(page.getByTestId('stream-phase')).toHaveText('connected')
-  await expect(page.getByTestId('status-stream')).toContainText('last gap')
+  await expect(page.getByTestId('status-stream')).toContainText('gap')
+  await expect(page.getByTestId('status-stream')).toHaveAttribute('title', /Last gap .* ET/)
   await expect(quoteRow(page, 'SPY')).toHaveAttribute('data-state', 'live')
 })
 
@@ -74,7 +77,7 @@ test('the JSON form for reading along carries the same app', async ({ page, cont
   await expect(quoteRow(page, 'SPY')).toHaveAttribute('data-state', 'live')
   await control.quote('SPY', 333.33, 333.35)
   await expect(quoteRow(page, 'SPY').locator('[data-col=bid]')).toHaveText('333.33')
-  await expect(page.getByTestId('status-stream')).toContainText('Stream connected')
+  await expect(page.getByTestId('status-stream')).toContainText('Stream ok')
   expect(sockets.map((kinds) => [...kinds])).toEqual([['string']])
 
   await page.goto('/#/status')

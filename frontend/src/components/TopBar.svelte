@@ -1,12 +1,14 @@
 <script lang="ts">
   // The top bar: the header of every screen window. Left to right: the name, the screens, the
-  // loss of the connection (UI-05), the mark of GEN-11, the account's nickname (GEN-03), Log out.
+  // loss of the connection (UI-05), the choice of time (UI-12), the mark of GEN-11, the account's
+  // nickname (GEN-03), Log out.
   import { hashOf } from '../lib/route'
   import { SCREENS } from '../screens/registry'
   import { logOut } from '../stores/session.svelte'
   import { status } from '../stores/status.svelte'
   import ConnectionMark from './ConnectionMark.svelte'
   import SourceMark from './SourceMark.svelte'
+  import TimePicker from './TimePicker.svelte'
 
   let { current }: { current: string } = $props()
   const account = $derived(status.current?.account ?? '')
@@ -23,6 +25,7 @@
   </nav>
   <span class="spacer"></span>
   <ConnectionMark />
+  <TimePicker />
   <SourceMark where="top" />
   {#if account}
     <span class="chip" data-testid="account" title="The account's nickname">{account}</span>

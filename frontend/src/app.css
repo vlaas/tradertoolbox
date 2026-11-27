@@ -2,8 +2,9 @@
    backtester viewer's (`backtester/viewer/src/app.css`, commit a29aa78), lifted as the code audit
    says (section 3). Dark by default, light by the system setting; `data-theme` on <html> overrides,
    `data-palette="cb"` swaps the semantic colours for the colour-blind-safe set,
-   `data-density="compact"` shortens rows. Not taken: the web font (a proposal of WP-0.8: the
-   system's monospace stack until the chain grid), the viewer's skeleton and progress styles.
+   `data-density="compact"` shortens rows. The font of prices is JetBrains Mono, as in the viewer and
+   the mock-ups (OFL-1.1, a named exception; decided 2026-11-27). Not taken: the viewer's skeleton
+   and progress styles.
 
    One spacing scale (UI-10): every gap and margin below comes from --space-*. */
 :root {
@@ -42,7 +43,7 @@
   --bar-h: 38px;
   --statusbar-h: 24px;
 
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -85,6 +86,14 @@
   --tile-h: 56px;
   --tile-value: 15px;
   --tile-gap: 0;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
 }
 
 * {

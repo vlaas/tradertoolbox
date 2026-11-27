@@ -136,6 +136,17 @@ All screens:
   request rate (the configured limit beside the requests of the last minute, and a hold after
   a 429). It may be terse and technical. An information icon explains the numbers where
   needed. Decided 2026-11-22 (BRK-09).
+- The status bar is compact and easy to grasp: short texts, abbreviated where they can be, in
+  the order backend connection, stream, subscriptions, REST, then the mark below. Each part
+  shows its whole sentence when pointed at, and a small information icon explains the figures.
+  Decided 2026-11-27 (owner, WP-0.8 review).
+- When the connection to the backend is lost, the top bar of every screen says so, and a row of
+  values that are no longer live is greyed as a whole and says "stale" until the connection
+  returns. Decided 2026-11-27 (UI-05; owner, WP-0.8 review).
+- A time is shown by default in the exchange time of its instrument. The user can choose local
+  time, UTC or a time zone by its name instead, and every time says its zone. Care is needed
+  where data of different zones are put side by side; the owner's example is VIX and SPXW.
+  Decided 2026-11-27 (UI-12; owner, WP-0.8 review).
 - When the backend does not run on the live broker, a permanent mark sits in the status bar
   and in the header of every screen: "SYNTHETIC DATA" on the fake broker, "REPLAY" with the
   recording's date on the replay broker. Decided 2026-11-22 (GEN-11).

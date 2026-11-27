@@ -16,7 +16,7 @@
 </script>
 
 {#if lost}
-  <span class="lost level {part.level}" data-testid="connection-lost">{part.text}</span>
+  <span class="lost level {part.level}" data-testid="connection-lost">{part.title}</span>
 {/if}
 
 <style>
