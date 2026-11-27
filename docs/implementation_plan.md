@@ -389,6 +389,10 @@ the real broker in regular hours. Each has a checklist and a named point in the 
   - PRF-09 is a run across every session, not a trading day: 25 hours from Monday 08:45 New York,
     with /ES in the demand.
   - Every timing records its CPU time and the machine, for the headroom on another machine.
+  - The three proposals of part 1 as proposed:
+    - the IV figure is the cost of a stand-in;
+    - the stream's rate-error rule stays;
+    - QA-08 is closed by review.
 - *Split:* part 1 builds the tools and the memory bound and makes the short checks and a rehearsal.
   Part 2 is the day run of 2026-11-30 and its write-up.
 - *Part 1, done 2026-11-27:*
@@ -430,7 +434,7 @@ the real broker in regular hours. Each has a checklist and a named point in the 
     - `timings.py` again, with CPU time, on an idle machine;
     - `stream_check.py --candles 2026-11-27`;
     - the rows of `docs/measurements.md`;
-    - PRF-09 and QA-08 closed, and the status set to done.
+    - PRF-09 closed, and the status set to done. QA-08 is closed by review, decided 2026-11-27.
 
 Order: WP-0.1 first. Then WP-0.2, WP-0.3 and WP-0.6 are independent of each other. WP-0.4
 needs WP-0.3; WP-0.5 needs WP-0.4; WP-0.7 needs WP-0.5 and WP-0.6; WP-0.8 needs WP-0.7;
@@ -937,9 +941,9 @@ Found but not planned into a package yet.
     - The session treats an error as a rate error when its text holds "rate" (`dxlink.py`). Neither
       dxFeed's protocol nor Tastytrade's documents name a text or a code for an excess. The
       broker says only that an excess "fails rather than throttles".
-    - Proposal: leave it. If an `ERROR` with `BAD_ACTION` or `UNKNOWN` is ever seen right after a
-      chunk of changes, treat it as a rate error too. The manager stays at 8,000 changes a minute,
-      below the published 10,000.
+    - Decided 2026-11-27 (owner): leave it. If an `ERROR` with `BAD_ACTION` or `UNKNOWN` is ever
+      seen right after a chunk of changes, treat it as a rate error too. The manager stays at 8,000
+      changes a minute, below the published 10,000.
   - **The refill after a drop** takes the manager's pace: 2,008 pairs in 14 s. The budget of
     10,000 would take about 67 s at 150 a second (computed). If that is too slow for a view, the
     pace can rise towards the published 10,000 a minute; the recorder class goes first anyway.

@@ -711,7 +711,7 @@ to `broker_check.py` and `stream_check.py`.
   - Nothing else happens. The backend does not restart or refuse anything, and the app does not
     show it yet.
 
-**Proposed 2026-11-27 (WP-0.9), to be confirmed:**
+**Proposed 2026-11-27 (WP-0.9) and decided the same day (owner):**
 
 - **The IV cost measured at R0 is that of a stand-in:** `escrowed_iv` on the event loop, at every
   flush, for the options whose quote changed. The design of the flush is WP-1.2's. The capacity of
@@ -721,9 +721,9 @@ to `broker_check.py` and `stream_check.py`.
 - **The rate error of the stream is a guess.** The session takes an error as a rate error when its
   text contains "rate" (`dxlink.py`). No document names that text, and none says how an excess is
   reported. The manager paces at 8,000 changes a minute, so it should not arise.
-  - Proposal: leave the session as it is.
+  - The session is left as it is.
   - If an `ERROR` of the code `BAD_ACTION` or `UNKNOWN` is ever seen right after a chunk of
-    changes, treat it as a rate error too (plan, section 8).
+    changes, it is treated as a rate error too (plan, section 8).
 - **QA-08 is closed by review:** every timing row of `docs/measurements.md` since WP-0.3 records
   the load average, and each package that took no timing says so.
 
