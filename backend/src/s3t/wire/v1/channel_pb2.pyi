@@ -1,3 +1,4 @@
+from s3t.wire.v1 import chain_pb2 as _chain_pb2
 from s3t.wire.v1 import market_pb2 as _market_pb2
 from s3t.wire.v1 import status_pb2 as _status_pb2
 from google.protobuf.internal import containers as _containers
@@ -15,6 +16,8 @@ class NoteKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     NOTE_KIND_UNKNOWN: _ClassVar[NoteKind]
     NOTE_KIND_CUT: _ClassVar[NoteKind]
     NOTE_KIND_UNREACHABLE: _ClassVar[NoteKind]
+    NOTE_KIND_LEFT_OUT: _ClassVar[NoteKind]
+    NOTE_KIND_WINDOW: _ClassVar[NoteKind]
 
 class RefusalKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -33,6 +36,8 @@ NOTE_KIND_UNSPECIFIED: NoteKind
 NOTE_KIND_UNKNOWN: NoteKind
 NOTE_KIND_CUT: NoteKind
 NOTE_KIND_UNREACHABLE: NoteKind
+NOTE_KIND_LEFT_OUT: NoteKind
+NOTE_KIND_WINDOW: NoteKind
 REFUSAL_KIND_UNSPECIFIED: RefusalKind
 REFUSAL_KIND_INVALID: RefusalKind
 REFUSAL_KIND_UNKNOWN_TOPIC: RefusalKind
@@ -51,14 +56,16 @@ class ClientMessage(_message.Message):
     def __init__(self, subscribe: _Optional[_Union[Subscribe, _Mapping]] = ..., unsubscribe: _Optional[_Union[Unsubscribe, _Mapping]] = ...) -> None: ...
 
 class Subscribe(_message.Message):
-    __slots__ = ("id", "status", "quotes")
+    __slots__ = ("id", "status", "quotes", "chain")
     ID_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     QUOTES_FIELD_NUMBER: _ClassVar[int]
+    CHAIN_FIELD_NUMBER: _ClassVar[int]
     id: int
     status: StatusTopic
     quotes: QuotesTopic
-    def __init__(self, id: _Optional[int] = ..., status: _Optional[_Union[StatusTopic, _Mapping]] = ..., quotes: _Optional[_Union[QuotesTopic, _Mapping]] = ...) -> None: ...
+    chain: ChainTopic
+    def __init__(self, id: _Optional[int] = ..., status: _Optional[_Union[StatusTopic, _Mapping]] = ..., quotes: _Optional[_Union[QuotesTopic, _Mapping]] = ..., chain: _Optional[_Union[ChainTopic, _Mapping]] = ...) -> None: ...
 
 class Unsubscribe(_message.Message):
     __slots__ = ("id",)
@@ -76,8 +83,26 @@ class QuotesTopic(_message.Message):
     symbol: _containers.RepeatedScalarFieldContainer[str]
     def __init__(self, symbol: _Optional[_Iterable[str]] = ...) -> None: ...
 
+class ChainTopic(_message.Message):
+    __slots__ = ("underlying", "window")
+    UNDERLYING_FIELD_NUMBER: _ClassVar[int]
+    WINDOW_FIELD_NUMBER: _ClassVar[int]
+    underlying: str
+    window: _containers.RepeatedCompositeFieldContainer[ChainWindow]
+    def __init__(self, underlying: _Optional[str] = ..., window: _Optional[_Iterable[_Union[ChainWindow, _Mapping]]] = ...) -> None: ...
+
+class ChainWindow(_message.Message):
+    __slots__ = ("expiration", "low", "high")
+    EXPIRATION_FIELD_NUMBER: _ClassVar[int]
+    LOW_FIELD_NUMBER: _ClassVar[int]
+    HIGH_FIELD_NUMBER: _ClassVar[int]
+    expiration: str
+    low: float
+    high: float
+    def __init__(self, expiration: _Optional[str] = ..., low: _Optional[float] = ..., high: _Optional[float] = ...) -> None: ...
+
 class ServerMessage(_message.Message):
-    __slots__ = ("id", "snapshot", "status", "quotes", "refused", "heartbeat", "bye")
+    __slots__ = ("id", "snapshot", "status", "quotes", "refused", "heartbeat", "bye", "chain")
     ID_FIELD_NUMBER: _ClassVar[int]
     SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
@@ -85,6 +110,7 @@ class ServerMessage(_message.Message):
     REFUSED_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
     BYE_FIELD_NUMBER: _ClassVar[int]
+    CHAIN_FIELD_NUMBER: _ClassVar[int]
     id: int
     snapshot: bool
     status: _status_pb2.Status
@@ -92,7 +118,8 @@ class ServerMessage(_message.Message):
     refused: Refused
     heartbeat: Heartbeat
     bye: Bye
-    def __init__(self, id: _Optional[int] = ..., snapshot: _Optional[bool] = ..., status: _Optional[_Union[_status_pb2.Status, _Mapping]] = ..., quotes: _Optional[_Union[Quotes, _Mapping]] = ..., refused: _Optional[_Union[Refused, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., bye: _Optional[_Union[Bye, _Mapping]] = ...) -> None: ...
+    chain: Chain
+    def __init__(self, id: _Optional[int] = ..., snapshot: _Optional[bool] = ..., status: _Optional[_Union[_status_pb2.Status, _Mapping]] = ..., quotes: _Optional[_Union[Quotes, _Mapping]] = ..., refused: _Optional[_Union[Refused, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., bye: _Optional[_Union[Bye, _Mapping]] = ..., chain: _Optional[_Union[Chain, _Mapping]] = ...) -> None: ...
 
 class Quotes(_message.Message):
     __slots__ = ("rows", "notes")
@@ -101,6 +128,18 @@ class Quotes(_message.Message):
     rows: _market_pb2.QuoteRows
     notes: Notes
     def __init__(self, rows: _Optional[_Union[_market_pb2.QuoteRows, _Mapping]] = ..., notes: _Optional[_Union[Notes, _Mapping]] = ...) -> None: ...
+
+class Chain(_message.Message):
+    __slots__ = ("head", "expiration", "rows", "notes")
+    HEAD_FIELD_NUMBER: _ClassVar[int]
+    EXPIRATION_FIELD_NUMBER: _ClassVar[int]
+    ROWS_FIELD_NUMBER: _ClassVar[int]
+    NOTES_FIELD_NUMBER: _ClassVar[int]
+    head: _chain_pb2.ChainHead
+    expiration: _containers.RepeatedCompositeFieldContainer[_chain_pb2.ChainExpiration]
+    rows: _chain_pb2.ChainRows
+    notes: Notes
+    def __init__(self, head: _Optional[_Union[_chain_pb2.ChainHead, _Mapping]] = ..., expiration: _Optional[_Iterable[_Union[_chain_pb2.ChainExpiration, _Mapping]]] = ..., rows: _Optional[_Union[_chain_pb2.ChainRows, _Mapping]] = ..., notes: _Optional[_Union[Notes, _Mapping]] = ...) -> None: ...
 
 class Notes(_message.Message):
     __slots__ = ("note",)

@@ -18,9 +18,9 @@ nothing may be added that does (GEN-01).
 
 Once a document is typed, this interface returns only the typed record and the broker's JSON
 stays inside ``s3t.broker.tastytrade`` (decided 2026-11-22). The market metrics are a record
-since WP-1.1 (:class:`MarketMetrics`), which typed the dividend fields. WP-1.2 adds the
-earnings and the IV per expiration to it; the other fields of the broker's document join when
-a package needs them. A test of the repository holds the rule for the keys of the instruments,
+since WP-1.1 (:class:`MarketMetrics`), which typed the dividend fields; WP-1.2 added the
+earnings and the IV per expiration. The other fields of the broker's document join when a
+package needs them. A test of the repository holds the rule for the keys of the instruments,
 the chains and the metrics.
 
 The stream is typed too (decided 2026-11-23): no field name of the broker's feed and no
@@ -61,13 +61,51 @@ class DividendFacts:
     pay_date: date | None = None
 
 
+type TimeOfDay = Literal["before_open", "after_close"]
+
+
+@dataclass(frozen=True)
+class EarningsFacts:
+    """What a broker states of the next or the last earnings report of a stock (REF-03).
+
+    Tastytrade states one date. In the 133 documents that ``tt`` captured it was a coming date
+    in 10 and a past one in 13, the report before; 96 had none, ETFs and indexes among them
+    (note B, addendum "WP-1.2"). So the date is kept as stated, and a reader takes it as the
+    next report only when it lies ahead.
+    """
+
+    report_date: date
+    time_of_day: TimeOfDay | None = None
+    """Before the open or after the close; None when the broker does not say."""
+    estimated: bool | None = None
+    """The broker marks the date as an estimate; None when it does not say."""
+
+
+@dataclass(frozen=True)
+class ExpirationIV:
+    """The broker's implied volatility of one expiration of an underlying (its "IVx"): a
+    fraction per year. It is the broker's figure and is never mixed with the application's own
+    IV (VOL-02)."""
+
+    expiration_date: date
+    settlement: Literal["am", "pm"]
+    """With the date it tells the roots of one underlying apart, SPX (AM) from SPXW (PM)."""
+    iv: float | None
+    """None where the broker states no value (1 of 4,288 entries captured)."""
+
+
 @dataclass(frozen=True)
 class MarketMetrics:
-    """The market metrics of one underlying, as far as they are typed (WP-1.1: dividends)."""
+    """The market metrics of one underlying, as far as they are typed (WP-1.1: dividends;
+    WP-1.2: the earnings and the IV per expiration)."""
 
     symbol: str
     dividend: DividendFacts | None = None
     """None where the broker states no dividend: a stock that pays none, an index."""
+    earnings: EarningsFacts | None = None
+    """None where the broker states no report date: an ETF, an index."""
+    expiration_ivs: tuple[ExpirationIV, ...] = ()
+    """Sorted by date, AM before PM."""
 
 
 @dataclass(frozen=True)

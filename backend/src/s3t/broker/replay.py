@@ -368,7 +368,20 @@ class ReplayBroker:
         return self._read("futures_option_chain", root)
 
     async def market_metrics(self, symbols: Sequence[str]) -> list[MarketMetrics]:
-        return self._read("market_metrics", list(symbols))
+        """As recorded. A read of other symbols is answered from every recorded read that holds
+        them (WP-1.2): the chain and the surface read one symbol at a time, a capture reads them
+        together. A symbol that no read holds has no item, as live."""
+        try:
+            return self._read("market_metrics", list(symbols))
+        except NotFound:
+            held: dict[str, MarketMetrics] = {}
+            for (call, _), line in self._rest.items():
+                if call == "market_metrics" and "result" in line:
+                    for metrics in decode_result(call, line["result"], self._format):
+                        held.setdefault(metrics.symbol, metrics)
+            if not held:
+                raise
+            return [held[s] for s in symbols if s in held]
 
     def rest_status(self) -> RestStatus:
         return RestStatus(

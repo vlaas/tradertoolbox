@@ -22,45 +22,52 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from s3t.wire.v1 import chain_pb2 as s3t_dot_wire_dot_v1_dot_chain__pb2
 from s3t.wire.v1 import market_pb2 as s3t_dot_wire_dot_v1_dot_market__pb2
 from s3t.wire.v1 import status_pb2 as s3t_dot_wire_dot_v1_dot_status__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19s3t/wire/v1/channel.proto\x12\x0bs3t.wire.v1\x1a\x18s3t/wire/v1/market.proto\x1a\x18s3t/wire/v1/status.proto\"u\n\rClientMessage\x12+\n\tsubscribe\x18\x01 \x01(\x0b\x32\x16.s3t.wire.v1.SubscribeH\x00\x12/\n\x0bunsubscribe\x18\x02 \x01(\x0b\x32\x18.s3t.wire.v1.UnsubscribeH\x00\x42\x06\n\x04\x62ody\"x\n\tSubscribe\x12\n\n\x02id\x18\x01 \x01(\r\x12*\n\x06status\x18\x02 \x01(\x0b\x32\x18.s3t.wire.v1.StatusTopicH\x00\x12*\n\x06quotes\x18\x03 \x01(\x0b\x32\x18.s3t.wire.v1.QuotesTopicH\x00\x42\x07\n\x05topic\"\x19\n\x0bUnsubscribe\x12\n\n\x02id\x18\x01 \x01(\r\"\r\n\x0bStatusTopic\"\x1d\n\x0bQuotesTopic\x12\x0e\n\x06symbol\x18\x01 \x03(\t\"\xfa\x01\n\rServerMessage\x12\n\n\x02id\x18\x01 \x01(\r\x12\x10\n\x08snapshot\x18\x02 \x01(\x08\x12%\n\x06status\x18\x03 \x01(\x0b\x32\x13.s3t.wire.v1.StatusH\x00\x12%\n\x06quotes\x18\x04 \x01(\x0b\x32\x13.s3t.wire.v1.QuotesH\x00\x12\'\n\x07refused\x18\x05 \x01(\x0b\x32\x14.s3t.wire.v1.RefusedH\x00\x12+\n\theartbeat\x18\x06 \x01(\x0b\x32\x16.s3t.wire.v1.HeartbeatH\x00\x12\x1f\n\x03\x62ye\x18\x07 \x01(\x0b\x32\x10.s3t.wire.v1.ByeH\x00\x42\x06\n\x04\x62ody\"Q\n\x06Quotes\x12$\n\x04rows\x18\x01 \x01(\x0b\x32\x16.s3t.wire.v1.QuoteRows\x12!\n\x05notes\x18\x02 \x01(\x0b\x32\x12.s3t.wire.v1.Notes\"(\n\x05Notes\x12\x1f\n\x04note\x18\x01 \x03(\x0b\x32\x11.s3t.wire.v1.Note\"I\n\x04Note\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12#\n\x04kind\x18\x02 \x01(\x0e\x32\x15.s3t.wire.v1.NoteKind\x12\x0c\n\x04text\x18\x03 \x01(\t\"A\n\x07Refused\x12&\n\x04kind\x18\x01 \x01(\x0e\x32\x18.s3t.wire.v1.RefusalKind\x12\x0e\n\x06reason\x18\x02 \x01(\t\"!\n\tHeartbeat\x12\x14\n\x0c\x64\x61ta_time_us\x18\x01 \x01(\x01\"9\n\x03\x42ye\x12\"\n\x04kind\x18\x01 \x01(\x0e\x32\x14.s3t.wire.v1.ByeKind\x12\x0e\n\x06reason\x18\x02 \x01(\t*j\n\x08NoteKind\x12\x19\n\x15NOTE_KIND_UNSPECIFIED\x10\x00\x12\x15\n\x11NOTE_KIND_UNKNOWN\x10\x01\x12\x11\n\rNOTE_KIND_CUT\x10\x02\x12\x19\n\x15NOTE_KIND_UNREACHABLE\x10\x03*\x9c\x01\n\x0bRefusalKind\x12\x1c\n\x18REFUSAL_KIND_UNSPECIFIED\x10\x00\x12\x18\n\x14REFUSAL_KIND_INVALID\x10\x01\x12\x1e\n\x1aREFUSAL_KIND_UNKNOWN_TOPIC\x10\x02\x12\x1c\n\x18REFUSAL_KIND_UNAVAILABLE\x10\x03\x12\x17\n\x13REFUSAL_KIND_FAILED\x10\x04*V\n\x07\x42yeKind\x12\x18\n\x14\x42YE_KIND_UNSPECIFIED\x10\x00\x12\x1a\n\x16\x42YE_KIND_SESSION_ENDED\x10\x01\x12\x15\n\x11\x42YE_KIND_PROTOCOL\x10\x02\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19s3t/wire/v1/channel.proto\x12\x0bs3t.wire.v1\x1a\x17s3t/wire/v1/chain.proto\x1a\x18s3t/wire/v1/market.proto\x1a\x18s3t/wire/v1/status.proto\"u\n\rClientMessage\x12+\n\tsubscribe\x18\x01 \x01(\x0b\x32\x16.s3t.wire.v1.SubscribeH\x00\x12/\n\x0bunsubscribe\x18\x02 \x01(\x0b\x32\x18.s3t.wire.v1.UnsubscribeH\x00\x42\x06\n\x04\x62ody\"\xa2\x01\n\tSubscribe\x12\n\n\x02id\x18\x01 \x01(\r\x12*\n\x06status\x18\x02 \x01(\x0b\x32\x18.s3t.wire.v1.StatusTopicH\x00\x12*\n\x06quotes\x18\x03 \x01(\x0b\x32\x18.s3t.wire.v1.QuotesTopicH\x00\x12(\n\x05\x63hain\x18\x04 \x01(\x0b\x32\x17.s3t.wire.v1.ChainTopicH\x00\x42\x07\n\x05topic\"\x19\n\x0bUnsubscribe\x12\n\n\x02id\x18\x01 \x01(\r\"\r\n\x0bStatusTopic\"\x1d\n\x0bQuotesTopic\x12\x0e\n\x06symbol\x18\x01 \x03(\t\"J\n\nChainTopic\x12\x12\n\nunderlying\x18\x01 \x01(\t\x12(\n\x06window\x18\x02 \x03(\x0b\x32\x18.s3t.wire.v1.ChainWindow\"W\n\x0b\x43hainWindow\x12\x12\n\nexpiration\x18\x01 \x01(\t\x12\x10\n\x03low\x18\x02 \x01(\x01H\x00\x88\x01\x01\x12\x11\n\x04high\x18\x03 \x01(\x01H\x01\x88\x01\x01\x42\x06\n\x04_lowB\x07\n\x05_high\"\x9f\x02\n\rServerMessage\x12\n\n\x02id\x18\x01 \x01(\r\x12\x10\n\x08snapshot\x18\x02 \x01(\x08\x12%\n\x06status\x18\x03 \x01(\x0b\x32\x13.s3t.wire.v1.StatusH\x00\x12%\n\x06quotes\x18\x04 \x01(\x0b\x32\x13.s3t.wire.v1.QuotesH\x00\x12\'\n\x07refused\x18\x05 \x01(\x0b\x32\x14.s3t.wire.v1.RefusedH\x00\x12+\n\theartbeat\x18\x06 \x01(\x0b\x32\x16.s3t.wire.v1.HeartbeatH\x00\x12\x1f\n\x03\x62ye\x18\x07 \x01(\x0b\x32\x10.s3t.wire.v1.ByeH\x00\x12#\n\x05\x63hain\x18\x08 \x01(\x0b\x32\x12.s3t.wire.v1.ChainH\x00\x42\x06\n\x04\x62ody\"Q\n\x06Quotes\x12$\n\x04rows\x18\x01 \x01(\x0b\x32\x16.s3t.wire.v1.QuoteRows\x12!\n\x05notes\x18\x02 \x01(\x0b\x32\x12.s3t.wire.v1.Notes\"\xa8\x01\n\x05\x43hain\x12$\n\x04head\x18\x01 \x01(\x0b\x32\x16.s3t.wire.v1.ChainHead\x12\x30\n\nexpiration\x18\x02 \x03(\x0b\x32\x1c.s3t.wire.v1.ChainExpiration\x12$\n\x04rows\x18\x03 \x01(\x0b\x32\x16.s3t.wire.v1.ChainRows\x12!\n\x05notes\x18\x04 \x01(\x0b\x32\x12.s3t.wire.v1.Notes\"(\n\x05Notes\x12\x1f\n\x04note\x18\x01 \x03(\x0b\x32\x11.s3t.wire.v1.Note\"I\n\x04Note\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12#\n\x04kind\x18\x02 \x01(\x0e\x32\x15.s3t.wire.v1.NoteKind\x12\x0c\n\x04text\x18\x03 \x01(\t\"A\n\x07Refused\x12&\n\x04kind\x18\x01 \x01(\x0e\x32\x18.s3t.wire.v1.RefusalKind\x12\x0e\n\x06reason\x18\x02 \x01(\t\"!\n\tHeartbeat\x12\x14\n\x0c\x64\x61ta_time_us\x18\x01 \x01(\x01\"9\n\x03\x42ye\x12\"\n\x04kind\x18\x01 \x01(\x0e\x32\x14.s3t.wire.v1.ByeKind\x12\x0e\n\x06reason\x18\x02 \x01(\t*\x98\x01\n\x08NoteKind\x12\x19\n\x15NOTE_KIND_UNSPECIFIED\x10\x00\x12\x15\n\x11NOTE_KIND_UNKNOWN\x10\x01\x12\x11\n\rNOTE_KIND_CUT\x10\x02\x12\x19\n\x15NOTE_KIND_UNREACHABLE\x10\x03\x12\x16\n\x12NOTE_KIND_LEFT_OUT\x10\x04\x12\x14\n\x10NOTE_KIND_WINDOW\x10\x05*\x9c\x01\n\x0bRefusalKind\x12\x1c\n\x18REFUSAL_KIND_UNSPECIFIED\x10\x00\x12\x18\n\x14REFUSAL_KIND_INVALID\x10\x01\x12\x1e\n\x1aREFUSAL_KIND_UNKNOWN_TOPIC\x10\x02\x12\x1c\n\x18REFUSAL_KIND_UNAVAILABLE\x10\x03\x12\x17\n\x13REFUSAL_KIND_FAILED\x10\x04*V\n\x07\x42yeKind\x12\x18\n\x14\x42YE_KIND_UNSPECIFIED\x10\x00\x12\x1a\n\x16\x42YE_KIND_SESSION_ENDED\x10\x01\x12\x15\n\x11\x42YE_KIND_PROTOCOL\x10\x02\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 's3t.wire.v1.channel_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_NOTEKIND']._serialized_start=1022
-  _globals['_NOTEKIND']._serialized_end=1128
-  _globals['_REFUSALKIND']._serialized_start=1131
-  _globals['_REFUSALKIND']._serialized_end=1287
-  _globals['_BYEKIND']._serialized_start=1289
-  _globals['_BYEKIND']._serialized_end=1375
-  _globals['_CLIENTMESSAGE']._serialized_start=94
-  _globals['_CLIENTMESSAGE']._serialized_end=211
-  _globals['_SUBSCRIBE']._serialized_start=213
-  _globals['_SUBSCRIBE']._serialized_end=333
-  _globals['_UNSUBSCRIBE']._serialized_start=335
-  _globals['_UNSUBSCRIBE']._serialized_end=360
-  _globals['_STATUSTOPIC']._serialized_start=362
-  _globals['_STATUSTOPIC']._serialized_end=375
-  _globals['_QUOTESTOPIC']._serialized_start=377
-  _globals['_QUOTESTOPIC']._serialized_end=406
-  _globals['_SERVERMESSAGE']._serialized_start=409
-  _globals['_SERVERMESSAGE']._serialized_end=659
-  _globals['_QUOTES']._serialized_start=661
-  _globals['_QUOTES']._serialized_end=742
-  _globals['_NOTES']._serialized_start=744
-  _globals['_NOTES']._serialized_end=784
-  _globals['_NOTE']._serialized_start=786
-  _globals['_NOTE']._serialized_end=859
-  _globals['_REFUSED']._serialized_start=861
-  _globals['_REFUSED']._serialized_end=926
-  _globals['_HEARTBEAT']._serialized_start=928
-  _globals['_HEARTBEAT']._serialized_end=961
-  _globals['_BYE']._serialized_start=963
-  _globals['_BYE']._serialized_end=1020
+  _globals['_NOTEKIND']._serialized_start=1464
+  _globals['_NOTEKIND']._serialized_end=1616
+  _globals['_REFUSALKIND']._serialized_start=1619
+  _globals['_REFUSALKIND']._serialized_end=1775
+  _globals['_BYEKIND']._serialized_start=1777
+  _globals['_BYEKIND']._serialized_end=1863
+  _globals['_CLIENTMESSAGE']._serialized_start=119
+  _globals['_CLIENTMESSAGE']._serialized_end=236
+  _globals['_SUBSCRIBE']._serialized_start=239
+  _globals['_SUBSCRIBE']._serialized_end=401
+  _globals['_UNSUBSCRIBE']._serialized_start=403
+  _globals['_UNSUBSCRIBE']._serialized_end=428
+  _globals['_STATUSTOPIC']._serialized_start=430
+  _globals['_STATUSTOPIC']._serialized_end=443
+  _globals['_QUOTESTOPIC']._serialized_start=445
+  _globals['_QUOTESTOPIC']._serialized_end=474
+  _globals['_CHAINTOPIC']._serialized_start=476
+  _globals['_CHAINTOPIC']._serialized_end=550
+  _globals['_CHAINWINDOW']._serialized_start=552
+  _globals['_CHAINWINDOW']._serialized_end=639
+  _globals['_SERVERMESSAGE']._serialized_start=642
+  _globals['_SERVERMESSAGE']._serialized_end=929
+  _globals['_QUOTES']._serialized_start=931
+  _globals['_QUOTES']._serialized_end=1012
+  _globals['_CHAIN']._serialized_start=1015
+  _globals['_CHAIN']._serialized_end=1183
+  _globals['_NOTES']._serialized_start=1185
+  _globals['_NOTES']._serialized_end=1225
+  _globals['_NOTE']._serialized_start=1227
+  _globals['_NOTE']._serialized_end=1300
+  _globals['_REFUSED']._serialized_start=1302
+  _globals['_REFUSED']._serialized_end=1367
+  _globals['_HEARTBEAT']._serialized_start=1369
+  _globals['_HEARTBEAT']._serialized_end=1402
+  _globals['_BYE']._serialized_start=1404
+  _globals['_BYE']._serialized_end=1461
 # @@protoc_insertion_point(module_scope)

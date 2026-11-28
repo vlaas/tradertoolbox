@@ -15,19 +15,17 @@ company moves it by days, and the amount changes.
 An index and a future have no schedule: the broker states no dividend for them.
 
 The facts of a symbol are read once per New York day of the data, as the instruments are
-(``s3t.market.registry``). A read that fails is not kept.
+(``s3t.market.registry``); the reads are those of ``s3t.refdata.metrics`` since WP-1.2. A read
+that fails is not kept.
 """
 
-import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from zoneinfo import ZoneInfo
 
-from s3t.broker.interface import Broker, DividendFacts
+from s3t.broker.interface import DividendFacts
 from s3t.pricing import Dividend, dividend_schedule
-
-_NY = ZoneInfo("America/New_York")
+from s3t.refdata.metrics import Metrics
 
 
 @dataclass(frozen=True)
@@ -53,42 +51,21 @@ class DividendSource:
 
 class Dividends:
     def __init__(
-        self, broker: Broker, frequency: Mapping[str, int] | None = None, default: int = 4
+        self, metrics: Metrics, frequency: Mapping[str, int] | None = None, default: int = 4
     ) -> None:
-        self._broker = broker
+        self._metrics = metrics
         self._frequency = dict(frequency or {})
         self._default = default
-        self._held: dict[str, asyncio.Future[DividendFacts | None]] = {}
-        self._day: date | None = None
 
     def __repr__(self) -> str:
-        return f"Dividends({len(self._held)} held)"
+        return f"Dividends({self._metrics!r})"
 
     async def of(self, symbol: str) -> DividendSource:
         """The dividends of a stock or an ETF. A symbol the broker has no metrics for has
         none."""
         stated = symbol in self._frequency
         frequency = self._frequency.get(symbol, self._default)
-        return DividendSource(symbol, await self._facts(symbol), frequency, stated)
-
-    async def _facts(self, symbol: str) -> DividendFacts | None:
-        today = self._broker.data_time().astimezone(_NY).date()
-        if today != self._day:
-            self._day = today
-            self._held.clear()  # a read under way goes on for those who wait for it
-        pending = self._held.get(symbol)
-        if pending is None:
-            pending = self._held[symbol] = asyncio.ensure_future(self._read(symbol))
-            pending.add_done_callback(lambda done: self._drop_a_failure(symbol, done))
-        return await asyncio.shield(pending)  # one caller that gives up does not end the read
-
-    async def _read(self, symbol: str) -> DividendFacts | None:
-        for metrics in await self._broker.market_metrics([symbol]):
-            if metrics.symbol == symbol:
-                return metrics.dividend
-        return None
-
-    def _drop_a_failure(self, symbol: str, done: asyncio.Future[DividendFacts | None]) -> None:
-        failed = done.cancelled() or done.exception() is not None
-        if failed and self._held.get(symbol) is done:
-            del self._held[symbol]
+        metrics = await self._metrics.of(symbol)
+        return DividendSource(
+            symbol, None if metrics is None else metrics.dividend, frequency, stated
+        )

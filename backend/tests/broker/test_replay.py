@@ -232,6 +232,16 @@ async def test_replay_gives_what_was_seen(recorded: Recorded) -> None:
     assert stream.status().phase == "closed"
 
 
+async def test_the_metrics_of_one_symbol_come_from_a_read_of_several(recorded: Recorded) -> None:
+    """WP-1.2: the services read one symbol at a time; the recording read SPY and SPX together."""
+    directory, _, docs = recorded
+    broker = ReplayBroker(directory, paused=True)
+    spy, spx = docs["metrics"]
+    assert await broker.market_metrics(["SPX"]) == [spx]
+    assert await broker.market_metrics(["SPY", "NOPE"]) == [spy]
+    assert await broker.market_metrics(["NOPE"]) == []
+
+
 async def test_replay_keeps_the_recorded_pace(recorded: Recorded) -> None:
     directory, seen, _ = recorded
     clock = VirtualClock(ASOF)

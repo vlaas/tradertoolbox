@@ -109,7 +109,7 @@ async def test_a_replay_shows_what_was_recorded(recorded: Recorded) -> None:
     assert health["calendar"]["last"] == "2033-12-31"
     assert health["rates"]["downloads"] is False and health["rates"]["next_refresh_at"] is None
     assert health["stream"]["limit"] == 0 and health["rest"]["auth"] == "none"
-    assert [f["name"] for f in features["features"] if f["available"]] == ["quotes"]
+    assert [f["name"] for f in features["features"] if f["available"]] == ["quotes", "chain"]
 
 
 async def test_two_replays_are_equal(recorded: Recorded) -> None:

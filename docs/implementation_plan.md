@@ -52,7 +52,7 @@ names its split point.
 | WP-0.8 | Frontend shell | M | done 2026-11-27 |
 | WP-0.9 | R0 live measurements and acceptance | S | in progress: tools and rehearsal 2026-11-27; the day run 2026-11-30 |
 | WP-1.1 | Forwards and surface | L | done 2026-11-28: part 1 (numerics, dividends, the fake) 2026-11-27; part 2 (pool, fit service, PRF-05 measured) 2026-11-28. On the synthetic market only: not verified live or on real quotes |
-| WP-1.2 | Chain service | M | not started |
+| WP-1.2 | Chain service | M | done 2026-11-28: the service, the `chain` topic and the Arrow route; every proposal decided by the owner the same day. On the synthetic market and one recording only: not verified live |
 | WP-1.3 | Ticket model and evaluation | L | not started |
 | WP-1.4 | Probabilities, stage a | L | not started |
 | WP-1.5 | Option chain grid | L | not started |
@@ -567,7 +567,7 @@ the release starts with.
 
 | Risk | Answered by | If it goes badly |
 |---|---|---|
-| The stream reader cannot keep up once IV is inverted on every flush | WP-0.9, WP-1.2 | Invert on a slower timer, or only for rows in view |
+| The stream reader cannot keep up once IV is inverted on every flush | WP-0.9, WP-1.2. Result, 2026-11-28: see PRF-03 in `docs/measurements.md`. The chain inverts only the contracts of open windows, and only those whose bid or ask changed | Invert on a slower timer, or only for rows in view |
 | The subscription cap counts symbol-event pairs | WP-0.9 | Halve the chain budgets; fewer event types per contract |
 | Regular-hours message rates differ much from the after-hours probe | WP-0.9 | Raise the aggregation period; revisit the flush design |
 | The Protocol Buffers tool chain is awkward in one of the two languages | WP-0.1. Result, 2026-11-22: not awkward in either language. Bytes and canonical JSON written by Python decode and re-encode identically in TypeScript, in Node and in the three browsers | JSON messages with the same schema discipline, as the architecture note allows |
@@ -1128,6 +1128,69 @@ Found but not planned into a package yet.
     attempt to reconnect reaches the old server while it shuts down, and the app drops its rows
     for a snapshot that never comes. It belongs to WP-0.8's code; look at it before WP-1.5
     adds tests of the same kind.
+
+- From WP-1.2 (2026-11-28):
+  - **The proposals of the package were decided by the owner on 2026-11-28, every one as
+    proposed** (requirements, section 3, "The chain package", items 1 to 16): among them the
+    expected move as Tastytrade's straddle blend 0.6 / 0.3 / 0.1, centred on the forward (item 11),
+    the defaults of `[chain]`, and the chain before the surface in the budget (item 6). The stale
+    age of 120 s stays a value to judge in use.
+  - **What this package did with the items addressed to it:**
+    - Done: the quoting tick per contract and the two service rules of WP-0.2 (no Greeks without
+      an IV; the broker's as the fallback, marked); index Greeks by F/S; no IV from the settlement
+      instant on; the expirations that are left out are notes; a change of sizes alone is not
+      computed; the forward of a fit scaled by the spot; the watch taken by the view and held for
+      the grace period; the adjusted root says it has no surface IV; the earnings date is in the
+      metrics record; PRF-03 measured against PRF-05.
+    - Stated, not worked around: the age of a quote without a quote time runs from its receipt, so
+      the first event after a subscription, which can be hours old, is not marked stale.
+    - Not looked at: what a price with a size of NaN means (WP-0.5). The chain shows the price.
+    - The early close: the settlement rule gives 13:00, so the chain stops the IV there; tested at
+      a normal close only.
+    - Still open: an earnings day in the interpolation in time (WP-1.1); the units of the IV index
+      and its rank (note B; not typed); how much the pairs of the chain and of the surface cost
+      together over a day.
+  - **Not verified live.** Everything ran on the synthetic market and on the replay of one local
+    recording (`rh-20261127`, 160 options). Not seen: the broker's Greeks units against own ones
+    (WP-1.9), a real index without a trade, real quote ages, the stale age on a real quiet strike,
+    a short budget on a real day.
+  - **The fake's theta holds the forward fixed,** its delta and gamma the spot. The application's
+    theta differs from it by r S delta / 365. Leave the fake as it is, or give it spot theta; the
+    tests compare with the carry taken out.
+  - **The synthetic market's own tick** takes 77 to 175 ms of the event loop each second with
+    about 12,000 pairs (seen under load). It is the fake's work; a timer's lag on the synthetic
+    market is mostly that. A test or a timing that needs a quiet loop stops the market, as WP-1.1's
+    did.
+  - **Per contract, real quotes cost what synthetic ones cost** (6.3 against 5.9 ms for 1,000;
+    `docs/measurements.md`); a flush has a fixed cost of about 4 ms beside it. If a flush ever
+    comes near PRF-05's 50 ms (with several thousand contracts held), the call can be split.
+  - **For WP-1.5 (the grid):**
+    - Read the Arrow route for the whole expiration (all strikes, `apache-arrow` in the frontend:
+      a dependency to add and check under QA-07), then subscribe the visible window.
+    - A window around the money is placed when the view opens and does not follow the money; the
+      grid subscribes a new range as it scrolls.
+    - Show the source of the Greeks (own, broker), the stale mark (UI-05's rule is the
+      connection's; MKT-06's is per side), and the notes, two of whose kinds are new.
+    - Each view of 600 rows sends nearly every row every flush, because the spot moves every row's
+      values; the part and its encoding are timed in `docs/measurements.md`.
+  - **For WP-1.6:** the earnings and ex-dividend dates per expiration are on the wire (WB-08).
+  - **The bulk route without a view** reads the underlying's documents (three requests a new
+    underlying a day) and takes no watch, so an index has no forward and no own IV there until a
+    view holds it.
+  - **A futures product has no chain view,** as it has no surface: its chain and the price of each
+    future are not wired.
+  - **Open interest and volume** come from the view's own Summary and Trade subscriptions while it
+    is open, not from a standing one; SUB-06's daily sweep replaces them in R3.
+  - **The replay answers a metrics read from every recorded read that holds the symbol** (it gave
+    `NotFound` before, and the surface could not run on a recording). A recording of format 3 made
+    before WP-1.2 has no earnings and no IV per expiration in its records; one of format 2 is
+    parsed at the read and has them.
+  - **pyarrow** (26.0.1, 135 MB installed) is a runtime dependency; `make licences` and `make audit`
+    passed with it (2026-11-28). It has no type information: `s3t.arrow` is the only module that
+    imports it.
+  - **The health record has `chain`;** the app shows nothing of it.
+  - The backend's suite took 215 s under load (load average about 20; seen, not measured), the
+    chain's tests about 60 s of it.
 
 ## 9. Starting a package in a fresh session
 

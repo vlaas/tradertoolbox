@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package s3t.wire.v1;
 
+import "s3t/wire/v1/chain.proto";
 import "s3t/wire/v1/market.proto";
 import "s3t/wire/v1/status.proto";
 
@@ -31,6 +32,7 @@ message Subscribe {
   oneof topic {
     StatusTopic status = 2;
     QuotesTopic quotes = 3;
+    ChainTopic chain = 4;
   }
 }
 
@@ -46,6 +48,23 @@ message QuotesTopic {
   repeated string symbol = 1;
 }
 
+// The option chain of an underlying by expiration and strike windows (WP-1.2; chain.proto).
+message ChainTopic {
+  // A stock, an ETF or an index, by the application's symbol.
+  string underlying = 1;
+  // At most 8. The rows of windows that overlap come once.
+  repeated ChainWindow window = 2;
+}
+
+message ChainWindow {
+  // The key of the expiration: its root and its date, `SPXW:2026-12-18`.
+  string expiration = 1;
+  // The strikes from `low` to `high`, both included, at most 120. Both are set, or neither:
+  // then the window is the 20 strikes each side of the money.
+  optional double low = 2;
+  optional double high = 3;
+}
+
 message ServerMessage {
   uint32 id = 1;
   bool snapshot = 2;
@@ -55,6 +74,7 @@ message ServerMessage {
     Refused refused = 5;
     Heartbeat heartbeat = 6;
     Bye bye = 7;
+    Chain chain = 8;
   }
 }
 
@@ -65,6 +85,21 @@ message Quotes {
   // The symbols that get no data, and why. It replaces the notes before it. Unset: they are as
   // they were.
   Notes notes = 2;
+}
+
+message Chain {
+  // In a snapshot, and when it changed. Unset: as it was.
+  ChainHead head = 1;
+  // Every open expiration in a snapshot, the ones that changed later. The rows refer to them by
+  // `index`.
+  repeated ChainExpiration expiration = 2;
+  // The rows of the windows in a snapshot, the ones that changed later, each whole. Unset: no
+  // row changed.
+  ChainRows rows = 3;
+  // What the subscription does not get, and why: the underlying (unknown, unreachable, cut by the
+  // budget), an expiration the broker lists and the backend could not read (left out), a window
+  // whose expiration is not open. It replaces the notes before it. Unset: as they were.
+  Notes notes = 4;
 }
 
 message Notes {
@@ -79,9 +114,14 @@ enum NoteKind {
   NOTE_KIND_CUT = 2;
   // The broker could not be asked. It is tried again.
   NOTE_KIND_UNREACHABLE = 3;
+  // An expiration the broker lists and the backend could not read (`chain`).
+  NOTE_KIND_LEFT_OUT = 4;
+  // A window whose expiration is not open (`chain`).
+  NOTE_KIND_WINDOW = 5;
 }
 
 message Note {
+  // The symbol; in `chain` the underlying or the key of an expiration.
   string symbol = 1;
   NoteKind kind = 2;
   // For people.

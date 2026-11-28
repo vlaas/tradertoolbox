@@ -353,6 +353,29 @@ def test_the_sections_of_the_surface_package(tmp_path: Path) -> None:
     }
 
 
+def test_the_section_of_the_chain(tmp_path: Path) -> None:
+    """WP-1.2: the chain's views."""
+    plain = load_config(write(tmp_path, VALID.format(address="127.0.0.1")))
+    assert plain.chain.model_dump() == {
+        "grace_s": 60.0,
+        "stale_after_s": 120.0,
+        "around_strikes": 20,
+        "most_strikes": 120,
+        "most_windows": 8,
+    }
+    more = "[chain]\ngrace_s = 0.0\nstale_after_s = 30.0\nmost_strikes = 60\n"
+    config = load_config(write(tmp_path, VALID.format(address="127.0.0.1") + more))
+    assert (config.chain.grace_s, config.chain.stale_after_s, config.chain.most_strikes) == (
+        0.0,
+        30.0,
+        60,
+    )
+    with pytest.raises(ConfigError, match="chain"):
+        load_config(
+            write(tmp_path, VALID.format(address="127.0.0.1") + "[chain]\nmost_strikes = 5\n")
+        )
+
+
 @pytest.mark.parametrize(
     ("text", "section"),
     [

@@ -188,6 +188,17 @@ class MarketState:
         rows = (table.get(symbol) for symbol in symbols)
         return [nan if row is None else row[0][at] for row in rows]
 
+    def instants(
+        self, event: EventType, field: str, symbols: Sequence[str]
+    ) -> list[datetime | None]:
+        """One instant of the records per stream symbol, None where there is none or the record
+        has none (WP-1.2: the bid and ask times of quotes, for the age of a quote)."""
+        at = FIELDS[event].index(field)
+        table = self._tables[event]
+        rows = (table.get(symbol) for symbol in symbols)
+        found = (None if row is None else row[0][at] for row in rows)
+        return [x if isinstance(x, datetime) else None for x in found]
+
     def received(self, event: EventType, symbols: Sequence[str]) -> list[datetime | None]:
         """The receipt time per stream symbol, None where there is no value."""
         table = self._tables[event]

@@ -46,8 +46,10 @@ class Feature:
 
 
 QUOTES = Feature("quotes", "Live quotes", (Tier.T1,), "unavailable")
+CHAIN = Feature("chain", "Option chain", (Tier.T1,), "unavailable")
+"""The ``chain`` topic and the bulk route of an expiration (WP-1.2)."""
 
-FEATURES: tuple[Feature, ...] = (QUOTES,)
+FEATURES: tuple[Feature, ...] = (QUOTES, CHAIN)
 
 
 class TierReport(BaseModel):

@@ -1,6 +1,8 @@
 """Who may reach the API (SEC-01, SEC-02; plan 3.6). Every route is enumerated from the application,
 so one that is added without being named here fails the suite."""
 
+import asyncio
+
 import pytest
 from fastapi.routing import APIWebSocketRoute, iter_route_contexts
 
@@ -17,10 +19,13 @@ ROUTES = {
     ("GET", "/api/session"): "needs a session",
     ("GET", "/api/health"): "needs a session",
     ("GET", "/api/features"): "needs a session",
+    ("GET", "/api/chain/{underlying}/{expiration}"): "needs a session",
     ("WEBSOCKET", "/api/ws"): "needs a session",
 }
 CLOSED = sorted(route for route, why in ROUTES.items() if why == "needs a session")
-CLOSED_HTTP = [route for route in CLOSED if route[0] != "WEBSOCKET"]
+EXAMPLES = {"/api/chain/{underlying}/{expiration}": "/api/chain/SPY/SPY:2026-12-18"}
+"""A path with parameters is asked with these, which the fake broker has on ASOF."""
+CLOSED_HTTP = [(m, EXAMPLES.get(path, path)) for m, path in CLOSED if m != "WEBSOCKET"]
 
 
 def routes() -> set[tuple[str, str]]:
@@ -42,7 +47,11 @@ def test_every_route_is_named_here() -> None:
 @pytest.mark.parametrize(("method", "path"), CLOSED_HTTP)
 async def test_a_request_without_a_session_is_refused(rig: ApiRig, method: str, path: str) -> None:
     async def status() -> int:
-        answer = await rig.http.request(method, path)
+        # A route that reads from the broker waits for its limiter, which sleeps on the clock.
+        asked = asyncio.ensure_future(rig.http.request(method, path))
+        while not asked.done():
+            await rig.pass_time(0.5)
+        answer = asked.result()
         assert answer.headers["cache-control"] == "no-store"
         assert answer.status_code < 300 or answer.json().keys() == {"code", "message"}
         return answer.status_code

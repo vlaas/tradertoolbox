@@ -11,6 +11,7 @@ from fastapi.routing import APIRoute, iter_route_contexts
 
 from s3t.analysis.surface import WatchedStatus
 from s3t.api.app import create_api
+from s3t.api.chain_rows import ARROW_TYPE
 from s3t.broker.fake.clock import VirtualClock
 from s3t.pricing.surface import OK
 from s3t.subs.feed import ClassUse, ConsumerUse, FeedStatus, Priority
@@ -200,6 +201,11 @@ async def test_every_text_is_redacted(rig: ApiRig, monkeypatch: pytest.MonkeyPat
     assert secret not in answer.text and "with ***" in answer.text
 
 
+BULK = {("/api/chain/{underlying}/{expiration}", "200")}
+"""Answers that are Arrow and no record (API-06, WP-1.2). Their columns are those of a wire
+message, which has generated types of its own (chain.proto)."""
+
+
 def test_every_route_answers_with_a_typed_record() -> None:
     """API-02: the TypeScript types come from these. An answer without a model has none."""
     schema = create_api().openapi()
@@ -211,6 +217,9 @@ def test_every_route_answers_with_a_typed_record() -> None:
             answers = schema["paths"][context.path][method]["responses"]
             assert "default" not in answers
             for code, answer in answers.items():
+                if (context.path, code) in BULK:
+                    assert set(answer["content"]) == {ARROW_TYPE}, (context.path, code)
+                    continue
                 body = answer.get("content", {}).get("application/json", {}).get("schema")
                 assert code == "204" or (body and "$ref" in body), (context.path, code)
                 if code != "204" and int(code) >= 400:

@@ -35,6 +35,7 @@ from zoneinfo import ZoneInfo
 
 from argon2 import PasswordHasher
 
+from s3t.analysis.chain import ChainService
 from s3t.analysis.surface import SurfaceService
 from s3t.broker.fake.broker import FakeBroker
 from s3t.broker.interface import Broker
@@ -46,6 +47,7 @@ from s3t.market.registry import Instruments
 from s3t.market.state import MarketState
 from s3t.refdata.calendar import ExchangeCalendar, load_calendar
 from s3t.refdata.dividends import Dividends
+from s3t.refdata.metrics import Metrics
 from s3t.refdata.rates import Rates
 from s3t.store.daily import DailyCopies
 from s3t.store.state import StateStore
@@ -96,9 +98,11 @@ class Backend:
     instruments: Instruments
     features: Features
     process: ProcessWatch
+    metrics: Metrics
     dividends: Dividends
     pool: NumericsPool
     surface: SurfaceService
+    chain: ChainService
 
 
 async def _calendar(config: Config, at: datetime) -> ExchangeCalendar:
@@ -200,8 +204,9 @@ async def open_backend(
 
         # Neither starts anything here: no process, no subscription and no task (WP-1.1).
         instruments = Instruments(broker)
+        metrics = Metrics(broker)
         dividends = Dividends(
-            broker, config.dividends.frequency, config.dividends.default_frequency
+            metrics, config.dividends.frequency, config.dividends.default_frequency
         )
         pool = NumericsPool(config.numerics.workers, now=clocks.now)
         closing.push_async_callback(pool.aclose)
@@ -217,6 +222,20 @@ async def open_backend(
             sleep=clocks.sleep,
         )
         closing.push_async_callback(surface.aclose)
+        # Closed before the surface, whose watches it holds (WP-1.2).
+        chain = ChainService(
+            config.chain,
+            feed=feed,
+            market=market,
+            instruments=instruments,
+            metrics=metrics,
+            dividends=dividends,
+            surface=surface,
+            calendar=calendar,
+            curve=rates.curve,
+            sleep=clocks.sleep,
+        )
+        closing.push_async_callback(chain.aclose)
 
         process.start()
         copies.start()
@@ -238,9 +257,11 @@ async def open_backend(
             instruments=instruments,
             features=Features(broker, config.paths.t3_root),
             process=process,
+            metrics=metrics,
             dividends=dividends,
             pool=pool,
             surface=surface,
+            chain=chain,
         )
 
 

@@ -121,6 +121,104 @@ STATUS_VALUES: dict[str, Any] = {
 }
 
 
+# The chain topic (WP-1.2): a subscription with a window, and a snapshot of one expiration and one
+# row. The call is computed by the backend; the put is not listed. The frontend test states the
+# same values by hand.
+CHAIN_SUBSCRIBE_VALUES: dict[str, Any] = {
+    "subscribe": {
+        "id": 9,
+        "chain": {
+            "underlying": "SPX",
+            "window": [
+                {"expiration": "SPXW:2026-12-18", "low": 5900.0, "high": 6100.0},
+                {"expiration": "SPX:2026-12-18"},
+            ],
+        },
+    }
+}
+CHAIN_VALUES: dict[str, Any] = {
+    "id": 9,
+    "snapshot": True,
+    "chain": {
+        "head": {
+            "underlying": "SPX",
+            "kind": "index",
+            "spot": 6004.19,
+            "spot_source": "trade",
+            "data_time_us": 1795186800000001.0,
+            "stale_after_s": 120.0,
+            # earnings and earnings_time are empty, earnings_estimated is unset: an index.
+        },
+        "expiration": [
+            {
+                "index": 0,
+                "key": "SPXW:2026-12-18",
+                "root": "SPXW",
+                "date": "2026-12-18",
+                "settlement": "pm",
+                "settles_at_us": 1797627600000000.0,
+                "kind": "regular",
+                "multiplier": 100.0,
+                "standard": True,
+                "strikes": 337,
+                "forward": 6024.5,
+                "forward_source": "parity",
+                "atm_iv": 0.1394,
+                # expected_move is unset: the quotes at the money are not there yet.
+                "expected_move_method": "straddle 0.6/0.3/0.1",
+                "broker_iv": 0.1392,
+                "ex_dividend": [],
+                "earnings_before": False,
+            }
+        ],
+        "rows": {
+            "expiration": [0],
+            "strike": [6000.0],
+            "iv": [0.1412],
+            "call": {
+                "symbol": ["SPXW  261218C06000000"],
+                "bid": [89.9],
+                "ask": [91.8],
+                "bid_size": [math.nan],
+                "ask_size": [12.0],
+                "quote_us": [1795186800000001.0],
+                "stale": [False],
+                "iv": [0.1411],
+                "delta": [0.5422],
+                "gamma": [0.00194],
+                "theta": [-2.2556],
+                "vega": [5.7472],
+                "source": ["GREEKS_SOURCE_OWN"],
+                "volume": [790.0],
+                "open_interest": [0.0],
+            },
+            "put": {
+                "symbol": [""],
+                "bid": [math.nan],
+                "ask": [math.nan],
+                "bid_size": [math.nan],
+                "ask_size": [math.nan],
+                "quote_us": [math.nan],
+                "stale": [False],
+                "iv": [math.nan],
+                "delta": [math.nan],
+                "gamma": [math.nan],
+                "theta": [math.nan],
+                "vega": [math.nan],
+                "source": ["GREEKS_SOURCE_NONE"],
+                "volume": [math.nan],
+                "open_interest": [math.nan],
+            },
+        },
+        "notes": {
+            "note": [
+                {"symbol": "SPX:2026-12-18", "kind": "NOTE_KIND_LEFT_OUT", "text": "unreadable"}
+            ]
+        },
+    },
+}
+
+
 def proto_files() -> list[Path]:
     return sorted(p.relative_to(PROTO) for p in PROTO.rglob("*.proto"))
 
@@ -200,6 +298,8 @@ def fixtures(out: Path) -> None:
         ("subscribe", channel_pb2.ClientMessage(**SUBSCRIBE_VALUES)),
         ("quotes", channel_pb2.ServerMessage(**QUOTES_VALUES)),
         ("status", channel_pb2.ServerMessage(**STATUS_VALUES)),
+        ("chain_subscribe", channel_pb2.ClientMessage(**CHAIN_SUBSCRIBE_VALUES)),
+        ("chain", channel_pb2.ServerMessage(**CHAIN_VALUES)),
     ):
         write(name, "channel", "channel.test.ts", message)
 

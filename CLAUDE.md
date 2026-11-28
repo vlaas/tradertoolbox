@@ -86,12 +86,16 @@ cd backend && uv run python tools/stream_check.py --config ../config/s3t.toml
 cd backend && uv run python tools/live_day.py --config ../config/s3t.toml
 
 # timings for an idle machine: the calendar, the chains (3 live requests), a recording replayed,
-# and the surface fit in the process pool (PRF-05; on the fake broker, no network; with --config
-# it takes [numerics] and [surface] from that file)
+# the surface fit in the process pool (PRF-05; on the fake broker, no network; with --config
+# it takes [numerics] and [surface] from that file), and the chain's flush
 cd backend && uv run python tools/timings.py calendar
 cd backend && uv run python tools/timings.py chains --config ../config/s3t.toml
 cd backend && uv run python tools/timings.py reader NAME --config ../config/s3t.toml
 cd backend && uv run python tools/timings.py surface
+# the chain's flush (PRF-03): on the fake broker, and on a local recording replayed at multiples of
+# its pace (the recording from <data_dir>/recordings; the state file is a temporary one)
+cd backend && uv run python tools/timings.py chain
+cd backend && uv run python tools/timings.py chain NAME --config ../config/s3t.toml --speeds 1,10
 
 # record a session into <data_dir>/recordings/NAME (git-ignored); --fake needs no broker
 cd backend && uv run python tools/capture.py NAME --fake --minutes 1 --config ../config/s3t.toml

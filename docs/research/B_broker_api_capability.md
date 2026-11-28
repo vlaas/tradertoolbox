@@ -601,3 +601,31 @@ answer as SPY's. With the order above it was most likely SPX's.
 Projected from the last payment at four a year, SPY's next ex-dates are 2026-12-18,
 2027-03-19, 2027-06-18, 2027-09-17 and 2027-12-17 (computed). All are third Fridays, which is
 SPY's habit; the real dates are not known yet.
+
+## Addendum 2026-11-28 (WP-1.2): earnings and the IV per expiration in the market metrics
+
+Read on 2026-11-28 from the 133 market-metrics documents that `tt` captured from 2026-11-11 to
+2026-11-19 (nine symbols: SPY, QQQ, GLD, AAPL, AMD, NVDA, TSLA, SPX, XSP). Keys, value types and
+counts only; no value was kept. They are typed since WP-1.2 (`s3t.broker.tastytrade.metrics`).
+
+- **`earnings`** is an object in 119 documents and null in 14.
+  - `expected-report-date` is there in 23 of them: a date ahead of the capture in 10, a past one
+    in 13 (the report before). The other 96, ETFs and indexes among them, have no date and
+    `visible` false.
+  - `time-of-day` is `AMC` in 18 and absent in the rest. `BMO`, the platform's other text, was
+    not seen.
+  - `estimated` is a boolean, false in all 119. `late-flag` is a whole number. `visible`,
+    `quarter-end-date`, `actual-eps` and `consensus-estimate` are not read.
+- **`option-expiration-implied-volatilities`** is a list in every document: 4,288 entries in
+  all, one per expiration date and settlement type, never two alike in a document.
+  - Each entry has `expiration-date`, `settlement-type` (`AM` in 66, `PM` in 4,222),
+    `option-chain-type` (`Standard` in all) and `implied-volatility`.
+  - There is no root key: SPX's monthly (AM) and SPXW (PM) of one date are told apart by the
+    settlement type only.
+  - `implied-volatility` is text; all 4,287 present values are below 3, so it is a fraction and
+    not percent. One entry lacked the key.
+- **On the correction above:** the IV index, its rank and the 30-day IV were not typed in
+  WP-1.2, so their units were not read again. The IV per expiration is a fraction in every
+  document, SPY's among them.
+- **`dividend-next-date`** was a past date or today in 111 documents, before `dividend-ex-date`
+  in 108 of them, and absent in 22. It stays unread.

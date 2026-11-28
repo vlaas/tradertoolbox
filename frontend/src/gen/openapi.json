@@ -66,6 +66,80 @@
         "title": "CalendarStatus",
         "type": "object"
       },
+      "ChainStatus": {
+        "description": "For the health route (SEC-08).",
+        "properties": {
+          "compute_ms_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compute Ms Max"
+          },
+          "compute_ms_median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compute Ms Median"
+          },
+          "computed": {
+            "title": "Computed",
+            "type": "integer"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Failed",
+            "type": "object"
+          },
+          "flushes": {
+            "title": "Flushes",
+            "type": "integer"
+          },
+          "grace_s": {
+            "title": "Grace S",
+            "type": "number"
+          },
+          "largest": {
+            "title": "Largest",
+            "type": "integer"
+          },
+          "underlyings": {
+            "items": {
+              "$ref": "#/components/schemas/UnderlyingStatus"
+            },
+            "title": "Underlyings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "grace_s",
+          "underlyings",
+          "flushes",
+          "computed",
+          "largest",
+          "compute_ms_median",
+          "compute_ms_max",
+          "failed",
+          "errors"
+        ],
+        "title": "ChainStatus",
+        "type": "object"
+      },
       "ClassName": {
         "enum": [
           "recorder",
@@ -315,6 +389,9 @@
           "calendar": {
             "$ref": "#/components/schemas/CalendarStatus"
           },
+          "chain": {
+            "$ref": "#/components/schemas/ChainStatus"
+          },
           "copies": {
             "$ref": "#/components/schemas/CopiesStatus"
           },
@@ -379,7 +456,8 @@
           "rates",
           "process",
           "pool",
-          "surface"
+          "surface",
+          "chain"
         ],
         "title": "Health",
         "type": "object"
@@ -1171,6 +1249,51 @@
         "title": "TierReport",
         "type": "object"
       },
+      "UnderlyingStatus": {
+        "properties": {
+          "contracts": {
+            "title": "Contracts",
+            "type": "integer"
+          },
+          "expirations": {
+            "title": "Expirations",
+            "type": "integer"
+          },
+          "held": {
+            "title": "Held",
+            "type": "integer"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          },
+          "views": {
+            "title": "Views",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "underlying",
+          "views",
+          "held",
+          "problem",
+          "contracts",
+          "expirations"
+        ],
+        "title": "UnderlyingStatus",
+        "type": "object"
+      },
       "WatchedStatus": {
         "description": "One watched underlying, for the health route (SEC-08).",
         "properties": {
@@ -1307,6 +1430,81 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/chain/{underlying}/{expiration}": {
+      "get": {
+        "description": "A whole expiration (API-06): every listed strike with the values the backend holds, the\nrows of the ``chain`` topic as Arrow. It subscribes nothing. ``expiration`` is the key of the\nexpiration, its root and date: ``SPXW:2026-12-18``.",
+        "operationId": "chain_expiration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "underlying",
+            "required": true,
+            "schema": {
+              "title": "Underlying",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "expiration",
+            "required": true,
+            "schema": {
+              "title": "Expiration",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.apache.arrow.stream": {}
+            },
+            "description": "Every strike of the expiration as one Arrow IPC stream."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "There is no session."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The broker knows no such underlying, or it has no such open expiration."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The request cannot be read."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The broker could not be asked, or the option chain is unavailable."
+          }
+        },
+        "summary": "Chain Expiration"
+      }
+    },
     "/api/features": {
       "get": {
         "description": "The data tiers that are there, and the features that need them.",

@@ -449,6 +449,11 @@ Decided on 2026-11-27: the dividend schedule from the broker's last dividend, pa
 every underlying, linear total variance between expiries, index Greeks against the index level
 (11.1).
 
+Decided on 2026-11-28: the expected move of the option chain is Tastytrade's straddle blend, 0.6
+times the straddle at the money and 0.3 and 0.1 times the first and second strangles, centred on
+the expiration's forward (requirements, section 3, "The chain package"); the rest of the chain
+service's proposals with it.
+
 ### 11.1 Pricing conventions (decided 2026-11-20)
 
 `volcalc`'s methods are the default.

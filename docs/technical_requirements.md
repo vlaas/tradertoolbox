@@ -56,7 +56,7 @@ policy is under QA-07).
 | Series store | Parquet files read with DuckDB and polars; pyarrow | Same |
 | Live transport | One WebSocket; messages defined in Protocol Buffers with generated Python and TypeScript code | Architecture note, section 3 |
 | Protocol Buffers tools | `protoc` from the `grpcio-tools` wheel (a pinned development dependency, no system install) generates both sides. Python: the official `protobuf` runtime with `.pyi` stubs. TypeScript: `protoc-gen-es` with the `@bufbuild/protobuf` runtime. Both implement the canonical proto3 JSON mapping, which API-04's JSON switch relies on. **Decided 2026-11-22** | WP-0.1 |
-| Bulk transport | Arrow over REST | Same |
+| Bulk transport | Arrow over REST: pyarrow 26.0.1 in the backend since WP-1.2 (decided 2026-11-28); the browser's reader comes with WP-1.5 | Same |
 | LLM interface | MCP Python SDK, served over HTTP inside the backend | Architecture note, section 5 |
 | Calendars | exchange-calendars for sessions and holidays; the system time-zone database | This document |
 | Login | argon2-cffi | Architecture note, section 6 |
@@ -925,6 +925,110 @@ Facts found while building:
 - **An index without a last trade has no spot,** and then no core is chosen. Not seen; the
   broker sends the last trade on subscription.
 
+The chain package (WP-1.2). **Proposed 2026-11-28 and built the same day; decided the same day
+(owner): every item as proposed,** the expected move as Tastytrade's straddle blend among them
+(item 11). The signatures are in `s3t.analysis.chain`, `s3t.pricing.chain`, `s3t.pricing.moves`,
+`s3t.refdata.metrics`, `s3t.api.chain_rows` and `s3t.arrow`, the messages in
+`proto/s3t/wire/v1/chain.proto` and `channel.proto`. The facts on the broker's earnings and IV
+fields are in note B, addendum "WP-1.2". PRF-03 is in `docs/measurements.md`.
+
+1. **One service for all chain views** (MKT-04). The views compute nothing. The service holds the
+   union of their contracts, has one taker of the market state, and makes one call of the pricing
+   core per flush (`contract_values`): Black-76 IV for every contract due, then the spot Greeks
+   (`carry.proportional_greeks` for an index, `escrowed_greeks` with `carry.implied_pv` for a stock
+   or an ETF, as decided at WP-1.1). No Greeks without an IV. The flush runs on the event loop.
+2. **What is due.** A contract whose bid or ask changed (a change of sizes alone is not), whose
+   expiration's forward moved by 1 basis point or more since it was computed, or that was computed
+   30 s ago or more. The market state flushes only when something changed, so the service's timer
+   of 5 s per underlying looks for aged contracts and settled expirations too. From the settlement
+   instant on nothing is computed, also on an early close: the quotes are shown without an IV.
+3. **The forward of an expiration** (MKT-05): the latest surface fit's, scaled by the spot's move
+   since that fit. Without one, a stock or an ETF takes the model forward; an index has none until
+   the first fit, a few seconds after the watch. The service takes one surface watch per
+   underlying and holds it as long as a view or its grace period lasts.
+4. **The topic's arguments** (SUB-05). An underlying and at most `[chain] most_windows = 8`
+   windows. A window is an expiration key (`SPXW:2026-12-18`) and a range of strikes, both ends or
+   neither; without a range, the `around_strikes = 20` strikes each side of the money (the
+   forward). A window holds `most_strikes = 120` at most. More is refused as invalid. A changed
+   window is a new subscription, as the protocol says.
+5. **The wire.** `Chain` (in `channel.proto`) carries a head (the underlying, its price and
+   source, the stale age, the next earnings date), every open expiration in a snapshot and the
+   changed ones later, the rows of the windows, and the notes. An expiration carries its key, root,
+   date, settlement and instant, kind, multiplier, whether it is standard, its strike count, its
+   forward and source, the surface's at-the-money IV, the expected move and its rule, the broker's
+   IV, the ex-dividend dates with their projected mark, whether the earnings fall before it, and a
+   note. A row carries per side the symbol, bid, ask, sizes, quote time, a stale mark, IV, delta,
+   gamma, theta, vega, the source of the Greeks (own, broker, none), volume and open interest; the
+   strike's IV is the out-of-the-money side's. Two note kinds are new: left out, and window.
+6. **Pairs per contract:** quote, then the broker's Greeks, then summary (open interest) and trade
+   (volume). All quotes of the open views first, from the money outwards, so a short budget cuts
+   the extras of the far strikes first. The underlying's quote and trade come before everything.
+   The chain's consumer is registered before the surface's, so the visible rows come first in the
+   class of views.
+7. **The grace period** (SUB-04): `[chain] grace_s = 60`. The pairs of a closed view move to a
+   second consumer, `chain-held`, in the background class, until it ends.
+8. **Stale** (MKT-06): `[chain] stale_after_s = 120`, a guess to be judged in use. The age runs
+   from the quote's own bid or ask time where the feed gives one, else from its receipt. Each side
+   has its mark; a row is sent again when a mark flips. Not caught: the first event after a
+   subscription, which is the broker's current value with a fresh receipt time.
+9. **Units:** trader units with a multiplier and a quantity of 1, that is per share (requirements
+   4.6). The broker's fallback is taken to be in the same units; WP-1.9 checks them.
+10. **The quoting tick** of a contract is the tick of its expiration at the mid; it widens the IV
+    gate (from WP-0.2).
+11. **The expected move** is Tastytrade's chain number: 0.6 the straddle at the money, 0.3 the
+    first strangle, 0.1 the second, from the mids (`backtester` `em_platform`, ported with its
+    tests). It is centred on the strike nearest the forward: the source takes the spot, and a long
+    expiration's quotes around the spot are not in the surface's core. The at-the-money IV of the
+    surface is carried beside it, for an IV form later (R2's cone). That the blend matches the
+    platform rests on third parties (`backtester`'s note); WP-1.9 compares it.
+12. **Earnings and the IV per expiration** (REF-03, GEN-09). `MarketMetrics` has `EarningsFacts`
+    (report date, before the open or after the close, estimated) and `ExpirationIV` (date,
+    settlement, IV). A per-day cache of the metrics (`s3t.refdata.metrics`) serves the dividends and
+    the chain with one request. An earnings date counts for an expiration when it falls before the
+    settlement instant: before the open at 09:30, after the close at 16:00, an unknown time at the
+    start of the day. A report date in the past is not shown.
+13. **Arrow** (API-06). `pyarrow` 26.0.1 (Apache-2.0; released 2026-11-03; 135 MB installed) is a
+    runtime dependency. `GET /api/chain/{underlying}/{expiration}` sends every listed strike of the
+    expiration as one Arrow IPC stream, with the columns of the topic's rows and the expiration's
+    figures as the schema's metadata. Values are filled where the backend holds them, NaN
+    elsewhere, never null. The route takes no subscription and no watch. The frontend's reader
+    comes with WP-1.5.
+14. **The solver's warning** is let through the first time and then every hundredth time, with its
+    count, by a filter on the logger of `s3t.pricing.bsm` (requirements 4.6, "PRC-01 and logging").
+15. **Not served:** a futures product (a note, as the surface has). An adjusted root is listed with
+    its quotes and the broker's Greeks, marked; its note says it has no forward, no own IV and no
+    surface.
+16. **New:** the feature `chain` (T1, unavailable without it); the health record `chain`.
+
+Facts found while building:
+
+- **The fake's theta holds the forward fixed** while its delta and gamma are against the spot. The
+  application's theta holds the spot fixed (decided 2026-11-22), so the two differ by the carry
+  r S delta / 365: -0.0348 for an at-the-money SPY call 21 days out (computed and seen in a test).
+  IV, delta, gamma and vega agree to the third or fourth decimal.
+- **A flush has a fixed cost of about 4 ms** beside its cost per contract: the forwards of every
+  expiration, and the gathering of the inputs. So the recording's 160 contracts take a median of
+  4 ms a flush where the synthetic market's 2,160 take 14 ms. Per contract real quotes cost the
+  same as synthetic ones: the call on 1,000 rows made of the recording's contracts takes 6.3 ms,
+  on 1,000 synthetic contracts 5.9 ms (`docs/measurements.md`). A guess while building, that the
+  solver runs longer on real quotes, was wrong.
+- **A view's part was as costly as the flush** for a view of 600 rows, because nearly every row
+  changes with the spot: up to 56 ms under load. Two changes brought it to 8.7 ms at most on an
+  idle machine (measured): the quote times are read as a column of the market state
+  (`MarketState.instants`) and not as records, and a row and its sides are named tuples, not frozen
+  dataclasses.
+- **The synthetic market's own tick** takes 77 to 175 ms of the event loop each second with about
+  12,000 subscribed pairs (seen under load). The lag of a timer on the synthetic market is the
+  fake's; the application's own steps are timed apart.
+- **Minutes before the close few 0DTE contracts can be inverted:** 2 of 80 four minutes before
+  (the rest are unidentifiable or without a bid). They show the broker's Greeks, marked.
+- **The replay answered a metrics read only as it was recorded,** and a capture reads several
+  symbols at once while the services read one. It now answers from every recorded read that holds
+  the symbol. The surface could not run on a recording before this.
+- **The bulk route is the first answer that is not a typed record.** The test of API-02 names it
+  as the one exception. pyarrow has no type information; `s3t.arrow` is the one module that imports
+  it, outside the strictly checked edge.
+
 ## 4. Requirements
 
 ### 4.1 General
@@ -972,6 +1076,10 @@ Facts found while building:
 To measure in R0: whether the cap counts symbols or symbol-event pairs. (Not measured, by
 decision of 2026-11-27: section 3, "The live measurements". The budget counts pairs.)
 
+State after WP-1.2 (2026-11-28): SUB-04 and SUB-05 are closed by tests on the synthetic market
+(`tests/analysis/test_chain_service.py`, `tests/api/test_chain.py`), with the decisions of section 3,
+"The chain package" (2026-11-28).
+
 ### 4.4 Market state and instruments
 
 | ID | Requirement | Release | Verify |
@@ -984,6 +1092,10 @@ decision of 2026-11-27: section 3, "The live measurements". The budget counts pa
 | MKT-06 | A quote is marked stale when it is older than a configured age, and stale values are shown as such. | R1 | T |
 | MKT-07 | A missing bid or ask is carried as missing, never as zero, through the wire format. | R0 | T |
 
+State after WP-1.2 (2026-11-28): MKT-04 to MKT-06 are closed by tests on the synthetic market, and
+MKT-04's measurement is PRF-03 (`docs/measurements.md`). Not verified live: the age of a real quote
+(MKT-06), a real index without a trade (MKT-05).
+
 ### 4.5 Reference data and time
 
 | ID | Requirement | Release | Verify |
@@ -994,6 +1106,9 @@ decision of 2026-11-27: section 3, "The live measurements". The budget counts pa
 | REF-04 | Sessions (overnight, early, regular, late), holidays and early closes come from an exchange calendar, per instrument class. | R0 | T |
 | REF-05 | Time to expiry is calendar time to the contract's settlement instant, in a 365-day year. | R0 | T |
 | REF-06 | Zone offsets are taken per instant from the time-zone database, so each region's own daylight-saving dates apply. | R2 | T |
+
+State after WP-1.2 (2026-11-28): REF-03 is closed by tests: the earnings date and the ex-dividend
+dates of the chain come from the market metrics, read once a day (`s3t.refdata.metrics`).
 
 ### 4.6 Pricing core
 
@@ -1014,6 +1129,9 @@ The conventions are those of the product definition, section 11.1.
 | PRC-11 | Buying power is a Reg-T estimate from the margin model taken from `backtester`, labelled as an estimate. | R1 | T |
 | PRC-12 | A platform mode holds the conventions of the Tastytrade replicas and is used by nothing else. | R1 | T |
 | PRC-13 | Own Greeks are used everywhere; the broker's are a cross-check and the fallback when the own inversion fails, and a fallback value is marked. | R1 | T |
+
+State after WP-1.2 (2026-11-28): PRC-13 is closed for the chain by tests (the source of each
+side's Greeks is on the wire). The cross-check of the units against Tastytrade's chain is WP-1.9.
 
 Decided 2026-11-22 (WP-0.2, reviewed with the owner):
 
@@ -1147,7 +1265,8 @@ Decided 2026-11-25 (owner, WP-0.6 review):
 State after WP-0.7 (2026-11-25):
 
 - **SEC-06** is measured on macOS only (`docs/measurements.md`). Linux was not run.
-- **API-05** is closed for `status` and `quotes`.
+- **API-05** is closed for `status` and `quotes`; for `chain` since WP-1.2 (2026-11-28). **API-06**
+  is closed for a whole expiration since WP-1.2; candle history follows in R2.
 - **SEC-02**: the login and the files of the built frontend are public, as they must be (decided
   2026-11-27, section 3).
 
@@ -1268,7 +1387,7 @@ Targets unless marked measured. Each is measured in the release named and record
 |---|---|---|---|
 | PRF-01 | A P/L grid for a four-leg ticket (200 prices, 60 dates) is computed in under 50 ms of server time. | R1 | M |
 | PRF-02 | From a changed control to the redrawn payoff panel: under 200 ms on the LAN. | R1 | M |
-| PRF-03 | A flush that recomputes IV and Greeks for 1,000 changed contracts takes under 100 ms and never delays the stream reader. | R1 | M |
+| PRF-03 | A flush that recomputes IV and Greeks for 1,000 changed contracts takes under 100 ms and never delays the stream reader. Measured at WP-1.2 (2026-11-28), on the synthetic market and a local recording: a flush of 900 to 1,725 contracts took 15.8 ms at most, no batch was lost, and the longest step of the chain on the event loop was 18.0 ms (PRF-05). | R1 | M |
 | PRF-04 | A path simulation with 20,000 paths, 45 daily steps and four legs finishes in under 1 s. | R1b | M |
 | PRF-05 | A surface fit for one underlying runs in the process pool; the event loop is never blocked for more than 50 ms by numerics. Measured at WP-1.1 on the synthetic market (2026-11-28): the fit runs in a worker, and the longest block of the event loop was 5.6 ms. | R1 | M |
 | PRF-06 | The chart shows 8,000 bars with four moving averages and two indicator panes in under 300 ms after the data has arrived. Measured in the prototype: 50 to 145 ms across three browsers. | R2 | M |

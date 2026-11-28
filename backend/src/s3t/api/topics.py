@@ -1,5 +1,5 @@
-"""The topics of the connection (API-05): ``status`` and ``quotes``. The others come with their
-packages: ``chain``, ``ticket``, ``candles``.
+"""The topics of the connection (API-05): ``status``, ``quotes`` and ``chain``. The others come
+with their packages: ``ticket``, ``candles``.
 
 **status.** The whole state in every message. One goes out at once when something changed that a
 person would call a change, and otherwise every few seconds while the running figures move.
@@ -20,6 +20,11 @@ WP-0.7 review):
   and a row has the receipt times (UI-05). One rule for every topic, and nothing is sent again when
   a session is lost.
 
+**chain** (WP-1.2). The view of an underlying by expiration and strike windows, from the chain
+service (``s3t.analysis.chain``): a snapshot with every open expiration and the rows of the
+windows, then what changed. A window that asks for more than a view may hold is refused as invalid
+(SUB-05). The service keeps the subscriptions of a closed view for the grace period (SUB-04).
+
 A topic asks the feed for what it shows, and for no longer than it shows it.
 """
 
@@ -27,7 +32,9 @@ import asyncio
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 
+from s3t.analysis.chain import Window, WindowRefused
 from s3t.api import status as wire
+from s3t.api.chain_rows import chain_message
 from s3t.api.channel import Emit, Topic, TopicRefused, Work
 from s3t.api.rows import ROW_EVENTS, changed_symbols, quote_rows
 from s3t.broker.interface import (
@@ -41,7 +48,7 @@ from s3t.broker.interface import (
 from s3t.market.state import Changes
 from s3t.subs.feed import Priority, Reader, Reduction
 from s3t.system.backend import Backend
-from s3t.system.features import QUOTES, Feature
+from s3t.system.features import CHAIN, QUOTES, Feature
 from s3t.wire.v1.channel_pb2 import (
     NOTE_KIND_CUT,
     NOTE_KIND_UNKNOWN,
@@ -62,6 +69,7 @@ REFRESH_S = 5.0
 RETRY_S = 30.0
 MOST_SYMBOLS = 100
 LONGEST_SYMBOL = 32
+LONGEST_KEY = 64
 
 LOG = logging.getLogger(__name__)
 
@@ -266,6 +274,47 @@ class _QuotesView:
                 self._work.wake()
 
 
+class ChainTopic:
+    feature: Feature | None = CHAIN
+
+    def __init__(self, backend: Backend) -> None:
+        self._backend = backend
+
+    async def run(self, request: Subscribe, emit: Emit, name: str) -> None:
+        asked = request.chain
+        underlying = asked.underlying
+        if not underlying or len(underlying) > LONGEST_SYMBOL:
+            raise TopicRefused(REFUSAL_KIND_INVALID, "not a symbol")
+        if any(not w.expiration or len(w.expiration) > LONGEST_KEY for w in asked.window):
+            raise TopicRefused(REFUSAL_KIND_INVALID, "not the key of an expiration")
+        windows = [
+            Window(
+                w.expiration,
+                w.low if w.HasField("low") else None,
+                w.high if w.HasField("high") else None,
+            )
+            for w in asked.window
+        ]
+        try:
+            view = self._backend.chain.open(underlying, windows)
+        except WindowRefused as e:
+            raise TopicRefused(REFUSAL_KIND_INVALID, str(e)) from None
+        try:
+            await view.ready()
+            await emit(ServerMessage(snapshot=True, chain=chain_message(view.snapshot())))
+            while True:
+                part = await view.next()
+                await emit(ServerMessage(snapshot=part.snapshot, chain=chain_message(part)))
+        except WindowRefused as e:
+            raise TopicRefused(REFUSAL_KIND_INVALID, str(e)) from None
+        finally:
+            view.close()
+
+
 def make_topics(backend: Backend) -> Mapping[str, Topic]:
     """By the name of their field in ``Subscribe``."""
-    return {"status": StatusTopic(backend), "quotes": QuotesTopic(backend)}
+    return {
+        "status": StatusTopic(backend),
+        "quotes": QuotesTopic(backend),
+        "chain": ChainTopic(backend),
+    }

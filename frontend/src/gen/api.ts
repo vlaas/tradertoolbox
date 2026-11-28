@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/api/chain/{underlying}/{expiration}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chain Expiration
+         * @description A whole expiration (API-06): every listed strike with the values the backend holds, the
+         *     rows of the ``chain`` topic as Arrow. It subscribes nothing. ``expiration`` is the key of the
+         *     expiration, its root and date: ``SPXW:2026-12-18``.
+         */
+        get: operations["chain_expiration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/features": {
         parameters: {
             query?: never;
@@ -140,6 +162,32 @@ export interface components {
             /** Source */
             source: string;
         };
+        /**
+         * ChainStatus
+         * @description For the health route (SEC-08).
+         */
+        ChainStatus: {
+            /** Compute Ms Max */
+            compute_ms_max: number | null;
+            /** Compute Ms Median */
+            compute_ms_median: number | null;
+            /** Computed */
+            computed: number;
+            /** Errors */
+            errors: number;
+            /** Failed */
+            failed: {
+                [key: string]: number;
+            };
+            /** Flushes */
+            flushes: number;
+            /** Grace S */
+            grace_s: number;
+            /** Largest */
+            largest: number;
+            /** Underlyings */
+            underlyings: components["schemas"]["UnderlyingStatus"][];
+        };
         /** @enum {string} */
         ClassName: "recorder" | "positions" | "views" | "background";
         /** ClassReport */
@@ -239,6 +287,7 @@ export interface components {
             /** Account */
             account: string | null;
             calendar: components["schemas"]["CalendarStatus"];
+            chain: components["schemas"]["ChainStatus"];
             copies: components["schemas"]["CopiesStatus"];
             /**
              * Data Time
@@ -545,6 +594,21 @@ export interface components {
             reason: string | null;
             tier: components["schemas"]["Tier"];
         };
+        /** UnderlyingStatus */
+        UnderlyingStatus: {
+            /** Contracts */
+            contracts: number;
+            /** Expirations */
+            expirations: number;
+            /** Held */
+            held: number;
+            /** Problem */
+            problem: string | null;
+            /** Underlying */
+            underlying: string;
+            /** Views */
+            views: number;
+        };
         /**
          * WatchedStatus
          * @description One watched underlying, for the health route (SEC-08).
@@ -594,6 +658,65 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    chain_expiration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                underlying: string;
+                expiration: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every strike of the expiration as one Arrow IPC stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.apache.arrow.stream": unknown;
+                };
+            };
+            /** @description There is no session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The broker knows no such underlying, or it has no such open expiration. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The request cannot be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The broker could not be asked, or the option chain is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     features: {
         parameters: {
             query?: never;

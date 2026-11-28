@@ -11,6 +11,7 @@ import pytest
 from s3t.broker.interface import Broker, BrokerUnavailable, DividendFacts, MarketMetrics
 from s3t.pricing import Dividend
 from s3t.refdata.dividends import Dividends, DividendSource
+from s3t.refdata.metrics import Metrics
 
 pytestmark = pytest.mark.anyio
 
@@ -42,7 +43,7 @@ class Stub:
 
 
 def service(stub: Stub, **more: Any) -> Dividends:
-    return Dividends(cast(Broker, stub), **more)
+    return Dividends(Metrics(cast(Broker, stub)), **more)
 
 
 def test_the_last_payment_is_repeated_by_the_frequency() -> None:
@@ -80,7 +81,7 @@ async def test_the_frequency_is_the_configurations() -> None:
     assert (o.frequency, o.stated) == (12, True)
     assert (await dividends.of("SPX")).last is None
     assert (await dividends.of("/ES")).last is None  # the broker has no metrics for it
-    assert service(stub, default=2).__repr__() == "Dividends(0 held)"
+    assert service(stub, default=2).__repr__() == "Dividends(Metrics(0 held))"
 
 
 async def test_a_symbol_is_read_once_a_day() -> None:

@@ -18,6 +18,8 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ChainExpiration, ChainHead, ChainRows } from "./chain_pb";
+import { file_s3t_wire_v1_chain } from "./chain_pb";
 import type { QuoteRows } from "./market_pb";
 import { file_s3t_wire_v1_market } from "./market_pb";
 import type { Status } from "./status_pb";
@@ -28,7 +30,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file s3t/wire/v1/channel.proto.
  */
 export const file_s3t_wire_v1_channel: GenFile = /*@__PURE__*/
-  fileDesc("ChlzM3Qvd2lyZS92MS9jaGFubmVsLnByb3RvEgtzM3Qud2lyZS52MSJ1Cg1DbGllbnRNZXNzYWdlEisKCXN1YnNjcmliZRgBIAEoCzIWLnMzdC53aXJlLnYxLlN1YnNjcmliZUgAEi8KC3Vuc3Vic2NyaWJlGAIgASgLMhguczN0LndpcmUudjEuVW5zdWJzY3JpYmVIAEIGCgRib2R5IngKCVN1YnNjcmliZRIKCgJpZBgBIAEoDRIqCgZzdGF0dXMYAiABKAsyGC5zM3Qud2lyZS52MS5TdGF0dXNUb3BpY0gAEioKBnF1b3RlcxgDIAEoCzIYLnMzdC53aXJlLnYxLlF1b3Rlc1RvcGljSABCBwoFdG9waWMiGQoLVW5zdWJzY3JpYmUSCgoCaWQYASABKA0iDQoLU3RhdHVzVG9waWMiHQoLUXVvdGVzVG9waWMSDgoGc3ltYm9sGAEgAygJIvoBCg1TZXJ2ZXJNZXNzYWdlEgoKAmlkGAEgASgNEhAKCHNuYXBzaG90GAIgASgIEiUKBnN0YXR1cxgDIAEoCzITLnMzdC53aXJlLnYxLlN0YXR1c0gAEiUKBnF1b3RlcxgEIAEoCzITLnMzdC53aXJlLnYxLlF1b3Rlc0gAEicKB3JlZnVzZWQYBSABKAsyFC5zM3Qud2lyZS52MS5SZWZ1c2VkSAASKwoJaGVhcnRiZWF0GAYgASgLMhYuczN0LndpcmUudjEuSGVhcnRiZWF0SAASHwoDYnllGAcgASgLMhAuczN0LndpcmUudjEuQnllSABCBgoEYm9keSJRCgZRdW90ZXMSJAoEcm93cxgBIAEoCzIWLnMzdC53aXJlLnYxLlF1b3RlUm93cxIhCgVub3RlcxgCIAEoCzISLnMzdC53aXJlLnYxLk5vdGVzIigKBU5vdGVzEh8KBG5vdGUYASADKAsyES5zM3Qud2lyZS52MS5Ob3RlIkkKBE5vdGUSDgoGc3ltYm9sGAEgASgJEiMKBGtpbmQYAiABKA4yFS5zM3Qud2lyZS52MS5Ob3RlS2luZBIMCgR0ZXh0GAMgASgJIkEKB1JlZnVzZWQSJgoEa2luZBgBIAEoDjIYLnMzdC53aXJlLnYxLlJlZnVzYWxLaW5kEg4KBnJlYXNvbhgCIAEoCSIhCglIZWFydGJlYXQSFAoMZGF0YV90aW1lX3VzGAEgASgBIjkKA0J5ZRIiCgRraW5kGAEgASgOMhQuczN0LndpcmUudjEuQnllS2luZBIOCgZyZWFzb24YAiABKAkqagoITm90ZUtpbmQSGQoVTk9URV9LSU5EX1VOU1BFQ0lGSUVEEAASFQoRTk9URV9LSU5EX1VOS05PV04QARIRCg1OT1RFX0tJTkRfQ1VUEAISGQoVTk9URV9LSU5EX1VOUkVBQ0hBQkxFEAMqnAEKC1JlZnVzYWxLaW5kEhwKGFJFRlVTQUxfS0lORF9VTlNQRUNJRklFRBAAEhgKFFJFRlVTQUxfS0lORF9JTlZBTElEEAESHgoaUkVGVVNBTF9LSU5EX1VOS05PV05fVE9QSUMQAhIcChhSRUZVU0FMX0tJTkRfVU5BVkFJTEFCTEUQAxIXChNSRUZVU0FMX0tJTkRfRkFJTEVEEAQqVgoHQnllS2luZBIYChRCWUVfS0lORF9VTlNQRUNJRklFRBAAEhoKFkJZRV9LSU5EX1NFU1NJT05fRU5ERUQQARIVChFCWUVfS0lORF9QUk9UT0NPTBACYgZwcm90bzM", [file_s3t_wire_v1_market, file_s3t_wire_v1_status]);
+  fileDesc("ChlzM3Qvd2lyZS92MS9jaGFubmVsLnByb3RvEgtzM3Qud2lyZS52MSJ1Cg1DbGllbnRNZXNzYWdlEisKCXN1YnNjcmliZRgBIAEoCzIWLnMzdC53aXJlLnYxLlN1YnNjcmliZUgAEi8KC3Vuc3Vic2NyaWJlGAIgASgLMhguczN0LndpcmUudjEuVW5zdWJzY3JpYmVIAEIGCgRib2R5IqIBCglTdWJzY3JpYmUSCgoCaWQYASABKA0SKgoGc3RhdHVzGAIgASgLMhguczN0LndpcmUudjEuU3RhdHVzVG9waWNIABIqCgZxdW90ZXMYAyABKAsyGC5zM3Qud2lyZS52MS5RdW90ZXNUb3BpY0gAEigKBWNoYWluGAQgASgLMhcuczN0LndpcmUudjEuQ2hhaW5Ub3BpY0gAQgcKBXRvcGljIhkKC1Vuc3Vic2NyaWJlEgoKAmlkGAEgASgNIg0KC1N0YXR1c1RvcGljIh0KC1F1b3Rlc1RvcGljEg4KBnN5bWJvbBgBIAMoCSJKCgpDaGFpblRvcGljEhIKCnVuZGVybHlpbmcYASABKAkSKAoGd2luZG93GAIgAygLMhguczN0LndpcmUudjEuQ2hhaW5XaW5kb3ciVwoLQ2hhaW5XaW5kb3cSEgoKZXhwaXJhdGlvbhgBIAEoCRIQCgNsb3cYAiABKAFIAIgBARIRCgRoaWdoGAMgASgBSAGIAQFCBgoEX2xvd0IHCgVfaGlnaCKfAgoNU2VydmVyTWVzc2FnZRIKCgJpZBgBIAEoDRIQCghzbmFwc2hvdBgCIAEoCBIlCgZzdGF0dXMYAyABKAsyEy5zM3Qud2lyZS52MS5TdGF0dXNIABIlCgZxdW90ZXMYBCABKAsyEy5zM3Qud2lyZS52MS5RdW90ZXNIABInCgdyZWZ1c2VkGAUgASgLMhQuczN0LndpcmUudjEuUmVmdXNlZEgAEisKCWhlYXJ0YmVhdBgGIAEoCzIWLnMzdC53aXJlLnYxLkhlYXJ0YmVhdEgAEh8KA2J5ZRgHIAEoCzIQLnMzdC53aXJlLnYxLkJ5ZUgAEiMKBWNoYWluGAggASgLMhIuczN0LndpcmUudjEuQ2hhaW5IAEIGCgRib2R5IlEKBlF1b3RlcxIkCgRyb3dzGAEgASgLMhYuczN0LndpcmUudjEuUXVvdGVSb3dzEiEKBW5vdGVzGAIgASgLMhIuczN0LndpcmUudjEuTm90ZXMiqAEKBUNoYWluEiQKBGhlYWQYASABKAsyFi5zM3Qud2lyZS52MS5DaGFpbkhlYWQSMAoKZXhwaXJhdGlvbhgCIAMoCzIcLnMzdC53aXJlLnYxLkNoYWluRXhwaXJhdGlvbhIkCgRyb3dzGAMgASgLMhYuczN0LndpcmUudjEuQ2hhaW5Sb3dzEiEKBW5vdGVzGAQgASgLMhIuczN0LndpcmUudjEuTm90ZXMiKAoFTm90ZXMSHwoEbm90ZRgBIAMoCzIRLnMzdC53aXJlLnYxLk5vdGUiSQoETm90ZRIOCgZzeW1ib2wYASABKAkSIwoEa2luZBgCIAEoDjIVLnMzdC53aXJlLnYxLk5vdGVLaW5kEgwKBHRleHQYAyABKAkiQQoHUmVmdXNlZBImCgRraW5kGAEgASgOMhguczN0LndpcmUudjEuUmVmdXNhbEtpbmQSDgoGcmVhc29uGAIgASgJIiEKCUhlYXJ0YmVhdBIUCgxkYXRhX3RpbWVfdXMYASABKAEiOQoDQnllEiIKBGtpbmQYASABKA4yFC5zM3Qud2lyZS52MS5CeWVLaW5kEg4KBnJlYXNvbhgCIAEoCSqYAQoITm90ZUtpbmQSGQoVTk9URV9LSU5EX1VOU1BFQ0lGSUVEEAASFQoRTk9URV9LSU5EX1VOS05PV04QARIRCg1OT1RFX0tJTkRfQ1VUEAISGQoVTk9URV9LSU5EX1VOUkVBQ0hBQkxFEAMSFgoSTk9URV9LSU5EX0xFRlRfT1VUEAQSFAoQTk9URV9LSU5EX1dJTkRPVxAFKpwBCgtSZWZ1c2FsS2luZBIcChhSRUZVU0FMX0tJTkRfVU5TUEVDSUZJRUQQABIYChRSRUZVU0FMX0tJTkRfSU5WQUxJRBABEh4KGlJFRlVTQUxfS0lORF9VTktOT1dOX1RPUElDEAISHAoYUkVGVVNBTF9LSU5EX1VOQVZBSUxBQkxFEAMSFwoTUkVGVVNBTF9LSU5EX0ZBSUxFRBAEKlYKB0J5ZUtpbmQSGAoUQllFX0tJTkRfVU5TUEVDSUZJRUQQABIaChZCWUVfS0lORF9TRVNTSU9OX0VOREVEEAESFQoRQllFX0tJTkRfUFJPVE9DT0wQAmIGcHJvdG8z", [file_s3t_wire_v1_chain, file_s3t_wire_v1_market, file_s3t_wire_v1_status]);
 
 /**
  * @generated from message s3t.wire.v1.ClientMessage
@@ -83,6 +85,12 @@ export type Subscribe = Message<"s3t.wire.v1.Subscribe"> & {
      */
     value: QuotesTopic;
     case: "quotes";
+  } | {
+    /**
+     * @generated from field: s3t.wire.v1.ChainTopic chain = 4;
+     */
+    value: ChainTopic;
+    case: "chain";
   } | { case: undefined; value?: undefined };
 };
 
@@ -145,6 +153,66 @@ export const QuotesTopicSchema: GenMessage<QuotesTopic> = /*@__PURE__*/
   messageDesc(file_s3t_wire_v1_channel, 4);
 
 /**
+ * The option chain of an underlying by expiration and strike windows (WP-1.2; chain.proto).
+ *
+ * @generated from message s3t.wire.v1.ChainTopic
+ */
+export type ChainTopic = Message<"s3t.wire.v1.ChainTopic"> & {
+  /**
+   * A stock, an ETF or an index, by the application's symbol.
+   *
+   * @generated from field: string underlying = 1;
+   */
+  underlying: string;
+
+  /**
+   * At most 8. The rows of windows that overlap come once.
+   *
+   * @generated from field: repeated s3t.wire.v1.ChainWindow window = 2;
+   */
+  window: ChainWindow[];
+};
+
+/**
+ * Describes the message s3t.wire.v1.ChainTopic.
+ * Use `create(ChainTopicSchema)` to create a new message.
+ */
+export const ChainTopicSchema: GenMessage<ChainTopic> = /*@__PURE__*/
+  messageDesc(file_s3t_wire_v1_channel, 5);
+
+/**
+ * @generated from message s3t.wire.v1.ChainWindow
+ */
+export type ChainWindow = Message<"s3t.wire.v1.ChainWindow"> & {
+  /**
+   * The key of the expiration: its root and its date, `SPXW:2026-12-18`.
+   *
+   * @generated from field: string expiration = 1;
+   */
+  expiration: string;
+
+  /**
+   * The strikes from `low` to `high`, both included, at most 120. Both are set, or neither:
+   * then the window is the 20 strikes each side of the money.
+   *
+   * @generated from field: optional double low = 2;
+   */
+  low?: number | undefined;
+
+  /**
+   * @generated from field: optional double high = 3;
+   */
+  high?: number | undefined;
+};
+
+/**
+ * Describes the message s3t.wire.v1.ChainWindow.
+ * Use `create(ChainWindowSchema)` to create a new message.
+ */
+export const ChainWindowSchema: GenMessage<ChainWindow> = /*@__PURE__*/
+  messageDesc(file_s3t_wire_v1_channel, 6);
+
+/**
  * @generated from message s3t.wire.v1.ServerMessage
  */
 export type ServerMessage = Message<"s3t.wire.v1.ServerMessage"> & {
@@ -191,6 +259,12 @@ export type ServerMessage = Message<"s3t.wire.v1.ServerMessage"> & {
      */
     value: Bye;
     case: "bye";
+  } | {
+    /**
+     * @generated from field: s3t.wire.v1.Chain chain = 8;
+     */
+    value: Chain;
+    case: "chain";
   } | { case: undefined; value?: undefined };
 };
 
@@ -199,7 +273,7 @@ export type ServerMessage = Message<"s3t.wire.v1.ServerMessage"> & {
  * Use `create(ServerMessageSchema)` to create a new message.
  */
 export const ServerMessageSchema: GenMessage<ServerMessage> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 5);
+  messageDesc(file_s3t_wire_v1_channel, 7);
 
 /**
  * @generated from message s3t.wire.v1.Quotes
@@ -227,7 +301,51 @@ export type Quotes = Message<"s3t.wire.v1.Quotes"> & {
  * Use `create(QuotesSchema)` to create a new message.
  */
 export const QuotesSchema: GenMessage<Quotes> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 6);
+  messageDesc(file_s3t_wire_v1_channel, 8);
+
+/**
+ * @generated from message s3t.wire.v1.Chain
+ */
+export type Chain = Message<"s3t.wire.v1.Chain"> & {
+  /**
+   * In a snapshot, and when it changed. Unset: as it was.
+   *
+   * @generated from field: s3t.wire.v1.ChainHead head = 1;
+   */
+  head?: ChainHead | undefined;
+
+  /**
+   * Every open expiration in a snapshot, the ones that changed later. The rows refer to them by
+   * `index`.
+   *
+   * @generated from field: repeated s3t.wire.v1.ChainExpiration expiration = 2;
+   */
+  expiration: ChainExpiration[];
+
+  /**
+   * The rows of the windows in a snapshot, the ones that changed later, each whole. Unset: no
+   * row changed.
+   *
+   * @generated from field: s3t.wire.v1.ChainRows rows = 3;
+   */
+  rows?: ChainRows | undefined;
+
+  /**
+   * What the subscription does not get, and why: the underlying (unknown, unreachable, cut by the
+   * budget), an expiration the broker lists and the backend could not read (left out), a window
+   * whose expiration is not open. It replaces the notes before it. Unset: as they were.
+   *
+   * @generated from field: s3t.wire.v1.Notes notes = 4;
+   */
+  notes?: Notes | undefined;
+};
+
+/**
+ * Describes the message s3t.wire.v1.Chain.
+ * Use `create(ChainSchema)` to create a new message.
+ */
+export const ChainSchema: GenMessage<Chain> = /*@__PURE__*/
+  messageDesc(file_s3t_wire_v1_channel, 9);
 
 /**
  * @generated from message s3t.wire.v1.Notes
@@ -244,13 +362,15 @@ export type Notes = Message<"s3t.wire.v1.Notes"> & {
  * Use `create(NotesSchema)` to create a new message.
  */
 export const NotesSchema: GenMessage<Notes> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 7);
+  messageDesc(file_s3t_wire_v1_channel, 10);
 
 /**
  * @generated from message s3t.wire.v1.Note
  */
 export type Note = Message<"s3t.wire.v1.Note"> & {
   /**
+   * The symbol; in `chain` the underlying or the key of an expiration.
+   *
    * @generated from field: string symbol = 1;
    */
   symbol: string;
@@ -273,7 +393,7 @@ export type Note = Message<"s3t.wire.v1.Note"> & {
  * Use `create(NoteSchema)` to create a new message.
  */
 export const NoteSchema: GenMessage<Note> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 8);
+  messageDesc(file_s3t_wire_v1_channel, 11);
 
 /**
  * The subscription has ended.
@@ -297,7 +417,7 @@ export type Refused = Message<"s3t.wire.v1.Refused"> & {
  * Use `create(RefusedSchema)` to create a new message.
  */
 export const RefusedSchema: GenMessage<Refused> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 9);
+  messageDesc(file_s3t_wire_v1_channel, 12);
 
 /**
  * Sent every few seconds, so that silence means a lost connection.
@@ -316,7 +436,7 @@ export type Heartbeat = Message<"s3t.wire.v1.Heartbeat"> & {
  * Use `create(HeartbeatSchema)` to create a new message.
  */
 export const HeartbeatSchema: GenMessage<Heartbeat> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 10);
+  messageDesc(file_s3t_wire_v1_channel, 13);
 
 /**
  * The backend ends the connection.
@@ -340,7 +460,7 @@ export type Bye = Message<"s3t.wire.v1.Bye"> & {
  * Use `create(ByeSchema)` to create a new message.
  */
 export const ByeSchema: GenMessage<Bye> = /*@__PURE__*/
-  messageDesc(file_s3t_wire_v1_channel, 11);
+  messageDesc(file_s3t_wire_v1_channel, 14);
 
 /**
  * @generated from enum s3t.wire.v1.NoteKind
@@ -371,6 +491,20 @@ export enum NoteKind {
    * @generated from enum value: NOTE_KIND_UNREACHABLE = 3;
    */
   UNREACHABLE = 3,
+
+  /**
+   * An expiration the broker lists and the backend could not read (`chain`).
+   *
+   * @generated from enum value: NOTE_KIND_LEFT_OUT = 4;
+   */
+  LEFT_OUT = 4,
+
+  /**
+   * A window whose expiration is not open (`chain`).
+   *
+   * @generated from enum value: NOTE_KIND_WINDOW = 5;
+   */
+  WINDOW = 5,
 }
 
 /**

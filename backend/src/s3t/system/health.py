@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 from s3t import __version__
+from s3t.analysis.chain import ChainStatus
 from s3t.analysis.surface import SurfaceStatus
 from s3t.broker.interface import DataSource, RestStatus, StreamStatus
 from s3t.market.state import MarketStatus
@@ -105,6 +106,8 @@ class Health(BaseModel):
     """The process pool of the numerics (PRF-05). It has no process before the first fit."""
     surface: SurfaceStatus
     """The underlyings whose surface is watched, and their fits (PRC-06)."""
+    chain: ChainStatus
+    """The chain's views, their contracts and the time of the flush (MKT-04, PRF-03)."""
 
 
 def redacted[T](record: T) -> T:
@@ -194,4 +197,5 @@ async def health(backend: "Backend") -> Health:
         process=backend.process.status(),
         pool=backend.pool.status(),
         surface=backend.surface.status(),
+        chain=backend.chain.status(),
     )

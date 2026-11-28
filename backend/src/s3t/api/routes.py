@@ -19,10 +19,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, SecretStr
 from starlette.exceptions import HTTPException
 
+from s3t.analysis.chain import ChainUnavailable
+from s3t.api.chain_rows import ARROW_TYPE, arrow_stream
 from s3t.api.channel import Connections
 from s3t.api.guard import PREFIX, cookie_name, session_of
 from s3t.system.backend import Backend
-from s3t.system.features import Feature, FeaturesReport
+from s3t.system.features import CHAIN, Feature, FeaturesReport
 from s3t.system.health import Health, health
 from s3t.system.login import Held, LoginRefused, NoPassword, Session
 
@@ -177,6 +179,33 @@ async def get_features(backend: BackendDep) -> FeaturesReport:
 def answer(status: int, code: str, message: str, headers: dict[str, str] | None = None) -> Response:
     body = ApiError(code=code, message=message).model_dump()
     return JSONResponse(body, status_code=status, headers=headers)
+
+
+@router.get(
+    "/chain/{underlying}/{expiration}",
+    operation_id="chain_expiration",
+    response_class=Response,
+    dependencies=[needs(CHAIN)],
+    responses=UNAUTHENTICATED
+    | {
+        200: {
+            "content": {ARROW_TYPE: {}},
+            "description": "Every strike of the expiration as one Arrow IPC stream.",
+        },
+        404: _error("The broker knows no such underlying, or it has no such open expiration."),
+        422: _error("The request cannot be read."),
+        503: _error("The broker could not be asked, or the option chain is unavailable."),
+    },
+)
+async def chain_expiration(underlying: str, expiration: str, backend: BackendDep) -> Response:
+    """A whole expiration (API-06): every listed strike with the values the backend holds, the
+    rows of the ``chain`` topic as Arrow. It subscribes nothing. ``expiration`` is the key of the
+    expiration, its root and date: ``SPXW:2026-12-18``."""
+    try:
+        snapshot = await backend.chain.expiration(underlying, expiration)
+    except ChainUnavailable as e:
+        raise Failure(404 if e.unknown else 503, "chain", str(e)) from None
+    return Response(arrow_stream(snapshot), media_type=ARROW_TYPE)
 
 
 async def _failure(_: Request, error: Exception) -> Response:

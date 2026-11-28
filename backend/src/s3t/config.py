@@ -317,6 +317,23 @@ class SurfaceConfig(_Section):
     """How far the wings reach, in at-the-money standard deviations to the expiration."""
 
 
+class ChainConfig(_Section):
+    """The option chain's views (SUB-04, SUB-05, MKT-06). Decided 2026-11-28 (owner, WP-1.2)."""
+
+    grace_s: float = Field(default=60.0, ge=0, le=3600)
+    """Seconds a closed view keeps its subscriptions, so that a view opened again within them
+    has its values at once (SUB-04)."""
+    stale_after_s: float = Field(default=120.0, ge=1, le=86_400)
+    """A quote older than this is marked stale (MKT-06). Its age runs from its own time where the
+    feed gives one, else from its receipt."""
+    around_strikes: int = Field(default=20, ge=1, le=100)
+    """Strikes each side of the money of a window that names no range."""
+    most_strikes: int = Field(default=120, ge=10, le=500)
+    """Strikes of one window at most: a view never subscribes a whole chain (SUB-05)."""
+    most_windows: int = Field(default=8, ge=1, le=32)
+    """Windows of one view at most."""
+
+
 class Config(_Section):
     server: ServerConfig
     paths: PathsConfig
@@ -331,6 +348,7 @@ class Config(_Section):
     dividends: DividendsConfig = Field(default_factory=DividendsConfig)
     numerics: NumericsConfig = Field(default_factory=NumericsConfig)
     surface: SurfaceConfig = Field(default_factory=SurfaceConfig)
+    chain: ChainConfig = Field(default_factory=ChainConfig)
     source: Path
     """The file this configuration was read from."""
 

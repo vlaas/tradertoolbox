@@ -96,10 +96,11 @@ def test_the_check_catches(source: str):
 
 def test_source_headers_name_the_origin():
     """PRC-03: a module taken from another repository says which one and at which commit."""
+    sources = {"volcalc": "f53be83", "backtester": "0a296d2"}  # backtester: WP-1.2, moves.py
     for path in MODULES:
         head = path.read_text().split('"""')[1]
         if "Source:" in head:
-            assert "volcalc" in head and "f53be83" in head, path.name
+            assert any(r in head and c in head for r, c in sources.items()), path.name
     ported = {p.name for p in MODULES if "Source:" in p.read_text().split('"""')[1]}
     assert ported == {
         "bsm.py",
@@ -111,4 +112,5 @@ def test_source_headers_name_the_origin():
         "svi.py",
         "ssvi.py",
         "surface.py",
+        "moves.py",  # WP-1.2, from backtester
     }

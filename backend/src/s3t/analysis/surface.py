@@ -198,6 +198,21 @@ class SurfaceStatus:
     watched: tuple[WatchedStatus, ...]
 
 
+def spot_of(market: MarketState, security: Security) -> tuple[float, str]:
+    """The price of an underlying and where it came from: the quote's mid of a stock or an ETF,
+    else the last trade; the last trade of an index, whose quote is too wide to be a price (note
+    B, section 5). NaN and "none" when there is none. The chain uses the same price
+    (``s3t.analysis.chain``)."""
+    stream = [security.stream_symbol]
+    if security.kind != "index":
+        bid = market.column(_QUOTE, "bid", stream)[0]
+        ask = market.column(_QUOTE, "ask", stream)[0]
+        if bid > 0 and ask >= bid:
+            return (bid + ask) / 2, "quote"
+    last = market.column(_TRADE, "price", stream)[0]
+    return (last, "trade") if last > 0 else (math.nan, "none")
+
+
 # ---------------------------------------------------------------------- the choice of strikes
 
 
@@ -729,17 +744,8 @@ class SurfaceService:
     # ------------------------------------------------------------------ the inputs of a fit
 
     def _spot(self, u: _Underlying) -> float:
-        """The price of the underlying: the quote's mid of a stock or an ETF, else the last
-        trade; the last trade of an index. NaN when there is none."""
         assert u.security is not None
-        stream, market = [u.security.stream_symbol], self._market
-        if u.security.kind != "index":
-            bid = market.column(_QUOTE, "bid", stream)[0]
-            ask = market.column(_QUOTE, "ask", stream)[0]
-            if bid > 0 and ask >= bid:
-                return (bid + ask) / 2
-        last = market.column(_TRADE, "price", stream)[0]
-        return last if last > 0 else math.nan
+        return spot_of(self._market, u.security)[0]
 
     def _carry(
         self, x: _Exp, spot: float, at: datetime, today: date, curve: RateCurve

@@ -1,10 +1,12 @@
-"""Timings for an idle machine (QA-08): the calendar, the chains, the reader (WP-0.9) and the
-surface fit (WP-1.1, PRF-05).
+"""Timings for an idle machine (QA-08): the calendar, the chains, the reader (WP-0.9), the
+surface fit (WP-1.1, PRF-05) and the chain's flush (WP-1.2, PRF-03).
 
     uv run python tools/timings.py calendar [--runs 5]
     uv run python tools/timings.py chains [--runs 20] [--config PATH]
     uv run python tools/timings.py reader NAME [--speeds 10,30,100,300] [--config PATH]
     uv run python tools/timings.py surface [--symbols SPY,SPX,AAPL] [--runs 20] [--config PATH]
+    uv run python tools/timings.py chain [--seconds 120] [--runs 50] [--config PATH]
+    uv run python tools/timings.py chain NAME --config PATH [--speeds 1,10,30]
 
 Each prints the machine, then the median, the 95th percentile and the maximum, with the load
 average before and after, for ``docs/measurements.md``. Each timing has its CPU time beside its
@@ -28,6 +30,12 @@ A timing on a loaded machine is not a measurement: look at the load first.
   per slice, the steps on the event loop, and the lag of a 10 ms timer while fits run
   (``tools/surface_timings.py`` says what each figure is). No broker and no network. Without
   ``--config`` the settings are the defaults; with it, its ``[numerics]`` and ``[surface]``.
+- ``chain``: the chain's flush (PRF-03) on the fake broker: views of SPY and SPX that hold more
+  than 1,000 contracts while the synthetic market moves; per flush the contracts computed, the
+  wall and CPU time, the parts of the views, the wait of a batch and the lag of a timer; then the
+  call alone on 1,000 contracts and a whole flush with all due (``tools/chain_timings.py``). With
+  a recording's NAME, the same on the windows the recording holds, replayed at multiples of its
+  pace. No broker and no network.
 """
 
 import argparse
@@ -41,6 +49,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+import chain_timings
 import surface_timings
 from day_measures import IvTaker, machine, option_set, summary
 from s3t.broker.interface import EventBatch, EventType, StreamState, Sub
@@ -270,14 +279,17 @@ async def reader(config: Config, name: str, speeds: list[float]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
-    parser.add_argument("what", choices=("calendar", "chains", "reader", "surface"))
-    parser.add_argument("name", nargs="?", help="the recording, for reader")
+    parser.add_argument("what", choices=("calendar", "chains", "reader", "surface", "chain"))
+    parser.add_argument("name", nargs="?", help="the recording, for reader and chain")
     parser.add_argument("--runs", type=int, help="for calendar, chains and surface")
     parser.add_argument("--symbols", default="SPY,SPX,AAPL", help="for surface: the underlyings")
     parser.add_argument(
         "--speeds", default="10,30,100,300", help="for reader: multiples of the pace"
     )
     parser.add_argument("--config", help="the configuration file (default: the usual search)")
+    parser.add_argument(
+        "--seconds", type=float, default=120.0, help="for chain: how long the market moves"
+    )
     args = parser.parse_args()
     if args.what == "calendar":
         return calendar(args.runs or 5)
@@ -288,6 +300,21 @@ def main() -> int:
         print(f"load before: {load()}")
         try:
             return asyncio.run(surface_timings.surface(own, symbols, args.runs or 20, show))
+        finally:
+            print(f"load after: {load()}")
+    if args.what == "chain":
+        print_machine()
+        print(f"load before: {load()}")
+        try:
+            if args.name is None:
+                own = load_config(args.config) if args.config else None
+                return asyncio.run(
+                    chain_timings.synthetic(own, args.seconds, args.runs or 50, show)
+                )
+            speeds = [float(x) for x in args.speeds.split(",")]
+            return asyncio.run(
+                chain_timings.recorded(load_config(args.config), args.name, speeds, show)
+            )
         finally:
             print(f"load after: {load()}")
     config = load_config(args.config)

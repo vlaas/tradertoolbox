@@ -13,9 +13,12 @@ import {
   toJson,
 } from '@bufbuild/protobuf'
 import { describe, expect, it } from 'vitest'
+import chainFixture from '../../proto/fixtures/chain.json'
+import chainSubscribeFixture from '../../proto/fixtures/chain_subscribe.json'
 import quotesFixture from '../../proto/fixtures/quotes.json'
 import statusFixture from '../../proto/fixtures/status.json'
 import subscribeFixture from '../../proto/fixtures/subscribe.json'
+import { GreeksSource } from './gen/s3t/wire/v1/chain_pb'
 import { ClientMessageSchema, NoteKind, ServerMessageSchema } from './gen/s3t/wire/v1/channel_pb'
 import { AuthState, DemandClass, SourceKind, StreamPhase } from './gen/s3t/wire/v1/status_pb'
 import { cell, rowCount } from './lib/columns'
@@ -49,6 +52,109 @@ const quotes: MessageInitShape<typeof ServerMessageSchema> = {
         tradeReceivedUs: [nan, 1795186800500000],
       },
       notes: { note: [{ symbol: 'NOSUCH', kind: NoteKind.UNKNOWN, text: 'not known' }] },
+    },
+  },
+}
+
+// The chain topic (WP-1.2), as backend/tools/generate.py writes it.
+const chainSubscribe: MessageInitShape<typeof ClientMessageSchema> = {
+  body: {
+    case: 'subscribe',
+    value: {
+      id: 9,
+      topic: {
+        case: 'chain',
+        value: {
+          underlying: 'SPX',
+          window: [
+            { expiration: 'SPXW:2026-12-18', low: 5900, high: 6100 },
+            { expiration: 'SPX:2026-12-18' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+const missingSide = {
+  symbol: [''],
+  bid: [nan],
+  ask: [nan],
+  bidSize: [nan],
+  askSize: [nan],
+  quoteUs: [nan],
+  stale: [false],
+  iv: [nan],
+  delta: [nan],
+  gamma: [nan],
+  theta: [nan],
+  vega: [nan],
+  source: [GreeksSource.NONE],
+  volume: [nan],
+  openInterest: [nan],
+}
+
+const chain: MessageInitShape<typeof ServerMessageSchema> = {
+  id: 9,
+  snapshot: true,
+  body: {
+    case: 'chain',
+    value: {
+      head: {
+        underlying: 'SPX',
+        kind: 'index',
+        spot: 6004.19,
+        spotSource: 'trade',
+        dataTimeUs: 1795186800000001,
+        staleAfterS: 120,
+      },
+      expiration: [
+        {
+          index: 0,
+          key: 'SPXW:2026-12-18',
+          root: 'SPXW',
+          date: '2026-12-18',
+          settlement: 'pm',
+          settlesAtUs: 1797627600000000,
+          kind: 'regular',
+          multiplier: 100,
+          standard: true,
+          strikes: 337,
+          forward: 6024.5,
+          forwardSource: 'parity',
+          atmIv: 0.1394,
+          expectedMoveMethod: 'straddle 0.6/0.3/0.1',
+          brokerIv: 0.1392,
+          exDividend: [],
+          earningsBefore: false,
+        },
+      ],
+      rows: {
+        expiration: [0],
+        strike: [6000],
+        iv: [0.1412],
+        call: {
+          symbol: ['SPXW  261218C06000000'],
+          bid: [89.9],
+          ask: [91.8],
+          bidSize: [nan],
+          askSize: [12],
+          quoteUs: [1795186800000001],
+          stale: [false],
+          iv: [0.1411],
+          delta: [0.5422],
+          gamma: [0.00194],
+          theta: [-2.2556],
+          vega: [5.7472],
+          source: [GreeksSource.OWN],
+          volume: [790],
+          openInterest: [0],
+        },
+        put: missingSide,
+      },
+      notes: {
+        note: [{ symbol: 'SPX:2026-12-18', kind: NoteKind.LEFT_OUT, text: 'unreadable' }],
+      },
     },
   },
 }
@@ -116,6 +222,21 @@ describe('the messages of the connection', () => {
 
   it('a status', () => {
     sameInBothLanguages(ServerMessageSchema, statusFixture, status)
+  })
+
+  it('a subscription to a chain, and its snapshot', () => {
+    sameInBothLanguages(ClientMessageSchema, chainSubscribeFixture, chainSubscribe)
+    sameInBothLanguages(ServerMessageSchema, chainFixture, chain)
+  })
+
+  it('keeps an unset expected move apart from a missing column value', () => {
+    const message = fromBinary(ServerMessageSchema, bytes(chainFixture.binary_hex))
+    if (message.body.case !== 'chain') throw new Error('not a chain')
+    const [expiration] = message.body.value.expiration
+    expect(expiration?.expectedMove).toBeUndefined()
+    expect(message.body.value.head?.earningsEstimated).toBeUndefined()
+    expect(cell(message.body.value.rows?.put?.bid ?? [], 0)).toBeNull()
+    expect(cell(message.body.value.rows?.call?.openInterest ?? [], 0)).toBe(0)
   })
 
   it('keeps what is missing apart from what is zero', () => {

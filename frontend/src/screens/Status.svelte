@@ -78,6 +78,9 @@
     [NoteKind.UNKNOWN]: 'unknown',
     [NoteKind.CUT]: 'cut by the budget',
     [NoteKind.UNREACHABLE]: 'the broker could not be asked',
+    // Kinds of the chain topic (WP-1.2); the quote list never gets them.
+    [NoteKind.LEFT_OUT]: 'left out',
+    [NoteKind.WINDOW]: 'no such expiration',
   }
 
   const s = $derived(status.current)
