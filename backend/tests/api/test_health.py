@@ -1,12 +1,18 @@
 """The health route (SEC-08): broker connection, stream, use, stores and reference data."""
 
+import asyncio
+import os
 from dataclasses import fields, replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.routing import APIRoute, iter_route_contexts
 
+from s3t.analysis.surface import WatchedStatus
 from s3t.api.app import create_api
+from s3t.broker.fake.clock import VirtualClock
+from s3t.pricing.surface import OK
 from s3t.subs.feed import ClassUse, ConsumerUse, FeedStatus, Priority
 from s3t.system import health as service
 from s3t.system.health import (
@@ -18,7 +24,7 @@ from s3t.system.health import (
     subscriptions_report,
 )
 
-from .conftest import ApiRig
+from .conftest import ASOF, ApiRig, make_config, running
 from .test_status import FEED
 
 pytestmark = pytest.mark.anyio
@@ -67,6 +73,84 @@ async def test_what_it_reports(rig: ApiRig) -> None:
     process = doc["process"]
     assert process["bound_mb"] == 1024 and process["over_bound_since"] is None
     assert 10 < process["peak_rss_mb"] < 10_000 and process["checked_at"] is not None
+    # The pool and the surfaces (PRF-05): a view of quotes starts neither.
+    assert doc["pool"]["workers"] == 2 and doc["pool"]["started_at"] is None
+    assert doc["surface"] == {"refresh_s": 30.0, "watched": []}
+
+
+SURFACES = """source = "fake"
+[stream]
+stall_after = 3600.0
+[surface]
+max_dte = 30
+wing_strikes = 8
+"""
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+async def test_a_watched_surface_is_fitted_in_worker_processes_and_reported(
+    tmp_path: Path,
+) -> None:
+    """The one test through the real pool (WP-1.1; PRF-05): the composed backend, a watch, the
+    fits in worker processes, and both in the health record. The clock of the data is virtual
+    and the workers take real time, so the test lets both pass."""
+    async with running(make_config(tmp_path, SURFACES), VirtualClock(ASOF)) as rig:
+        await rig.up()
+        await rig.log_in()
+        backend = rig.backend
+        assert backend.pool.status().started_at is None
+        watch = backend.surface.watch("AAPL")
+
+        def filled() -> bool:
+            watched = backend.surface.status().watched[0]
+            return watch.latest is not None and not watched.filling
+
+        async with asyncio.timeout(180):  # generous: the machine may be loaded
+            while not filled():
+                await rig.pass_time(1)
+                await asyncio.sleep(0.02)
+            # No look follows while the clock stands still: wait for the fit under way.
+            while backend.pool.status().under_way:  # noqa: ASYNC110
+                await asyncio.sleep(0.02)
+        await rig.clock.settle()
+        fit = watch.latest
+        assert fit is not None and fit.fit_s > 0 and fit.cpu_s > 0 and fit.took_s >= fit.fit_s
+        assert [s.status for s in fit.surface.slices[1:5]] == [OK] * 4
+        assert all(s.forward > 0 for s in fit.surface.slices)
+
+        doc = await health(rig)
+        pool = doc["pool"]
+        assert pool["started_at"] is not None and 1 <= pool["processes"] <= 2
+        assert (pool["failed"], pool["broken"], pool["under_way"]) == (0, 0, 0)
+        pids = backend.pool.pids()
+        assert pids and os.getpid() not in pids
+        (watched,) = doc["surface"]["watched"]
+        assert set(watched) == {f.name for f in fields(WatchedStatus)}
+        assert watched["underlying"] == "AAPL" and watched["watchers"] == 1
+        assert watched["problem"] is None and watched["filling"] is False
+        assert watched["fits"] == pool["done"] == fit.number and watched["failures"] == 0
+        assert watched["expirations"] == len(fit.surface.slices) == sum(watched["slices"].values())
+        assert watched["values"] == fit.values and watched["not_live"] == 0
+        assert watched["pairs"] == fit.values + 2 and watched["last_fit_s"] > 0
+        assert 0 < watched["loop_ms_max"] < 1000
+        use = {c["name"]: c for c in doc["subscriptions"]["consumers"]}["surface"]
+        assert use == {
+            "name": "surface",
+            "demand_class": "views",
+            "wanted": watched["pairs"],
+            "granted": watched["pairs"],
+        }
+        watch.release()
+        assert (await health(rig))["surface"]["watched"] == []
+    # The backend is closed: its workers are gone.
+    assert not any(alive(pid) for pid in pids)
 
 
 async def test_the_route_is_the_service(rig: ApiRig) -> None:

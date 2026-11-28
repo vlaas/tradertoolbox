@@ -17,6 +17,9 @@ The broker is chosen in the configuration (GEN-11) and logged.
 
 The state file is the same one whichever broker is chosen; the configuration names it.
 
+The process pool and the surface service (WP-1.1) are built here and do nothing by themselves: the
+pool starts its processes with the first fit, and the service fits only what a view watches.
+
 A time that belongs to a login or a file is the wall clock's. Everything about the market is the
 broker's ``data_time``.
 """
@@ -32,6 +35,7 @@ from zoneinfo import ZoneInfo
 
 from argon2 import PasswordHasher
 
+from s3t.analysis.surface import SurfaceService
 from s3t.broker.fake.broker import FakeBroker
 from s3t.broker.interface import Broker
 from s3t.broker.limits import Clock, Sleep
@@ -41,12 +45,14 @@ from s3t.config import Config
 from s3t.market.registry import Instruments
 from s3t.market.state import MarketState
 from s3t.refdata.calendar import ExchangeCalendar, load_calendar
+from s3t.refdata.dividends import Dividends
 from s3t.refdata.rates import Rates
 from s3t.store.daily import DailyCopies
 from s3t.store.state import StateStore
 from s3t.subs.local import LocalFeed
 from s3t.system.features import Features
 from s3t.system.login import Login
+from s3t.system.pool import NumericsPool, Pool
 from s3t.system.process import ProcessWatch
 
 NY = ZoneInfo("America/New_York")
@@ -90,6 +96,9 @@ class Backend:
     instruments: Instruments
     features: Features
     process: ProcessWatch
+    dividends: Dividends
+    pool: NumericsPool
+    surface: SurfaceService
 
 
 async def _calendar(config: Config, at: datetime) -> ExchangeCalendar:
@@ -138,8 +147,10 @@ async def open_backend(
     clocks: Time | None = None,
     broker: Broker | None = None,
     hasher: PasswordHasher | None = None,
+    fits: Pool | None = None,
 ) -> AsyncGenerator[Backend]:
-    """The running backend. ``broker`` stands in for the configured one in a test."""
+    """The running backend. ``broker`` stands in for the configured one in a test, and ``fits``
+    runs the surface fits in place of the process pool."""
     clocks = clocks or Time()
     async with AsyncExitStack() as closing:
         if broker is None:
@@ -187,6 +198,26 @@ async def open_backend(
         process = ProcessWatch(config.process.memory_bound_mb, now=clocks.now, sleep=clocks.sleep)
         closing.push_async_callback(process.aclose)
 
+        # Neither starts anything here: no process, no subscription and no task (WP-1.1).
+        instruments = Instruments(broker)
+        dividends = Dividends(
+            broker, config.dividends.frequency, config.dividends.default_frequency
+        )
+        pool = NumericsPool(config.numerics.workers, now=clocks.now)
+        closing.push_async_callback(pool.aclose)
+        surface = SurfaceService(
+            config.surface,
+            pool=fits or pool,
+            feed=feed,
+            market=market,
+            instruments=instruments,
+            dividends=dividends,
+            calendar=calendar,
+            curve=rates.curve,
+            sleep=clocks.sleep,
+        )
+        closing.push_async_callback(surface.aclose)
+
         process.start()
         copies.start()
         rates.start()
@@ -204,9 +235,12 @@ async def open_backend(
             rates=rates,
             feed=feed,
             market=market,
-            instruments=Instruments(broker),
+            instruments=instruments,
             features=Features(broker, config.paths.t3_root),
             process=process,
+            dividends=dividends,
+            pool=pool,
+            surface=surface,
         )
 
 

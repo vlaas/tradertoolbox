@@ -819,10 +819,12 @@ facts on the broker's dividend fields are in note B, addendum "WP-1.1". The sign
   quarterly dividend, and their options are priced on the escrowed forward. The metrics state
   the dividends as the live documents do.
 
-The surface package (WP-1.1), part 2, not built: the pool and the fit service. **Proposed
-2026-11-27 and decided the same day (owner), before it is built.** What the building shows to be
-wrong comes back as a new proposal. The configuration sections `[numerics]` and
-`[surface]` exist with these defaults and nothing reads them yet.
+The surface package (WP-1.1), part 2: the pool and the fit service. **Proposed 2026-11-27 and
+decided the same day (owner), before it was built. Built 2026-11-28 as decided.** No decided item
+had to change. What the decision left open is in the second list: proposed while building and
+**decided 2026-11-28 (owner): every item as proposed.** The signatures are in `s3t.system.pool`,
+`s3t.analysis.surface` and `s3t.analysis.surface_task`. PRF-05 is measured
+(`docs/measurements.md`, 2026-11-28).
 
 - **The pool** (PRF-05): a `ProcessPoolExecutor` with the start method `spawn` on every
   platform, `[numerics] workers = 2`, started by the first fit and not with the backend. Its
@@ -830,6 +832,8 @@ wrong comes back as a new proposal. The configuration sections `[numerics]` and
   `SliceInput` records in, a `Surface` back. Everything of a fit runs in the worker: parity,
   the IV of the mids, SVI, SSVI, the checks. A worker gets a null log handler, or the ported
   solver's warnings reach the terminal.
+  - As built: the executor itself is built by the first task, and it starts a process only when a
+    task finds no idle one. A worker imports `s3t.analysis.surface_task` and the pricing core.
 - **The service** (`s3t.analysis.surface`): a view takes a watch on an underlying and releases
   it. While watched, a fit every `[surface] refresh_s = 30`, skipped when no quote of its set
   changed, and a fit on demand. Each fit starts warm from the one before.
@@ -838,8 +842,88 @@ wrong comes back as a new proposal. The configuration sections `[numerics]` and
   at-the-money IV. Expirations within `max_dte = 90` also get the out-of-the-money strikes out
   to `wing_deviations = 3`, thinned to `wing_strikes = 30` a side. That is about 2,300 pairs
   for SPY (computed, not measured). A cut by the budget shows as `sparse` slices.
+  - As built: of an option only the quote is subscribed, so a contract is one pair. On the
+    synthetic chains the sets are 1,460 pairs for SPY, 1,934 for SPX and 591 for AAPL (counted
+    in the tests). The synthetic chains list fewer strikes than the live ones.
 - **Which quotes a fit uses:** stored values whether live or not; the result carries its data
   time and the count of inputs that were not live. No slice after its settlement instant.
+- **Both are in the composition and in the health route** (SEC-08): the records `pool` and
+  `surface`. A backend in which no view takes a watch starts no process, registers no consumer
+  of the feed and no taker of the market state, runs no task of the service and reads nothing
+  from the broker for it (tests, on the composition and on the real process). Nothing takes a
+  watch yet: the `chain` topic of WP-1.2 is the first.
+
+**Proposed 2026-11-28 (WP-1.1, part 2) and decided the same day (owner): every item as proposed.**
+
+1. **The set is chosen in steps.** The reach of the wings needs an at-the-money IV, and there is
+   none before a fit. So: the quote and the trade of the underlying first, then the cores around
+   its price, then the wings from the `atm_iv` of each slice of the first fit. A slice without
+   one takes that of the slice nearest in time.
+2. **The set is kept stable.** Wings are thinned on a fixed lattice: every n-th listed strike by
+   its index, n from the count of strikes in reach. The core of an expiration moves when the
+   money has moved by 2 strikes. Its wings are chosen anew when the money has moved by 15% of
+   their reach or the reach has changed by 15%. Without these rules every fit would change
+   subscriptions.
+3. **The order of the demand** is spots, then the cores of all watched underlyings, then the
+   wings, each from the nearest expiration on and from the money outwards. A short budget
+   (SUB-03) then cuts the farthest wings first, and every expiration keeps its forward.
+4. **The spot** is the mid of the quote for a stock or an ETF, else the last trade. For an index
+   it is the last trade: its quote is too wide to be a price (note B, section 5).
+5. **While a set fills** the service looks every 2 s instead of every `refresh_s`. A set has
+   filled when the feed has nothing left to send and 3 looks in a row brought no new value. The
+   feed sends 150 changes a second in the order of the demand, so the pairs of one underlying
+   can wait for those of another. A first version judged by the looks alone. With three
+   underlyings at once it called a set filled while 1,895 pairs were still to be sent (found by
+   the timing tool; the count is from the test that now holds the rule).
+6. **A fit on demand** runs at once, whatever has changed. Before the first values of a set are
+   there it waits for them.
+7. **A futures product is not fitted yet.** A watch on `/ES` has a problem and no surface, as an
+   unknown symbol has. The pricing side is there (PRC-05: the option of a future takes the price
+   of its future); the chain of a futures product and the price of each future are not wired.
+8. **The last release of an underlying drops everything of it at once:** the subscriptions, the
+   last surface and the warm start. A grace period belongs to the view that holds the watch
+   (WP-1.2).
+9. **How a view reads:** the latest fit, the next one after a given number, and a fit on demand.
+   There is no topic and no route for a surface in this part.
+10. **Failures.** A fit that fails is counted and logged (the first and then every hundredth),
+    and the last surface stays with its data time. A worker that dies breaks the executor; the
+    task fails and the next one builds a new executor. A fit has no time limit: one task cannot
+    be ended without ending its process, and the fits are bounded by their iteration limits.
+    The broker's documents are read once per New York day of the data; when that fails, it is
+    tried again and the documents of the day before stay in use.
+11. **A worker ignores SIGINT,** which a terminal sends to every process of the group; the
+    backend ends its workers when it closes. **A worker ends when its parent is gone:** it looks
+    every 2 s. A worker of a plain executor waited for work for ever after its parent was killed
+    (seen 2026-11-27, and a test).
+12. **Left out of a set:** an expiration of an option root that is not standard, and one whose
+    settlement instant the calendar cannot give. The health record counts them per underlying.
+    - A root is standard when the broker's chain type says exactly so. An adjusted root (after a
+      split, a special dividend, a merger or a spin-off) delivers something else than 100 shares
+      of the underlying. Put-call parity on the underlying's price does not hold for it, and its
+      slice would enter the SSVI shape of the whole surface.
+    - Weeklies, dailies, quarterlies, end-of-month expirations and the roots SPX, SPXW and SPXO
+      are standard.
+    - In the 134 chain documents that `tt` captured (9 symbols) every chain type is standard
+      (counted 2026-11-28). An adjusted root of the live broker, and the text it has for the
+      type, were not seen. A root with an unexpected text is left out and counted.
+    - The chain view of WP-1.2 can list such a root. It has no surface IV and no market-implied
+      probability, and the view has to say so.
+13. **The key of a slice** is the option root and the expiration date, `SPXW:2026-12-18`. The
+    result maps each key to the root, the date and the settlement instant.
+14. **The fit's own settings** (`s3t.pricing.surface.Settings`) stay `volcalc`'s values. They
+    are not in the configuration.
+
+Facts found while building:
+
+- **With `spawn` a worker runs the main module of its parent again,** unless that is the
+  `__main__` of a package (the standard library's rule, read in its source). So a worker of
+  `python -m s3t` imports nothing of the backend, and a worker of a tool started by its path
+  (`tools/live_day.py`, `tools/e2e_backend.py`, `tools/timings.py`) imports that tool. It costs
+  start time and memory in those tools only.
+- **The memory of the workers is not in PRF-09.** The bound is on the backend's own process. A
+  worker's memory is measured with PRF-05 (`docs/measurements.md`).
+- **An index without a last trade has no spot,** and then no core is chosen. Not seen; the
+  broker sends the last trade on subscription.
 
 ## 4. Requirements
 
@@ -1186,7 +1270,7 @@ Targets unless marked measured. Each is measured in the release named and record
 | PRF-02 | From a changed control to the redrawn payoff panel: under 200 ms on the LAN. | R1 | M |
 | PRF-03 | A flush that recomputes IV and Greeks for 1,000 changed contracts takes under 100 ms and never delays the stream reader. | R1 | M |
 | PRF-04 | A path simulation with 20,000 paths, 45 daily steps and four legs finishes in under 1 s. | R1b | M |
-| PRF-05 | A surface fit for one underlying runs in the process pool; the event loop is never blocked for more than 50 ms by numerics. | R1 | M |
+| PRF-05 | A surface fit for one underlying runs in the process pool; the event loop is never blocked for more than 50 ms by numerics. Measured at WP-1.1 on the synthetic market (2026-11-28): the fit runs in a worker, and the longest block of the event loop was 5.6 ms. | R1 | M |
 | PRF-06 | The chart shows 8,000 bars with four moving averages and two indicator panes in under 300 ms after the data has arrived. Measured in the prototype: 50 to 145 ms across three browsers. | R2 | M |
 | PRF-07 | A live candle update costs under 10 ms in the browser and delays no frame at two updates a second. Measured in the prototype: 1 to 5 ms, no late frame. | R2 | M |
 | PRF-08 | The chain grid scrolls and updates without late frames at one update a second for 400 visible-or-buffered rows. | R1 | M |

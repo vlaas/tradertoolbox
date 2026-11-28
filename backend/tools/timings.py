@@ -1,8 +1,10 @@
-"""Timings of WP-0.9 for an idle machine (QA-08): the calendar, the chains, the reader.
+"""Timings for an idle machine (QA-08): the calendar, the chains, the reader (WP-0.9) and the
+surface fit (WP-1.1, PRF-05).
 
     uv run python tools/timings.py calendar [--runs 5]
     uv run python tools/timings.py chains [--runs 20] [--config PATH]
     uv run python tools/timings.py reader NAME [--speeds 10,30,100,300] [--config PATH]
+    uv run python tools/timings.py surface [--symbols SPY,SPX,AAPL] [--runs 20] [--config PATH]
 
 Each prints the machine, then the median, the 95th percentile and the maximum, with the load
 average before and after, for ``docs/measurements.md``. Each timing has its CPU time beside its
@@ -22,6 +24,10 @@ A timing on a loaded machine is not a measurement: look at the load first.
   capacity of the path, without the DXLink decoding, which a replay does not do (plan section 8,
   from WP-0.4). A replay as fast as the loop runs measures nothing: the replay outruns every
   reader and is over before the first flush.
+- ``surface``: the surface fit in the process pool, on the fake broker: a fit per underlying and
+  per slice, the steps on the event loop, and the lag of a 10 ms timer while fits run
+  (``tools/surface_timings.py`` says what each figure is). No broker and no network. Without
+  ``--config`` the settings are the defaults; with it, its ``[numerics]`` and ``[surface]``.
 """
 
 import argparse
@@ -35,6 +41,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+import surface_timings
 from day_measures import IvTaker, machine, option_set, summary
 from s3t.broker.interface import EventBatch, EventType, StreamState, Sub
 from s3t.broker.replay import ReplayBroker
@@ -78,7 +85,7 @@ def print_machine() -> None:
 def show(name: str, values: list[float], unit: str) -> None:
     s = summary(values)
     print(
-        f"{name:28} median {s['median']:9.3f}  p95 {s['p95']:9.3f}  max {s['max']:9.3f} {unit}"
+        f"{name:40} median {s['median']:9.3f}  p95 {s['p95']:9.3f}  max {s['max']:9.3f} {unit}"
         f"  (n {s['n']})"
     )
 
@@ -263,9 +270,10 @@ async def reader(config: Config, name: str, speeds: list[float]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
-    parser.add_argument("what", choices=("calendar", "chains", "reader"))
+    parser.add_argument("what", choices=("calendar", "chains", "reader", "surface"))
     parser.add_argument("name", nargs="?", help="the recording, for reader")
-    parser.add_argument("--runs", type=int, help="for calendar and chains")
+    parser.add_argument("--runs", type=int, help="for calendar, chains and surface")
+    parser.add_argument("--symbols", default="SPY,SPX,AAPL", help="for surface: the underlyings")
     parser.add_argument(
         "--speeds", default="10,30,100,300", help="for reader: multiples of the pace"
     )
@@ -273,6 +281,15 @@ def main() -> int:
     args = parser.parse_args()
     if args.what == "calendar":
         return calendar(args.runs or 5)
+    if args.what == "surface":
+        own = load_config(args.config) if args.config else None
+        symbols = [s for s in args.symbols.split(",") if s]
+        print_machine()
+        print(f"load before: {load()}")
+        try:
+            return asyncio.run(surface_timings.surface(own, symbols, args.runs or 20, show))
+        finally:
+            print(f"load after: {load()}")
     config = load_config(args.config)
     if args.what == "chains":
         return asyncio.run(chains(config, args.runs or 20))

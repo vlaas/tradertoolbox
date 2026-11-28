@@ -43,6 +43,11 @@ i9-10850K at 3.6 GHz, 10 cores and 20 threads, 64 GB, macOS 15.7 (recorded 2026-
 | 2026-11-27 | WP-0.9 | Parsing a live option chain on the event loop, against the 50 ms of PRF-05 | SPY, 12,726 contracts: median 5.3, p95 5.6, max 5.8 ms. SPX, 32,296 contracts (SPXW, SPXO, SPX): median 13.8, p95 14.3, max 15.2 ms | 2.99, 7.37, 23.01 before and after | `tools/timings.py chains`, one live read of each chain (3 requests), 20 parses each |
 | 2026-11-27 | WP-0.9 | Capacity of the reader with IV per flush: a regular-hours recording replayed at multiples of its pace through the feed, the market state and the IV taker. Without the DXLink decoding | The recording: 488 pairs, 70,608 events in 603 s (117 a second). No batch lost at any multiple. 10 times: 1,135 events a second, 2% of a core; 100 times: 9,145, 6%; 300 times: 19,880, 12%; 1,000 times: 35,246, 19%; 10,000 times: 49,399, 24%. Above 300 times the replay does not keep its pace, so about 49,000 a second is the replay's limit, not the reader's. IV per flush: 160 contracts, median 2.6 ms, max 3.1 ms | 3.15, 7.33, 22.90 before; 2.65, 5.60, 20.08 after | `tools/timings.py reader rh-20261127`, a local recording of `tools/capture.py` (10 minutes from 09:40 New York, SPY and SPX, 40 strikes of one expiration). One run per multiple |
 | 2026-11-27 | WP-0.9 | Recording: size of a regular-hours stream file. Sizes, not timings | 488 subscriptions, 10 minutes, 3,123 batches: 880,780 bytes in zstd; `rest.jsonl` 2.1 MB (the two chains) | 16.21, 16.83, 17.96 before (sizes do not depend on it) | `tools/capture.py rh-20261127 --symbols SPY,SPX --expirations 1 --strikes 40 --minutes 10`, production API |
+| 2026-11-28 | WP-1.1 | PRF-05: a surface fit in the process pool, warm from the fit before, as the service runs it. Synthetic market, default settings, 2 workers | SPY (1,462 pairs, 28 slices, 17 with their own SVI): in the worker median 104, p95 109, max 110 ms; there and back as the event loop sees it 106, 110, 112 ms. SPX (1,946 pairs, 41 slices, 19 with SVI): 150, 223, 225 ms; there and back 152, 226, 227 ms. AAPL (590 pairs, 21 slices, 9 with SVI): 78, 80, 82 ms; there and back 79, 81, 83 ms. The worker's CPU time equals its wall time to the millisecond: a fit is one core for that long. All three at once on the 2 workers, a round: 185, 188, 191 ms. 273 tasks, none failed | 1.55, 2.71, 14.70 before; 1.79, 2.54, 13.75 after. Idle by the 1-minute figure; the 15-minute one still holds a data job that had ended. An `rclone` copy of the owner ran beside it at about 12% of a core | `tools/timings.py surface`, 04:56 New York; the fake's clock is Friday 2026-11-20 from 10:00 New York. 20 fits on demand per underlying, after the sets had filled and the synthetic market was stopped |
+| 2026-11-28 | WP-1.1 | The same run: a fit per slice, and cold | Warm, the fit's time over its slices (median): 3.7 ms a slice for all three; over the slices with their own SVI 6.1 (SPY), 7.9 (SPX), 8.6 ms (AAPL). A whole surface cold, without the fit before (median of 3): SPY 178, SPX 283, AAPL 105 ms. One slice alone in a task of its own, cold, with its own SVI: SPY median 16.8, p95 19.1, max 19.1 ms (17 slices); SPX 17.0, 80.4, 80.4 ms (19); AAPL 13.1, 14.8, 14.8 ms (9). Without an SVI of its own: 2.0 ms, max 2.3 ms (45 slices) | as above | Same run. The cold fits take the inputs as the service gathers them |
+| 2026-11-28 | WP-1.1 | The same run: the event loop (PRF-05: no block above 50 ms) | Steps of the service, per fit (median, p95, max). Quotes to inputs: SPY 1.6, 2.8, 3.2 ms; SPX 1.9, 2.2, 2.4; AAPL 0.9, 1.5, 1.8. The set chosen again: SPY 0.9, 1.2, 1.2 ms; SPX 1.1, 1.4, 1.5; AAPL 0.7, 0.9, 1.1. The feed's grant of the 3,998 pairs: 3.4, 5.0, 5.6 ms. The longest step since the watch began, the filling included: SPY 3.4, SPX 5.0, AAPL 2.6 ms. Lag of a 10 ms timer: with nothing running 0.24, 1.21, 2.27 ms; while the fits of one underlying ran, at most 0.25, 1.35, 2.12 ms (SPX); with all three at once 0.25, 1.42, 4.36 ms. The event loop's thread used 2.7 to 4.7% of a core while fits were asked for back to back. **The longest block seen is 5.6 ms** | as above | Same run. The steps are timed inside the service, the grant by 20 calls of `s3t.subs.budget.allocate`, the lag by a timer task. The synthetic market was stopped for all of it: its ticks are the fake's own work on the loop |
+| 2026-11-28 | WP-1.1 | The same run: a worker process | What a worker of the backend imports for its first task, in a fresh process: median 455, p95 457, max 457 ms, all of it CPU; peak memory after it 61 MB (max 61). The first fit of the run with the start of a worker of this tool: 849 ms there and back (one observation). Peak memory of a worker of this tool after the fits: 90 MB; such a worker also imports the tool (requirements, section 3) | as above | Same run: 5 fresh processes for the import; `getrusage` in the workers at the end |
+| 2026-11-28 | WP-1.1 | A one-off on real quotes: the 0DTE slice of SPXW fitted at every minute of two regular sessions (2026-11-17 and 2026-11-20), each fit warm from the minute before, in one process. Counts and timings; no price was kept | Per day 390 fits on every quoted strike (270 and 507 strikes): all 780 `ok` with their own SVI, the forward from parity in all; the butterfly check failed in 1; 9 quotes dropped as outliers in all. On the strikes the service would subscribe (46 and 59 at the median): 778 `ok`, and the first minute of each day `sparse`, which has no wings yet by the service's steps; the butterfly check failed in 6. **A fit took median 85 to 88, p95 104 to 110, max 186 ms, the same on both sets of strikes**: 5 times a synthetic slice. The solver stopped at its limit of 200 evaluations in 687 of 779 calls (counted on 2026-11-17) | 2.9, 3.3, 6.5 and 2.1, 2.8, 5.8 before; 2.4, 2.9, 5.9 and 2.5, 2.7, 5.1 after. Not idle: the 1-minute figure is 2 to 3 | A script outside the repository over the owner's streamer dumps, read as a stream: the latest quote of each contract at each minute from 09:31 to 16:00 New York, `fit_surface` on the one slice, the spot from the dump's minute candle, a flat rate of 4% |
 
 WP-0.1 has no performance requirement and took no timings.
 
@@ -127,8 +132,37 @@ QA-08 is closed by review on 2026-11-27: every timing row since WP-0.3 records t
 each package that took no timing says so.
 
 WP-1.1, part 1 (2026-11-27) took no timings. PRF-05, the surface fit in the process pool and the
-longest block of the event loop, is measured in part 2 (`tools/timings.py surface`, not written
-yet). The accuracy results of part 1 are in the tests, not here: the fit recovers a known smile and
+longest block of the event loop, is measured in part 2 (`tools/timings.py surface`). The accuracy
+results of part 1 are in the tests, not here: the fit recovers a known smile and
 forward (`tests/pricing/test_surface.py`), and the density integrates to one within 1e-8 over 30
-at-the-money deviations. The 30 ms per SVI slice in the architecture note is from `volcalc`'s
-documents and is still not measured here.
+at-the-money deviations.
+
+WP-1.1, part 2 (2026-11-28) measured PRF-05: the four rows above. What they are and are not:
+
+- **PRF-05 is met on the synthetic market.** The fit runs in a worker, and the longest block of
+  the event loop was 5.6 ms against the 50 ms allowed, with the sets of three underlyings held.
+- **The 30 ms per SVI slice** of the architecture note, from `volcalc`'s documents, is now measured
+  here. On the synthetic market a slice alone and cold takes 13 to 17 ms at the median, and one
+  slice of 45 took 80 ms; inside a warm surface a slice with its own SVI costs 6 to 9 ms. A real
+  slice took 85 ms (below).
+- **Headroom on the synthetic market, computed from the measured CPU time.** One fit every 30 s
+  per underlying is 0.3 to 0.5% of one core for SPY or SPX, on a worker's core and not on the
+  event loop's.
+- **The synthetic chains are smaller than the live ones.** SPY's set is 1,462 pairs here and about
+  2,300 live (computed, not measured). The steps on the event loop grow with the pairs; at the
+  measured 3.2 ms for 1,462 pairs they stay far below 50 ms (computed).
+- **The synthetic smiles are clean, and a real slice costs more.** On real SPXW 0DTE quotes a fit
+  of the one slice took 85 to 88 ms at the median, 5 times a synthetic one (the last row: a
+  one-off, on a machine that was not idle). The solver ran to its limit of 200 evaluations in
+  most calls, so the time is that of the limit and does not grow with the strikes.
+- **A whole real surface was not timed.** If each slice with its own SVI took those 85 ms, a
+  surface with 45 such slices would take about 4 s a fit (computed; 45 is an assumed count for
+  SPX within 90 days, not counted on a live chain), in a worker. That is 13% of one worker's core
+  at a fit every 30 s. PRF-05 does not depend on it: nothing of the fit runs on the event loop.
+- **Not in these figures:** the work of the live stream reader, which runs on the same event loop
+  (the WP-0.9 rows), and the lag while a set fills, when the fake's own ticks load the loop.
+- **The filling, on the fake, not a measurement of the product:** with the three underlyings
+  watched at once a first fit came 7 to 17 s after the watch and the sets had filled after 37 to
+  40 s. The manager sends 150 subscriptions a second, so 3,998 pairs take 27 s (computed).
+- A first run of the tool on 2026-11-27 was made under load (load average 16) to see that it works.
+  Its figures are in no document.

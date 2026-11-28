@@ -151,6 +151,13 @@ def wait_until_up(process: subprocess.Popen[str], port: int) -> None:
     raise AssertionError("the backend did not come up")
 
 
+def children_of(pid: int) -> list[str]:
+    """The processes whose parent is this one, as the system lists them."""
+    listed = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True)
+    assert listed.returncode in (0, 1), listed.stderr  # 1: none
+    return listed.stdout.split()
+
+
 async def test_the_process_from_start_to_end(config: Path) -> None:
     set_the_password(config)
     port = port_of(config)
@@ -177,6 +184,9 @@ async def test_the_process_from_start_to_end(config: Path) -> None:
             cookie = answer.headers["set-cookie"].split(";")[0]
             health = (await http.get("/api/health")).json()
             assert health["data_time"].startswith("2026-11-20T15:0")  # fake_start
+            # No process of the pool before a fit, and none ever in a backend without a watch.
+            assert health["pool"]["started_at"] is None and health["surface"]["watched"] == []
+        assert children_of(process.pid) == []
 
         url = f"ws://127.0.0.1:{port}/api/ws"
         options = {"subprotocols": ["s3t.v1.json"], "additional_headers": {"Cookie": cookie}}
@@ -197,6 +207,7 @@ async def test_the_process_from_start_to_end(config: Path) -> None:
                     bids |= {bid} - {"NaN"}
 
             # The end, with a browser still connected.
+            assert children_of(process.pid) == []  # after a view of quotes too
             process.send_signal(signal.SIGTERM)
             async with asyncio.timeout(15):
                 with contextlib.suppress(Exception):

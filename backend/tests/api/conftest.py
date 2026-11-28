@@ -21,6 +21,7 @@ from s3t.broker.interface import Broker
 from s3t.config import Config, load_config
 from s3t.system.backend import Backend, Time, open_backend
 from s3t.system.login import set_password
+from s3t.system.pool import Pool
 from s3t.wire.v1.channel_pb2 import ClientMessage, ServerMessage, Subscribe, Unsubscribe
 from system.conftest import CHEAP, PASSWORD, anyio_backend  # noqa: F401
 
@@ -217,11 +218,13 @@ async def running(
     *,
     broker: Broker | None = None,
     password: str | None = PASSWORD,
+    fits: Pool | None = None,
 ) -> AsyncIterator[ApiRig]:
     """The backend with a password set, and a client that is not logged in. Without a password the
-    one in the state file stays."""
+    one in the state file stays. ``fits`` runs the surface fits in place of the process pool."""
     clocks = Time(now=clock.wall, clock=clock.monotonic, sleep=clock.sleep)
-    async with open_backend(config, clocks=clocks, broker=broker, hasher=CHEAP) as backend:
+    opened = open_backend(config, clocks=clocks, broker=broker, hasher=CHEAP, fits=fits)
+    async with opened as backend:
         if password is not None:
             await set_password(backend.store, password, hasher=CHEAP, now=clock.wall)
         app = create_app(backend)

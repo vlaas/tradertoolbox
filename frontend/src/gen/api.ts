@@ -246,6 +246,7 @@ export interface components {
              */
             data_time: string;
             market: components["schemas"]["MarketStatus"];
+            pool: components["schemas"]["PoolStatus"];
             process: components["schemas"]["ProcessStatus"];
             rates: components["schemas"]["RatesStatus"];
             rest: components["schemas"]["RestStatus"];
@@ -258,6 +259,7 @@ export interface components {
             store: components["schemas"]["StoreStatus"];
             stream: components["schemas"]["StreamStatus"];
             subscriptions: components["schemas"]["SubscriptionsReport"];
+            surface: components["schemas"]["SurfaceStatus"];
             /** Version */
             version: string;
         };
@@ -307,6 +309,26 @@ export interface components {
             values: {
                 [key: string]: number;
             };
+        };
+        /**
+         * PoolStatus
+         * @description For the health route (SEC-08).
+         */
+        PoolStatus: {
+            /** Broken */
+            broken: number;
+            /** Done */
+            done: number;
+            /** Failed */
+            failed: number;
+            /** Processes */
+            processes: number;
+            /** Started At */
+            started_at: string | null;
+            /** Under Way */
+            under_way: number;
+            /** Workers */
+            workers: number;
         };
         /**
          * ProcessStatus
@@ -503,6 +525,13 @@ export interface components {
             /** Sent */
             sent: number;
         };
+        /** SurfaceStatus */
+        SurfaceStatus: {
+            /** Refresh S */
+            refresh_s: number;
+            /** Watched */
+            watched: components["schemas"]["WatchedStatus"][];
+        };
         /**
          * Tier
          * @enum {string}
@@ -515,6 +544,46 @@ export interface components {
             /** Reason */
             reason: string | null;
             tier: components["schemas"]["Tier"];
+        };
+        /**
+         * WatchedStatus
+         * @description One watched underlying, for the health route (SEC-08).
+         */
+        WatchedStatus: {
+            /** Expirations */
+            expirations: number;
+            /** Failures */
+            failures: number;
+            /** Filling */
+            filling: boolean;
+            /** Fits */
+            fits: number;
+            /** Last Fit At */
+            last_fit_at: string | null;
+            /** Last Fit S */
+            last_fit_s: number | null;
+            /** Left Out */
+            left_out: number;
+            /** Loop Ms Max */
+            loop_ms_max: number;
+            /** Not Live */
+            not_live: number | null;
+            /** Pairs */
+            pairs: number;
+            /** Problem */
+            problem: string | null;
+            /** Skipped */
+            skipped: number;
+            /** Slices */
+            slices: {
+                [key: string]: number;
+            };
+            /** Underlying */
+            underlying: string;
+            /** Values */
+            values: number | null;
+            /** Watchers */
+            watchers: number;
         };
     };
     responses: never;

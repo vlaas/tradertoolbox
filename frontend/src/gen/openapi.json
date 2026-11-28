@@ -326,6 +326,9 @@
           "market": {
             "$ref": "#/components/schemas/MarketStatus"
           },
+          "pool": {
+            "$ref": "#/components/schemas/PoolStatus"
+          },
           "process": {
             "$ref": "#/components/schemas/ProcessStatus"
           },
@@ -352,6 +355,9 @@
           "subscriptions": {
             "$ref": "#/components/schemas/SubscriptionsReport"
           },
+          "surface": {
+            "$ref": "#/components/schemas/SurfaceStatus"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -371,7 +377,9 @@
           "copies",
           "calendar",
           "rates",
-          "process"
+          "process",
+          "pool",
+          "surface"
         ],
         "title": "Health",
         "type": "object"
@@ -486,6 +494,58 @@
           "failures"
         ],
         "title": "MarketStatus",
+        "type": "object"
+      },
+      "PoolStatus": {
+        "description": "For the health route (SEC-08).",
+        "properties": {
+          "broken": {
+            "title": "Broken",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "processes": {
+            "title": "Processes",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "under_way": {
+            "title": "Under Way",
+            "type": "integer"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "workers",
+          "started_at",
+          "processes",
+          "under_way",
+          "done",
+          "failed",
+          "broken"
+        ],
+        "title": "PoolStatus",
         "type": "object"
       },
       "ProcessStatus": {
@@ -1052,6 +1112,27 @@
         "title": "SubscriptionsReport",
         "type": "object"
       },
+      "SurfaceStatus": {
+        "properties": {
+          "refresh_s": {
+            "title": "Refresh S",
+            "type": "number"
+          },
+          "watched": {
+            "items": {
+              "$ref": "#/components/schemas/WatchedStatus"
+            },
+            "title": "Watched",
+            "type": "array"
+          }
+        },
+        "required": [
+          "refresh_s",
+          "watched"
+        ],
+        "title": "SurfaceStatus",
+        "type": "object"
+      },
       "Tier": {
         "enum": [
           "T1",
@@ -1088,6 +1169,134 @@
           "reason"
         ],
         "title": "TierReport",
+        "type": "object"
+      },
+      "WatchedStatus": {
+        "description": "One watched underlying, for the health route (SEC-08).",
+        "properties": {
+          "expirations": {
+            "title": "Expirations",
+            "type": "integer"
+          },
+          "failures": {
+            "title": "Failures",
+            "type": "integer"
+          },
+          "filling": {
+            "title": "Filling",
+            "type": "boolean"
+          },
+          "fits": {
+            "title": "Fits",
+            "type": "integer"
+          },
+          "last_fit_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Fit At"
+          },
+          "last_fit_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Fit S"
+          },
+          "left_out": {
+            "title": "Left Out",
+            "type": "integer"
+          },
+          "loop_ms_max": {
+            "title": "Loop Ms Max",
+            "type": "number"
+          },
+          "not_live": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Live"
+          },
+          "pairs": {
+            "title": "Pairs",
+            "type": "integer"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "slices": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Slices",
+            "type": "object"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          },
+          "watchers": {
+            "title": "Watchers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "underlying",
+          "watchers",
+          "problem",
+          "filling",
+          "expirations",
+          "left_out",
+          "pairs",
+          "fits",
+          "skipped",
+          "failures",
+          "last_fit_at",
+          "last_fit_s",
+          "values",
+          "not_live",
+          "slices",
+          "loop_ms_max"
+        ],
+        "title": "WatchedStatus",
         "type": "object"
       }
     }

@@ -4,6 +4,8 @@
 - ``login``: the password and the sessions (SEC-01).
 - ``features``: the data tier every feature needs, and whether it is there (GEN-04).
 - ``health``: the state of everything (SEC-08).
+- ``process``: the memory of the process against its bound (PRF-09).
+- ``pool``: the process pool for heavy numerics (PRF-05). It imports no numerics.
 
 A service is a plain function or method with typed input and output. The REST routes
 (``s3t.api``) and the MCP tools (R4) are thin wrappers over it (API-01), so nothing here knows

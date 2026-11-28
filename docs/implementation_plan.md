@@ -51,7 +51,7 @@ names its split point.
 | WP-0.7 | API shell, login, WebSocket | M | done 2026-11-25; SEC-06 open for Linux |
 | WP-0.8 | Frontend shell | M | done 2026-11-27 |
 | WP-0.9 | R0 live measurements and acceptance | S | in progress: tools and rehearsal 2026-11-27; the day run 2026-11-30 |
-| WP-1.1 | Forwards and surface | L | in progress: part 1 (numerics, dividends, the fake) 2026-11-27; part 2 (pool, fit service, PRF-05) open |
+| WP-1.1 | Forwards and surface | L | done 2026-11-28: part 1 (numerics, dividends, the fake) 2026-11-27; part 2 (pool, fit service, PRF-05 measured) 2026-11-28. On the synthetic market only: not verified live or on real quotes |
 | WP-1.2 | Chain service | M | not started |
 | WP-1.3 | Ticket model and evaluation | L | not started |
 | WP-1.4 | Probabilities, stage a | L | not started |
@@ -452,13 +452,13 @@ added on 2026-11-27, when part 1 filled a session)
   fit status; density and cumulative probability; interpolation in time. All in `pricing`, as
   one call that a worker process can run. The fake market with dividends and the settlement
   clock.
-- *Build, part 2:* the process pool (`s3t.system.pool`); the fit service
+- *Build, part 2 (done 2026-11-28):* the process pool (`s3t.system.pool`); the fit service
   (`s3t.analysis.surface`) with its watches, its refresh timer and its own subscriptions; both
   in the backend's composition and in the health route; tests on the fake broker for SPY, SPX
   and AAPL; one test through a real pool.
-- *Measure, part 2:* PRF-05 with a new `tools/timings.py surface`: a fit per underlying and
-  per slice in the pool, the steps on the event loop, and the lag of a short timer while fits
-  run.
+- *Measure, part 2 (done 2026-11-28):* PRF-05 with a new `tools/timings.py surface`: a fit per
+  underlying and per slice in the pool, the steps on the event loop, and the lag of a short
+  timer while fits run.
 - *Closes:* PRC-05 to PRC-07 and REF-02 (part 1, by tests); PRF-05 (part 2).
 
 **WP-1.2 Chain service** (M)
@@ -572,7 +572,7 @@ the release starts with.
 | Regular-hours message rates differ much from the after-hours probe | WP-0.9 | Raise the aggregation period; revisit the flush design |
 | The Protocol Buffers tool chain is awkward in one of the two languages | WP-0.1. Result, 2026-11-22: not awkward in either language. Bytes and canonical JSON written by Python decode and re-encode identically in TypeScript, in Node and in the three browsers | JSON messages with the same schema discipline, as the architecture note allows |
 | The chain grid drops frames with streaming cells | WP-1.5 | Update only visible rows; coarser update batches |
-| The surface fit is too slow or unstable on thin expirations | WP-1.1 | SSVI only for those expirations; longer refresh timer |
+| The surface fit is too slow or unstable on thin expirations | WP-1.1. Result, 2026-11-28. Speed: a fit of SPX takes 150 ms in a worker and the event loop is blocked for at most 5.6 ms (measured, synthetic market); a real slice takes about 85 ms, so a real surface takes seconds, in a worker (one slice seen, the surface computed). Stability: the real 0DTE slice of SPXW kept its own SVI in every minute of two days (a one-off). An expiration with few quotes, far-dated or of a small stock, is not answered (section 8) | SSVI only for those expirations; longer refresh timer |
 | The platform replicas drift from the platform | WP-1.4, and a recurring capture check | Mark the replica as approximate with the measured error |
 | The drawing plugin breaks its interface again (it did once) | The own interface module of R2 and the pinned version | Stay on the pinned version; the fallback of the charting note |
 | Scope grows inside a release | The requirement list per package | Move the item to section 8, not into the package |
@@ -993,9 +993,8 @@ Found but not planned into a package yet.
     two expirations. An earnings day holds more of it, so a date just before earnings gets too
     much variance and one just after too little. It is the improvement worth making to the
     interpolation in time (agreed 2026-11-27); the earnings date comes with WP-1.2.
-  - **Part 2 is open:** the pool, the fit service and PRF-05. `[numerics]` and `[surface]` are
-    in the configuration and nothing reads them. Nothing in the running backend uses the new
-    numerics yet, so the day run of WP-0.9 is not changed by part 1.
+  - **Part 2 was open** when part 1 closed: the pool, the fit service and PRF-05. It is built
+    since 2026-11-28 (the items "From WP-1.1, part 2" below).
   - **Not verified live, and not on real quotes.** The fit ran on quotes made from known
     smiles only. Whether it is stable on thin real expirations (section 7) is not answered.
     Ways to answer it without a live call: the streamer dumps of SPXW 0DTE quotes, fed to
@@ -1039,12 +1038,96 @@ Found but not planned into a package yet.
     long stock or ETF expiration. With the American pricer.
   - **The SVI fit warns** through the ported IV solver's logger for quotes it cannot invert.
     In a worker process without a handler these go to the terminal: part 2 gives the workers
-    a null handler.
+    a null handler. **Done at part 2**, with a test.
   - **The pytest markers `reference` and `captures`** of sections 3.1 and 3.2 do not exist.
     Tests on real documents are still one-off runs: the metrics parser read the 133 captured
     documents and the recording of 2026-11-27 that way.
   - `tests/pricing` takes about 80 s of the suite's 140 s (seen, not measured on an idle
     machine). Most of it was there before this package.
+
+- From WP-1.1 (2026-11-28, part 2):
+  - **The fourteen proposals of part 2 were decided by the owner on 2026-11-28, every one as
+    proposed** (requirements, section 3, "The surface package", part 2, the second list): the
+    steps in which a set is chosen, the rules that keep it stable, the order of the demand, the
+    spot, the filling, the fit on demand, futures products, the last release, how a view reads,
+    failures, the worker's signals and its parent, what is left out of a set, the key of a
+    slice, the fit's settings.
+  - **Nothing takes a watch yet.** The service and the pool are in the composition and idle: no
+    process, no consumer, no taker, no task (tests on the composition and on the real process).
+    So the day run of WP-0.9 is not changed by part 2 either, and `make e2e` does not reach the
+    service. The `chain` topic of WP-1.2 is the first to take a watch.
+  - **PRF-05 is measured** (2026-11-28, `docs/measurements.md`): on the synthetic market, whose
+    chains are smaller and whose smiles are cleaner than the live ones. WP-1.9 measures it again
+    with the R1 figures, on a recording or live.
+  - **An adjusted option root is left out of a set and counted** in the health record
+    (`left_out`). No real one was seen: the 134 captured chain documents hold standard roots
+    only. The chain view of WP-1.2 has to say that such a root has no surface IV.
+  - **Not verified live.** The service ran on the synthetic market only. A live look at a
+    surface needs about 2,300 subscriptions for SPY (computed) and is the owner's to allow.
+  - **The fit on real quotes: a one-off on the streamer dumps** (2026-11-28;
+    `docs/measurements.md`). The 0DTE slice of SPXW, at every minute of 2026-11-17 and
+    2026-11-20: 780 of 780 fits kept their own SVI on every quoted strike, and all but the first
+    minute of each day on the strikes the service would subscribe. That answers the risk for an
+    expiration that is short in time and well quoted. It does not answer it for an expiration
+    with few quotes, far-dated or of a small stock: the dumps hold none.
+  - **On real quotes the SVI solver stops at its limit of 200 evaluations** in 88% of its calls
+    (687 of 779, counted on one day), so a real slice takes about 85 ms, whatever its strikes:
+    5 times a synthetic one. The slice is `ok`, because the solution passes the arbitrage
+    check. How close it lies to the quotes was not looked at: the one-off kept counts and
+    timings only. The limit and the tolerances are `volcalc`'s. Worth a look before WP-1.4
+    builds probabilities on the smile: the RMSE of real slices, and whether a looser tolerance
+    or a better start ends the fit sooner.
+  - **A whole real surface was not timed.** At 85 ms a slice, a surface with 45 slices of
+    their own SVI would take about 4 s a fit (computed; the count is assumed for SPX, not taken
+    from a live chain). It runs in a worker, so PRF-05 holds; while a set fills, the fits come
+    one after the other and not every 2 s.
+  - **How many subscription changes a set makes over a day is not known.** The rules that keep
+    a set stable are built on reasoning, not on a measurement: the synthetic market moves
+    little in a test. A day of a live or a recorded market answers it, against the change
+    budget of 8,000 a minute (SUB-02).
+  - **A futures product is not fitted.** The service reads the chain of a stock, an ETF or an
+    index. For `/ES` it needs the futures chain and the price of each future as the given
+    forward of its expirations (`SliceInput.forward`), which the pricing side has since part 1.
+  - **An index without a last trade has no spot,** and then nothing is chosen for it. Not seen.
+    If it shows live, the Summary event's previous close is the stand-in.
+  - **A worker of a tool imports the tool** (`spawn` runs the parent's main module again, unless
+    it is the `__main__` of a package). It matters for no tool today, because none takes a
+    watch but the timing tool.
+  - **The workers' memory is outside PRF-09,** whose bound is on the backend's own process.
+  - **A fit has no time limit.** A worker that hangs would hold one of the two workers until the
+    backend is restarted. The fits are bounded by their iteration limits, so it should not
+    arise; if it does, the pool can end its processes and start anew.
+  - **The health record has `pool` and `surface`.** The generated types of the frontend changed
+    with it. The app shows neither.
+  - **The end of the backend with a fit under way** waits for that fit. Tested with the pool
+    alone, not with the real process, which has no watch.
+  - **The re-reading of the documents on a new day** is tested by setting the day back, not by
+    letting a day pass.
+  - **For WP-1.2:**
+    - Take the watch when the view opens and release it in the view's `finally`, as the quotes
+      view does with its demand. The grace period for a closed view is to hold the watch for
+      that long.
+    - The pairs of the chain view and of the surface overlap, and a pair counts once in the
+      budget. How much the two cost together is not measured.
+    - A first fit comes a few seconds after the watch, on the cores alone: every slice has its
+      forward, and the slices are `sparse` or `none` until the wings are there. The status
+      says `filling` until then.
+    - `SurfaceFit.expirations` maps the key of a slice to its root, date and settlement
+      instant. `SurfaceFit.spot` is the spot the forwards belong to.
+  - The backend's suite took 117 s on a quiet machine (seen 2026-11-28, load average 2; not a
+    measurement) and about 165 s under load; the tests of the service are about a third of it.
+    The slowest is the one with three underlyings at once.
+  - **The browser suite fails now and then on a quiet machine, and did so before this part.**
+    The tests that restart the backend and wait for the stale rows (`live.spec.ts`, "the loss of
+    the connection"; `a11y.spec.ts`, "while the connection is lost") sometimes never see them:
+    the row is empty and then live again, within the 10 s of the wait. Seen 2026-11-28, load
+    average 2 to 4: with part 2, 2 of 5 full runs failed (Chromium); on the commit of part 1,
+    1 of 5 (Chromium and WebKit, the other test). The first test alone passed 24 of 24, and
+    under load on 2026-11-27 and 2026-11-28 the suite passed. The numbers are too few to say
+    that part 2 changed the rate. The cause is not found. A guess, not checked: the app's first
+    attempt to reconnect reaches the old server while it shuts down, and the app drops its rows
+    for a snapshot that never comes. It belongs to WP-0.8's code; look at it before WP-1.5
+    adds tests of the same kind.
 
 ## 9. Starting a package in a fresh session
 

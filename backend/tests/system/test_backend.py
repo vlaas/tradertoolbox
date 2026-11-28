@@ -1,6 +1,8 @@
 """The composition: the choice of broker, what each gets, and the order of closing (WP-0.7)."""
 
+import asyncio
 import logging
+import multiprocessing
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,7 @@ from s3t.secrets import SecretsError
 from s3t.store.state import StateStore
 from s3t.subs.local import LocalFeed
 from s3t.system.backend import Time, make_broker, make_rates, open_backend
+from s3t.system.health import health
 
 pytestmark = pytest.mark.anyio
 
@@ -116,6 +119,41 @@ async def test_the_market_state_sees_every_item(tmp_path: Path) -> None:
         assert rig.backend.market.live_since == stream.connected_at is not None
 
 
+async def test_the_pool_and_the_surface_service_do_nothing_until_a_view_takes_a_watch(
+    tmp_path: Path,
+) -> None:
+    """WP-1.1: they are in the composition, and a backend that nobody asks for a surface has no
+    worker process, no consumer of the feed, no taker of the market state and no task of theirs,
+    and reads nothing from the broker for them. The day run of WP-0.9 is such a backend."""
+    async with running(make_config(tmp_path), VirtualClock(ASOF)) as rig:
+        await rig.up()
+        backend = rig.backend
+        refresh = backend.config.surface.refresh_s
+        await rig.pass_time(2 * refresh + 5)  # two turns of the refresh timer, if it ran
+        pool = backend.pool.status()
+        assert pool.started_at is None and pool.processes == 0 and backend.pool.pids() == ()
+        assert (pool.under_way, pool.done, pool.failed, pool.broken) == (0, 0, 0, 0)
+        assert multiprocessing.active_children() == []
+        assert backend.surface.status().watched == ()
+        assert backend.feed.status().consumers == () and backend.feed.status().granted == 0
+        assert backend.market._takers == []
+        names = {task.get_name() for task in asyncio.all_tasks()}
+        assert not {name for name in names if name.startswith("surface")}
+        paths = [request.path for request in rig.fake.rest.requests]
+        assert not any("option-chains" in p or "market-metrics" in p for p in paths)
+        doc = (await health(backend)).model_dump(mode="json")
+        assert doc["surface"] == {"refresh_s": 30.0, "watched": []}
+        assert doc["pool"] == {
+            "workers": 2,
+            "started_at": None,
+            "processes": 0,
+            "under_way": 0,
+            "done": 0,
+            "failed": 0,
+            "broken": 0,
+        }
+
+
 async def test_everything_is_closed_in_the_opposite_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -130,11 +168,15 @@ async def test_everything_is_closed_in_the_opposite_order(
 
         monkeypatch.setattr(kind, "aclose", aclose)
 
+    from s3t.analysis.surface import SurfaceService
     from s3t.market.state import MarketState
     from s3t.refdata.rates import Rates
     from s3t.store.daily import DailyCopies
+    from s3t.system.pool import NumericsPool
 
     for kind, name in (
+        (SurfaceService, "surface"),
+        (NumericsPool, "pool"),
         (MarketState, "market"),
         (LocalFeed, "feed"),
         (Rates, "rates"),
@@ -146,7 +188,8 @@ async def test_everything_is_closed_in_the_opposite_order(
     with caplog.at_level(logging.INFO, "s3t"):
         async with running(make_config(tmp_path), VirtualClock(ASOF)) as rig:
             await rig.up()
-    assert closed == ["market", "feed", "rates", "copies", "store", "broker"]
+    # The surface service ends before the pool it hands its fits to, and both before the feed.
+    assert closed == ["surface", "pool", "market", "feed", "rates", "copies", "store", "broker"]
     assert "the broker is fake: SYNTHETIC DATA" in caplog.text
 
 

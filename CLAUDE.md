@@ -85,10 +85,13 @@ cd backend && uv run python tools/stream_check.py --config ../config/s3t.toml
 # (git-ignored). --fake tries it on the synthetic market; --summary FILE summarises a run
 cd backend && uv run python tools/live_day.py --config ../config/s3t.toml
 
-# timings for an idle machine: the calendar, the chains (3 live requests), a recording replayed
+# timings for an idle machine: the calendar, the chains (3 live requests), a recording replayed,
+# and the surface fit in the process pool (PRF-05; on the fake broker, no network; with --config
+# it takes [numerics] and [surface] from that file)
 cd backend && uv run python tools/timings.py calendar
 cd backend && uv run python tools/timings.py chains --config ../config/s3t.toml
 cd backend && uv run python tools/timings.py reader NAME --config ../config/s3t.toml
+cd backend && uv run python tools/timings.py surface
 
 # record a session into <data_dir>/recordings/NAME (git-ignored); --fake needs no broker
 cd backend && uv run python tools/capture.py NAME --fake --minutes 1 --config ../config/s3t.toml

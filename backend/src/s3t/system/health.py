@@ -1,5 +1,6 @@
 """The state of everything (SEC-08): the broker connection, the stream, the use of the
-subscriptions, the stores, the reference data in use and the memory of the process.
+subscriptions, the stores, the reference data in use, the memory of the process, the process pool
+and the surfaces that are watched.
 
 The records are the ones the parts give out about themselves, so there is no second definition of
 them. Only the use of the subscriptions is written anew, with the names of the classes in place of
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 from s3t import __version__
+from s3t.analysis.surface import SurfaceStatus
 from s3t.broker.interface import DataSource, RestStatus, StreamStatus
 from s3t.market.state import MarketStatus
 from s3t.refdata.calendar import CalendarStatus
@@ -22,6 +24,7 @@ from s3t.secrets import redact
 from s3t.store.daily import CopiesStatus
 from s3t.store.state import StoreStatus
 from s3t.subs.feed import ClassUse, ConsumerUse, FeedStatus, Priority
+from s3t.system.pool import PoolStatus
 from s3t.system.process import ProcessStatus
 
 if TYPE_CHECKING:
@@ -98,6 +101,10 @@ class Health(BaseModel):
     rates: RatesStatus
     process: ProcessStatus
     """The peak memory against its bound (PRF-09)."""
+    pool: PoolStatus
+    """The process pool of the numerics (PRF-05). It has no process before the first fit."""
+    surface: SurfaceStatus
+    """The underlyings whose surface is watched, and their fits (PRC-06)."""
 
 
 def redacted[T](record: T) -> T:
@@ -185,4 +192,6 @@ async def health(backend: "Backend") -> Health:
         calendar=backend.calendar.status(),
         rates=redacted(backend.rates.status(data_time)),
         process=backend.process.status(),
+        pool=backend.pool.status(),
+        surface=backend.surface.status(),
     )
